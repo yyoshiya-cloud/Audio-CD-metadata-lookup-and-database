@@ -67,18 +67,22 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
   // Track explicitly edited row IDs by user interaction
   const [editedRowIds, setEditedRowIds] = useState<Set<string>>(new Set());
 
-  // Sync gridRows when external cds prop updates and there are no uncommitted edits
+  // Sync gridRows when external cds prop updates, preserving uncommitted edited rows
   useEffect(() => {
-    if (editedRowIds.size === 0) {
-      setGridRows(
-        cds.map((cd) => ({
+    setGridRows((prevGrid) => {
+      const prevMap = new Map(prevGrid.map((r) => [r.id, r]));
+      return cds.map((cd) => {
+        if (editedRowIds.has(cd.id)) {
+          return prevMap.get(cd.id) || cd;
+        }
+        return {
           ...cd,
           tags: cd.tags ? [...cd.tags] : [],
           tracks: cd.tracks ? cd.tracks.map((t) => ({ ...t })) : [],
-        }))
-      );
-    }
-  }, [cds, editedRowIds.size]);
+        };
+      });
+    });
+  }, [cds]);
 
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
@@ -718,8 +722,8 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
             {/* Spreadsheet Sticky Header */}
             <thead className="sticky top-0 z-20 bg-slate-950 text-slate-300 text-[11px] font-bold tracking-wider border-b-2 border-slate-700 select-none shadow-md">
               <tr className="divide-x divide-slate-800">
-                {/* 1. Checkbox Column (Fixed 36px) */}
-                <th className="py-2.5 px-2 w-9 min-w-[36px] max-w-[36px] text-center bg-slate-950">
+                {/* 1. Checkbox Column (Fixed 36px, Sticky left-0) */}
+                <th className="sticky left-0 z-30 py-2.5 px-2 w-9 min-w-[36px] max-w-[36px] text-center bg-slate-950 border-r border-slate-800">
                   <input
                     type="checkbox"
                     checked={selectedRowIds.length === displayRows.length && displayRows.length > 0}
@@ -729,13 +733,13 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                   />
                 </th>
 
-                {/* 2. Row Number (#) (Fixed 40px, non-resizable) */}
-                <th className="py-2.5 px-1.5 w-10 min-w-[40px] max-w-[40px] text-center bg-slate-950 text-slate-400 font-mono">
+                {/* 2. Row Number (#) (Fixed 40px, Sticky left-36px) */}
+                <th className="sticky left-[36px] z-30 py-2.5 px-1.5 w-10 min-w-[40px] max-w-[40px] text-center bg-slate-950 text-slate-400 font-mono border-r border-slate-800">
                   #
                 </th>
 
-                {/* 3. Jacket Image (Fixed 52px, non-resizable) */}
-                <th className="py-2.5 px-2 w-14 min-w-[56px] max-w-[56px] text-center bg-slate-950">
+                {/* 3. Jacket Image (Fixed 56px, Sticky left-76px with shadow) */}
+                <th className="sticky left-[76px] z-30 py-2.5 px-2 w-14 min-w-[56px] max-w-[56px] text-center bg-slate-950 border-r-2 border-slate-700/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.6)]">
                   画像
                 </th>
 
@@ -804,8 +808,8 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                     <tr
                       className={`divide-x divide-slate-800/80 transition-colors ${rowBgClass}`}
                     >
-                      {/* Checkbox Cell */}
-                      <td className={`py-1.5 px-2 text-center transition-colors ${fixedCellBgClass}`}>
+                      {/* Checkbox Cell (Sticky left-0) */}
+                      <td className={`sticky left-0 z-10 py-1.5 px-2 text-center transition-colors ${fixedCellBgClass}`}>
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -814,8 +818,8 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                         />
                       </td>
 
-                      {/* Row Index & Dirty Dot */}
-                      <td className={`py-1.5 px-1.5 text-center font-mono text-[11px] relative transition-colors ${fixedCellBgClass}`}>
+                      {/* Row Index & Dirty Dot (Sticky left-36px) */}
+                      <td className={`sticky left-[36px] z-10 py-1.5 px-1.5 text-center font-mono text-[11px] relative transition-colors ${fixedCellBgClass}`}>
                         {isDirty && (
                           <span
                             className="absolute left-0.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/80 animate-pulse"
@@ -825,8 +829,8 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                         <span className={isSelected ? 'text-indigo-200 font-bold' : ''}>{rowIdx + 1}</span>
                       </td>
 
-                      {/* Jacket Thumbnail (Click to open CD detail modal) */}
-                      <td className="py-1 px-1 text-center">
+                      {/* Jacket Thumbnail (Sticky left-76px with right drop shadow) */}
+                      <td className={`sticky left-[76px] z-10 py-1 px-1 text-center transition-colors ${fixedCellBgClass} border-r-2 border-slate-800/90 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.6)]`}>
                         <div
                           onClick={() => onSelectCD && onSelectCD(row, gridRows)}
                           className="w-10 h-10 rounded-lg bg-slate-950 overflow-hidden mx-auto border border-slate-800 flex items-center justify-center relative group cursor-pointer hover:border-indigo-400 hover:scale-105 transition-all shadow-sm"

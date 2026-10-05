@@ -152,19 +152,28 @@ export async function getAllCDs(): Promise<CDMetadata[]> {
         const itemMap = new Map<string, CDMetadata>();
         // Add firestore items first
         firestoreItems.forEach((item) => itemMap.set(item.id, item));
-        // Merge local items if not in firestore yet, and push them to firestore
+
+        // Merge local items: if local is newer or has updated coverUrl, prefer localItem fields
         for (const localItem of localItems) {
-          if (!itemMap.has(localItem.id)) {
+          const existing = itemMap.get(localItem.id);
+          if (!existing) {
             itemMap.set(localItem.id, localItem);
-            // Sync to firestore in background
             saveFirestoreCD(localItem).catch((e) => console.warn('Sync to firestore error:', e));
           } else {
-            // If local item has a coverUrl and firestore doesn't, upgrade
-            const existing = itemMap.get(localItem.id)!;
-            if (!existing.coverUrl && localItem.coverUrl) {
-              existing.coverUrl = localItem.coverUrl;
-              itemMap.set(localItem.id, existing);
-              saveFirestoreCD(existing).catch(() => {});
+            const localTime = new Date(localItem.updatedAt || 0).getTime();
+            const firestoreTime = new Date(existing.updatedAt || 0).getTime();
+
+            // If local item is newer or equal, or if localItem has a coverUrl update, prefer localItem
+            if (localTime >= firestoreTime || (localItem.coverUrl && localItem.coverUrl !== existing.coverUrl)) {
+              const mergedItem: CDMetadata = {
+                ...existing,
+                ...localItem,
+                coverUrl: localItem.coverUrl || existing.coverUrl,
+              };
+              itemMap.set(localItem.id, mergedItem);
+              if (localTime > firestoreTime || localItem.coverUrl !== existing.coverUrl) {
+                saveFirestoreCD(mergedItem).catch(() => {});
+              }
             }
           }
         }
@@ -217,11 +226,15 @@ export function removeUndefinedFields<T>(obj: T): T {
 async function saveFirestoreCD(cd: CDMetadata): Promise<void> {
   const user = auth.currentUser;
   if (!user || !getCloudSyncEnabled()) return;
-  const normalized = normalizeCDRecord(cd);
-  const docRef = doc(firestoreDb, 'users', user.uid, 'cds', normalized.id);
-  // Clean undefined fields thoroughly for Firestore
-  const cleanData = removeUndefinedFields(normalized);
-  await setDoc(docRef, cleanData, { merge: true });
+  try {
+    const normalized = normalizeCDRecord(cd);
+    const docRef = doc(firestoreDb, 'users', user.uid, 'cds', normalized.id);
+    // Clean undefined fields thoroughly for Firestore
+    const cleanData = removeUndefinedFields(normalized);
+    await setDoc(docRef, cleanData, { merge: true });
+  } catch (err) {
+    console.warn('Failed to save document to Firestore:', err);
+  }
 }
 
 async function deleteFirestoreCD(id: string): Promise<void> {
