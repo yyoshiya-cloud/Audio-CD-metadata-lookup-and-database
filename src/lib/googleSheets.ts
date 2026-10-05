@@ -1,0 +1,996 @@
+import { CDMetadata, ExportColumnConfig, SpreadsheetInfo, APISource, TrackInfo } from '../types/cd';
+import { formatJSTDateTime, getJSTISOString, normalizeReleaseDate, normalizeCatalogNumber } from './dateUtils';
+
+export const DEFAULT_COLUMN_CONFIG: ExportColumnConfig[] = [
+  { key: 'catalogNumber', label: '型番（規格品番）', enabled: true },
+  { key: 'title', label: 'アルバム/CDタイトル', enabled: true },
+  { key: 'artist', label: '歌手/アーティスト', enabled: true },
+  { key: 'label', label: 'レーベル/発売元', enabled: true },
+  { key: 'releaseDate', label: '発売年月日', enabled: true },
+  { key: 'barcode', label: 'JAN/EANバーコード', enabled: true },
+  { key: 'country', label: '発売国/仕様', enabled: true },
+  { key: 'format', label: 'フォーマット', enabled: true },
+  { key: 'coverUrl', label: 'ジャケット画像URL', enabled: true },
+  { key: 'source', label: '取得データ元', enabled: true },
+  { key: 'notes', label: 'メモ', enabled: true },
+  { key: 'createdAt', label: '登録日時', enabled: true },
+];
+
+export const TRACKLIST_SHEET_NAME = '収録曲リスト';
+export const ALBUM_SHEET_NAME = 'CDアルバム一覧';
+
+export const TRACKLIST_HEADERS = [
+  '型番（規格品番）',
+  '曲順（トラック番号）',
+  '曲名（トラックタイトル）',
+  '演奏時間（分:秒）',
+  'アルバム名',
+  'アーティスト名',
+  'トラックアーティスト/演奏者',
+  '試聴URL',
+];
+
+const KNOWN_SPREADSHEETS_KEY = 'cd_catalog_known_spreadsheets_v1';
+
+export function getKnownSpreadsheets(): SpreadsheetInfo[] {
+  try {
+    const raw = localStorage.getItem(KNOWN_SPREADSHEETS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveKnownSpreadsheet(sheet: SpreadsheetInfo): void {
+  try {
+    const list = getKnownSpreadsheets();
+    const filtered = list.filter((s) => s.spreadsheetId !== sheet.spreadsheetId);
+    filtered.unshift(sheet);
+    localStorage.setItem(KNOWN_SPREADSHEETS_KEY, JSON.stringify(filtered.slice(0, 30)));
+  } catch (e) {
+    console.warn('Failed to save known spreadsheet:', e);
+  }
+}
+
+export function removeKnownSpreadsheet(spreadsheetId: string): void {
+  try {
+    const list = getKnownSpreadsheets();
+    const filtered = list.filter((s) => s.spreadsheetId !== spreadsheetId);
+    localStorage.setItem(KNOWN_SPREADSHEETS_KEY, JSON.stringify(filtered));
+  } catch (e) {
+    console.warn('Failed to remove known spreadsheet:', e);
+  }
+}
+
+/**
+ * Delete a spreadsheet from Google Drive (trash or permanent)
+ */
+export async function deleteSpreadsheetFromDrive(accessToken: string, spreadsheetId: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok && response.status !== 404) {
+    const errText = await response.text();
+    throw new Error(`Driveファイル削除エラー (${response.status}): ${errText}`);
+  }
+
+  removeKnownSpreadsheet(spreadsheetId);
+}
+
+/**
+ * List spreadsheets created by the user or in Google Drive
+ */
+export async function listUserSpreadsheets(accessToken: string): Promise<SpreadsheetInfo[]> {
+  const localSheets = getKnownSpreadsheets();
+  const map = new Map<string, SpreadsheetInfo>();
+  localSheets.forEach((s) => map.set(s.spreadsheetId, s));
+
+  try {
+    const query = encodeURIComponent("mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,webViewLink,modifiedTime,createdTime)&pageSize=50&orderBy=modifiedTime desc`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      (data.files || []).forEach((file: any) => {
+        const item: SpreadsheetInfo = {
+          spreadsheetId: file.id,
+          title: file.name,
+          spreadsheetUrl: file.webViewLink || `https://docs.google.com/spreadsheets/d/${file.id}/edit`,
+          sheets: [
+            { sheetId: 0, title: ALBUM_SHEET_NAME },
+            { sheetId: 1, title: TRACKLIST_SHEET_NAME },
+          ],
+          modifiedTime: file.modifiedTime,
+          createdTime: file.createdTime,
+        };
+        map.set(file.id, item);
+        saveKnownSpreadsheet(item);
+      });
+    } else {
+      console.warn(`Drive API query returned status ${response.status}`);
+    }
+  } catch (err) {
+    console.warn('Google Drive API listing fallback to known spreadsheets:', err);
+  }
+
+  const allSheets = Array.from(map.values());
+  allSheets.sort((a, b) => {
+    const timeA = a.modifiedTime ? new Date(a.modifiedTime).getTime() : 0;
+    const timeB = b.modifiedTime ? new Date(b.modifiedTime).getTime() : 0;
+    return timeB - timeA;
+  });
+
+  return allSheets;
+}
+
+/**
+ * Create a brand new Google Spreadsheet with 2 relational sheets:
+ * Sheet 1: "CDアルバム一覧" (Album Master)
+ * Sheet 2: "収録曲リスト" (Tracklist with Catalog Number Key)
+ */
+export async function createNewSpreadsheet(
+  accessToken: string,
+  title: string = `CDコレクションデータベース_${new Date().toISOString().slice(0, 10)}`
+): Promise<SpreadsheetInfo> {
+  try {
+    const response = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        properties: {
+          title,
+        },
+        sheets: [
+          {
+            properties: {
+              sheetId: 0,
+              title: ALBUM_SHEET_NAME,
+              gridProperties: {
+                frozenRowCount: 1,
+              },
+            },
+          },
+          {
+            properties: {
+              sheetId: 1,
+              title: TRACKLIST_SHEET_NAME,
+              gridProperties: {
+                frozenRowCount: 1,
+              },
+            },
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Google Sheets作成エラー (${response.status}): ${errText}`);
+    }
+
+    const data = await response.json();
+    const albumSheetId = data.sheets?.[0]?.properties?.sheetId || 0;
+    const trackSheetId = data.sheets?.[1]?.properties?.sheetId || 1;
+
+    // Format Header Row on both sheets
+    await formatSpreadsheetHeader(accessToken, data.spreadsheetId, albumSheetId, { red: 0.16, green: 0.20, blue: 0.35 });
+    await formatSpreadsheetHeader(accessToken, data.spreadsheetId, trackSheetId, { red: 0.10, green: 0.28, blue: 0.22 });
+
+    const createdInfo: SpreadsheetInfo = {
+      spreadsheetId: data.spreadsheetId,
+      title: data.properties.title,
+      spreadsheetUrl: data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit`,
+      sheets: [
+        { sheetId: albumSheetId, title: ALBUM_SHEET_NAME },
+        { sheetId: trackSheetId, title: TRACKLIST_SHEET_NAME },
+      ],
+    };
+
+    saveKnownSpreadsheet(createdInfo);
+    return createdInfo;
+  } catch (err) {
+    console.error('Error creating spreadsheet:', err);
+    throw err;
+  }
+}
+
+/**
+ * Add header styling to spreadsheet
+ */
+async function formatSpreadsheetHeader(
+  accessToken: string,
+  spreadsheetId: string,
+  sheetId: number,
+  bgColor: { red: number; green: number; blue: number } = { red: 0.18, green: 0.22, blue: 0.35 }
+) {
+  try {
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: 0,
+                endRowIndex: 1,
+              },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: bgColor,
+                  textFormat: {
+                    foregroundColor: { red: 1, green: 1, blue: 1 },
+                    bold: true,
+                    fontSize: 11,
+                  },
+                  horizontalAlignment: 'CENTER',
+                },
+              },
+              fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+            },
+          },
+          {
+            setBasicFilter: {
+              filter: {
+                range: {
+                  sheetId,
+                  startRowIndex: 0,
+                },
+              },
+            },
+          },
+        ],
+      }),
+    });
+  } catch (err) {
+    console.warn('Could not apply header formatting styling:', err);
+  }
+}
+
+const MAX_CELL_CHARACTERS = 45000;
+
+function sanitizeCellValue(val: any): any {
+  if (typeof val === 'string') {
+    if (val.length > MAX_CELL_CHARACTERS) {
+      return val.slice(0, MAX_CELL_CHARACTERS) + '... (※セル文字数制限50,000字のため省略)';
+    }
+  }
+  return val;
+}
+
+/**
+ * Upload a base64 data: URL image to Google Drive and return a viewable thumbnail URL
+ */
+export async function uploadBase64ImageToDrive(
+  accessToken: string,
+  dataUrl: string,
+  fileName: string
+): Promise<string> {
+  const matches = dataUrl.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+  if (!matches) throw new Error('Invalid data URL');
+  const mimeType = matches[1];
+  const base64Data = matches[2];
+
+  const byteCharacters = atob(base64Data);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: mimeType });
+
+  const metadata = {
+    name: fileName,
+    mimeType: mimeType,
+  };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', blob);
+
+  const response = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: form,
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Drive image upload failed (${response.status}): ${errText}`);
+  }
+
+  const file = await response.json();
+
+  // Make file publicly viewable so Google Sheets =IMAGE formula can load it
+  try {
+    await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}/permissions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        role: 'reader',
+        type: 'anyone',
+      }),
+    });
+  } catch (e) {
+    console.warn('Failed to set public permission on Drive image:', e);
+  }
+
+  return `https://drive.google.com/thumbnail?id=${file.id}&sz=w800`;
+}
+
+/**
+ * Format CD metadata item into export row based on column config for Album Master Sheet
+ */
+export function formatCDToRowValues(cd: CDMetadata, columns: ExportColumnConfig[]): any[] {
+  const activeCols = columns.filter((c) => c.enabled);
+
+  return activeCols.map((col) => {
+    let cellValue: any = '';
+
+    if (col.key === 'trackListText') {
+      if (!cd.tracks || cd.tracks.length === 0) {
+        cellValue = '0曲';
+      } else {
+        cellValue = `${cd.tracks.length}曲（詳細は「収録曲リスト」シート参照）`;
+      }
+    } else if (col.key === 'source') {
+      const sourceNames: Record<string, string> = {
+        musicbrainz: 'MusicBrainz',
+        discogs: 'Discogs',
+        itunes: 'iTunes Search',
+        ndl: '国立国会図書館(NDL)',
+        spotify: 'Spotify',
+        rakuten: '楽天ブックス',
+        gemini: 'AI OCR (Gemini)',
+      };
+      cellValue = sourceNames[cd.source] || cd.source;
+    } else if (col.key === 'coverUrl') {
+      if (!cd.coverUrl) {
+        cellValue = '';
+      } else if (cd.coverUrl.startsWith('data:')) {
+        cellValue = '[添付画像あり(端末ローカル)]';
+      } else {
+        // Use IFERROR + IMAGE formula
+        cellValue = `=IFERROR(IMAGE("${cd.coverUrl}"), "${cd.coverUrl}")`;
+      }
+    } else if (col.key === 'createdAt' || col.key === 'updatedAt') {
+      const val = cd[col.key as 'createdAt' | 'updatedAt'];
+      cellValue = val ? formatJSTDateTime(val) : '';
+    } else if (col.key === 'catalogNumber') {
+      cellValue = normalizeCatalogNumber(cd.catalogNumber);
+    } else if (col.key === 'releaseDate') {
+      cellValue = normalizeReleaseDate(cd.releaseDate);
+    } else {
+      const val = cd[col.key as keyof CDMetadata];
+      if (Array.isArray(val)) {
+        cellValue = val.join(', ');
+      } else {
+        cellValue = val !== undefined && val !== null ? String(val) : '';
+      }
+    }
+
+    return sanitizeCellValue(cellValue);
+  });
+}
+
+/**
+ * Format Track item into row values for the separate "収録曲リスト" sheet
+ * Columns: [型番, 曲順, 曲名, 演奏時間, アルバム名, アーティスト名, トラックアーティスト, 試聴URL]
+ */
+export function formatTrackToRowValues(cd: CDMetadata, track: TrackInfo): any[] {
+  const catalogKey = normalizeCatalogNumber(cd.catalogNumber) || cd.title;
+  return [
+    sanitizeCellValue(catalogKey),
+    track.trackNumber,
+    sanitizeCellValue(track.title || ''),
+    sanitizeCellValue(track.duration || ''),
+    sanitizeCellValue(cd.title || ''),
+    sanitizeCellValue(cd.artist || ''),
+    sanitizeCellValue(track.artist || ''),
+    sanitizeCellValue(track.previewUrl || ''),
+  ];
+}
+
+/**
+ * Format a sheet name and cell range into a safe Google Sheets A1 range string
+ */
+export function formatA1Range(sheetName: string, cellRange: string): string {
+  const cleanSheetName = (sheetName || '').trim() || ALBUM_SHEET_NAME;
+  const escaped = cleanSheetName.replace(/'/g, "''");
+  return `'${escaped}'!${cellRange}`;
+}
+
+/**
+ * Ensure a sheet tab with given title exists in the target spreadsheet.
+ * If it doesn't exist, create it with addSheet batchUpdate or resolve to a valid existing sheet tab.
+ * Returns the resolved exact sheet title.
+ */
+export async function ensureSheetExists(
+  accessToken: string,
+  spreadsheetId: string,
+  preferredSheetName: string,
+  isMasterAlbumSheet: boolean = false
+): Promise<string> {
+  const cleanPreferred = (preferredSheetName || '').trim() || (isMasterAlbumSheet ? ALBUM_SHEET_NAME : TRACKLIST_SHEET_NAME);
+
+  try {
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!metaRes.ok) {
+      console.warn(`Could not fetch spreadsheet metadata (${metaRes.status})`);
+      return cleanPreferred;
+    }
+
+    const meta = await metaRes.json();
+    const sheets = meta.sheets || [];
+    const titles: string[] = sheets.map((s: any) => s.properties?.title).filter(Boolean);
+
+    // 1. Exact match
+    const exact = titles.find((t) => t === cleanPreferred);
+    if (exact) return exact;
+
+    // 2. Case-insensitive or trimmed match
+    const close = titles.find((t) => t.toLowerCase() === cleanPreferred.toLowerCase());
+    if (close) return close;
+
+    // 3. If master album sheet, check common aliases or standard first sheet
+    if (isMasterAlbumSheet) {
+      const albumMatch = titles.find((t) =>
+        ['cdアルバム一覧', 'cdデータベース', 'アルバム一覧', 'cdカタログ', 'アルバム', 'sheet1', 'シート1'].includes(t.toLowerCase())
+      );
+      if (albumMatch) return albumMatch;
+
+      // If there's only 1 sheet in the spreadsheet (e.g. newly created blank Google Sheet), use its name
+      if (titles.length === 1) {
+        return titles[0];
+      }
+    } else {
+      // If tracklist sheet, check track-related titles
+      const trackMatch = titles.find((t) =>
+        ['収録曲リスト', '収録曲一覧', 'トラック一覧', 'tracklist', 'tracks'].includes(t.toLowerCase())
+      );
+      if (trackMatch) return trackMatch;
+    }
+
+    // 4. If sheet really doesn't exist, create it via batchUpdate addSheet
+    const addRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: cleanPreferred,
+                gridProperties: {
+                  frozenRowCount: 1,
+                },
+              },
+            },
+          },
+        ],
+      }),
+    });
+
+    if (addRes.ok) {
+      const addData = await addRes.json();
+      const newSheetId = addData.replies?.[0]?.addSheet?.properties?.sheetId;
+      if (typeof newSheetId === 'number') {
+        const headerBg = isMasterAlbumSheet
+          ? { red: 0.16, green: 0.20, blue: 0.35 }
+          : { red: 0.10, green: 0.28, blue: 0.22 };
+        await formatSpreadsheetHeader(accessToken, spreadsheetId, newSheetId, headerBg);
+      }
+      return cleanPreferred;
+    } else {
+      console.warn('addSheet request failed, falling back to existing sheet');
+      if (titles.length > 0) return titles[0];
+    }
+  } catch (err) {
+    console.warn('Error in ensureSheetExists:', err);
+  }
+
+  return cleanPreferred;
+}
+
+/**
+ * Append or Sync CD records to a Google Spreadsheet with 2 Relational Sheets:
+ * - Sheet 1: CDアルバム一覧 (Albums Master)
+ * - Sheet 2: 収録曲リスト (Tracks linked by Catalog Number)
+ */
+export async function exportCDsToSpreadsheet(
+  accessToken: string,
+  spreadsheetId: string,
+  sheetName: string = ALBUM_SHEET_NAME,
+  items: CDMetadata[],
+  columns: ExportColumnConfig[] = DEFAULT_COLUMN_CONFIG
+): Promise<{ addedCount: number; totalTracksAdded: number; spreadsheetUrl: string }> {
+  if (items.length === 0) {
+    return { addedCount: 0, totalTracksAdded: 0, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit` };
+  }
+
+  const activeCols = columns.filter((c) => c.enabled);
+  const headerRow = activeCols.map((c) => c.label);
+
+  // Pre-process items: if any has a base64 coverUrl, upload it to Google Drive to obtain a real image URL
+  const processedItems: CDMetadata[] = [];
+  for (const cd of items) {
+    if (cd.coverUrl && cd.coverUrl.startsWith('data:image/')) {
+      try {
+        const driveUrl = await uploadBase64ImageToDrive(
+          accessToken,
+          cd.coverUrl,
+          `CD_Cover_${normalizeCatalogNumber(cd.catalogNumber) || cd.id || Date.now()}.jpg`
+        );
+        processedItems.push({ ...cd, coverUrl: driveUrl });
+      } catch (err) {
+        console.warn('Could not upload base64 to Drive, using fallback label:', err);
+        processedItems.push(cd);
+      }
+    } else {
+      processedItems.push(cd);
+    }
+  }
+
+  // 1. EXPORT SHEET 1: ALBUM MASTER
+  // Ensure the target album master sheet exists (resolves actual sheet name or creates it)
+  const resolvedAlbumSheet = await ensureSheetExists(accessToken, spreadsheetId, sheetName, true);
+
+  const checkAlbumRangeStr = formatA1Range(resolvedAlbumSheet, 'A1:Z1');
+  const checkRangeResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(checkAlbumRangeStr)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  let needAlbumHeader = true;
+  if (checkRangeResponse.ok) {
+    const checkData = await checkRangeResponse.json();
+    if (checkData.values && checkData.values.length > 0 && checkData.values[0].length > 0) {
+      needAlbumHeader = false;
+    }
+  }
+
+  const albumRowsToAppend: any[][] = [];
+  if (needAlbumHeader) {
+    albumRowsToAppend.push(headerRow);
+  }
+
+  processedItems.forEach((cd) => {
+    albumRowsToAppend.push(formatCDToRowValues(cd, columns));
+  });
+
+  const albumTargetRange = formatA1Range(resolvedAlbumSheet, 'A1');
+  const appendAlbumRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(albumTargetRange)}:append?valueInputOption=USER_ENTERED`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        values: albumRowsToAppend,
+      }),
+    }
+  );
+
+  if (!appendAlbumRes.ok) {
+    const errText = await appendAlbumRes.text();
+    throw new Error(`アルバムシート書き込みエラー (${appendAlbumRes.status}): ${errText}`);
+  }
+
+  // 2. EXPORT SHEET 2: TRACKLIST (収録曲リスト keyed by Catalog Number)
+  let totalTracksAdded = 0;
+  try {
+    // Ensure "収録曲リスト" sheet exists
+    const resolvedTrackSheet = await ensureSheetExists(accessToken, spreadsheetId, TRACKLIST_SHEET_NAME, false);
+
+    // Check if "収録曲リスト" already has header row
+    const checkTrackRangeStr = formatA1Range(resolvedTrackSheet, 'A1:Z1');
+    const checkTrackRangeRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(checkTrackRangeStr)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    let needTrackHeader = true;
+    if (checkTrackRangeRes.ok) {
+      const trackData = await checkTrackRangeRes.json();
+      if (trackData.values && trackData.values.length > 0 && trackData.values[0].length > 0) {
+        needTrackHeader = false;
+      }
+    }
+
+    const trackRowsToAppend: any[][] = [];
+    if (needTrackHeader) {
+      trackRowsToAppend.push(TRACKLIST_HEADERS);
+    }
+
+    for (const cd of processedItems) {
+      if (cd.tracks && cd.tracks.length > 0) {
+        for (const tr of cd.tracks) {
+          trackRowsToAppend.push(formatTrackToRowValues(cd, tr));
+          totalTracksAdded++;
+        }
+      }
+    }
+
+    if (trackRowsToAppend.length > 0) {
+      const trackTargetRange = formatA1Range(resolvedTrackSheet, 'A1');
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(trackTargetRange)}:append?valueInputOption=USER_ENTERED`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            values: trackRowsToAppend,
+          }),
+        }
+      );
+    }
+  } catch (trackErr) {
+    console.warn('Warning exporting tracks to separate sheet:', trackErr);
+  }
+
+  return {
+    addedCount: items.length,
+    totalTracksAdded,
+    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+  };
+}
+
+/**
+ * Extract spreadsheet ID from full URL or return ID as-is
+ */
+export function extractSpreadsheetId(input: string): string {
+  const trimmed = input.trim();
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match) return match[1];
+  return trimmed;
+}
+
+/**
+ * Read raw values from a Google Spreadsheet (reads both Album Master and Tracklist sheets if present)
+ */
+export async function readSpreadsheetValues(
+  accessToken: string,
+  spreadsheetIdOrUrl: string,
+  sheetName?: string
+): Promise<{
+  headers: string[];
+  rows: any[][];
+  trackHeaders?: string[];
+  trackRows?: any[][];
+  spreadsheetTitle: string;
+  sheetTitle: string;
+  hasTracklistSheet: boolean;
+}> {
+  const spreadsheetId = extractSpreadsheetId(spreadsheetIdOrUrl);
+  if (!spreadsheetId) {
+    throw new Error('スプレッドシートIDまたはURLを入力してください。');
+  }
+
+  // Inspect spreadsheet metadata to get sheet names
+  let targetSheetName = sheetName?.trim();
+  let spreadsheetTitle = 'スプレッドシート';
+  let availableSheets: string[] = [];
+
+  try {
+    const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title,sheets.properties.title`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (metaRes.ok) {
+      const meta = await metaRes.json();
+      spreadsheetTitle = meta.properties?.title || 'スプレッドシート';
+      availableSheets = (meta.sheets || []).map((s: any) => s.properties?.title || '');
+      if (!targetSheetName) {
+        // Look for ALBUM_SHEET_NAME, "CDデータベース", or default first sheet
+        targetSheetName =
+          availableSheets.find((name) => name === ALBUM_SHEET_NAME || name === 'CDデータベース' || name.includes('アルバム')) ||
+          availableSheets[0] ||
+          'Sheet1';
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to fetch spreadsheet metadata:', e);
+  }
+
+  // 1. Read Album Master Sheet
+  const range = targetSheetName ? formatA1Range(targetSheetName, 'A1:Z5000') : 'A1:Z5000';
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`スプレッドシート読み込みエラー (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const values = data.values || [];
+  const headers = (values[0] || []).map((h: any) => String(h || '').trim());
+  const rows = values.slice(1);
+
+  // 2. Read "収録曲リスト" Sheet if present
+  let trackHeaders: string[] | undefined = undefined;
+  let trackRows: any[][] | undefined = undefined;
+  const trackSheetName = availableSheets.find((n) => n === TRACKLIST_SHEET_NAME || n.includes('収録曲') || n.includes('トラック'));
+
+  if (trackSheetName && trackSheetName !== targetSheetName) {
+    try {
+      const trackRange = formatA1Range(trackSheetName, 'A1:Z10000');
+      const trackRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(trackRange)}?valueRenderOption=FORMATTED_VALUE`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (trackRes.ok) {
+        const trackData = await trackRes.json();
+        const tValues = trackData.values || [];
+        if (tValues.length > 0) {
+          trackHeaders = (tValues[0] || []).map((h: any) => String(h || '').trim());
+          trackRows = tValues.slice(1);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read tracklist sheet:', e);
+    }
+  }
+
+  saveKnownSpreadsheet({
+    spreadsheetId,
+    title: spreadsheetTitle,
+    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+    sheets: [
+      { sheetId: 0, title: targetSheetName || 'CDアルバム一覧' },
+      { sheetId: 1, title: TRACKLIST_SHEET_NAME },
+    ],
+  });
+
+  return {
+    headers,
+    rows,
+    trackHeaders,
+    trackRows,
+    spreadsheetTitle,
+    sheetTitle: targetSheetName || 'CDアルバム一覧',
+    hasTracklistSheet: Boolean(trackRows && trackRows.length > 0),
+  };
+}
+
+/**
+ * Parse rows into CDMetadata objects based on detected headers,
+ * joining tracks from the relational "収録曲リスト" sheet by Catalog Number
+ */
+export function parseSpreadsheetRowsToCDs(
+  headers: string[],
+  rows: any[][],
+  trackHeaders?: string[],
+  trackRows?: any[][]
+): CDMetadata[] {
+  const headerMap: Record<string, number> = {};
+  headers.forEach((h, idx) => {
+    const clean = String(h || '').trim().toLowerCase();
+    headerMap[clean] = idx;
+  });
+
+  const findColIndex = (...candidates: string[]): number => {
+    for (const c of candidates) {
+      const lower = c.toLowerCase();
+      for (const [h, idx] of Object.entries(headerMap)) {
+        if (h === lower || h.includes(lower) || lower.includes(h)) {
+          return idx;
+        }
+      }
+    }
+    return -1;
+  };
+
+  const catIdx = findColIndex('型番', '規格品番', 'catalog', 'catno');
+  const titleIdx = findColIndex('アルバム/cdタイトル', 'cdタイトル', 'アルバム', 'タイトル', 'title', 'album');
+  const artistIdx = findColIndex('歌手/アーティスト', '歌手', 'アーティスト', 'artist', 'creator');
+  const labelIdx = findColIndex('レーベル/発売元', 'レーベル', '発売元', 'label', 'publisher');
+  const releaseIdx = findColIndex('発売年月日', '発売日', 'releasedate', 'release', 'date');
+  const barcodeIdx = findColIndex('jan/eanバーコード', 'バーコード', 'jan', 'ean', 'barcode');
+  const countryIdx = findColIndex('発売国/仕様', '発売国', '国', '仕様', 'country');
+  const formatIdx = findColIndex('フォーマット', 'format');
+  const trackIdx = findColIndex('トラックリスト（収録曲）', 'トラックリスト', 'トラック', '収録曲', 'track', '曲目');
+  const coverIdx = findColIndex('ジャケット画像url', 'ジャケット', '画像', 'cover', 'image');
+  const sourceIdx = findColIndex('取得データ元', 'データ元', 'source');
+  const notesIdx = findColIndex('メモ', 'notes', 'memo');
+  const createdAtIdx = findColIndex('登録日時', 'createdat', 'created');
+
+  // Parse relational Tracklist Sheet if provided
+  // Key: normalized catalogNumber or lowercase albumTitle -> TrackInfo[]
+  const tracksByCatNo = new Map<string, TrackInfo[]>();
+
+  if (trackHeaders && trackRows && trackRows.length > 0) {
+    const tHeaderMap: Record<string, number> = {};
+    trackHeaders.forEach((h, idx) => {
+      tHeaderMap[String(h || '').trim().toLowerCase()] = idx;
+    });
+
+    const findTrackColIndex = (...candidates: string[]): number => {
+      for (const c of candidates) {
+        const lower = c.toLowerCase();
+        for (const [h, idx] of Object.entries(tHeaderMap)) {
+          if (h === lower || h.includes(lower) || lower.includes(h)) {
+            return idx;
+          }
+        }
+      }
+      return -1;
+    };
+
+    const tCatIdx = findTrackColIndex('型番', '規格品番', 'catalog', 'catno');
+    const tNumIdx = findTrackColIndex('曲順', 'トラック番号', 'トラック', 'track');
+    const tTitleIdx = findTrackColIndex('曲名', 'トラックタイトル', 'タイトル', 'title');
+    const tDurationIdx = findTrackColIndex('演奏時間', '再生時間', '時間', 'duration', 'time');
+    const tAlbumIdx = findTrackColIndex('アルバム名', 'アルバム', 'album');
+    const tArtistIdx = findTrackColIndex('トラックアーティスト', 'アーティスト', 'artist');
+    const tPreviewIdx = findTrackColIndex('試聴url', 'preview', 'url');
+
+    trackRows.forEach((trRow) => {
+      if (!trRow || trRow.length === 0) return;
+      const getTVal = (idx: number) => (idx >= 0 && idx < trRow.length ? String(trRow[idx] || '').trim() : '');
+
+      const catNo = normalizeCatalogNumber(getTVal(tCatIdx));
+      const albumName = getTVal(tAlbumIdx).toLowerCase();
+      const trackTitle = getTVal(tTitleIdx);
+      if (!trackTitle && !getTVal(tNumIdx)) return;
+
+      const trackNum = parseInt(getTVal(tNumIdx), 10) || 1;
+      const duration = getTVal(tDurationIdx);
+      const artist = getTVal(tArtistIdx);
+      const previewUrl = getTVal(tPreviewIdx);
+
+      const trackObj: TrackInfo = {
+        trackNumber: trackNum,
+        title: trackTitle || `Track ${trackNum}`,
+        duration: duration || undefined,
+        artist: artist || undefined,
+        previewUrl: previewUrl || undefined,
+      };
+
+      const groupKey = catNo || albumName;
+      if (groupKey) {
+        const list = tracksByCatNo.get(groupKey) || [];
+        list.push(trackObj);
+        tracksByCatNo.set(groupKey, list);
+      }
+    });
+
+    // Sort tracks by trackNumber for each album
+    tracksByCatNo.forEach((list) => {
+      list.sort((a, b) => a.trackNumber - b.trackNumber);
+    });
+  }
+
+  const result: CDMetadata[] = [];
+
+  rows.forEach((row, rowIdx) => {
+    if (!row || row.length === 0) return;
+
+    const getVal = (colIdx: number) => {
+      if (colIdx < 0 || colIdx >= row.length) return '';
+      return String(row[colIdx] || '').trim();
+    };
+
+    const title = getVal(titleIdx);
+    const rawCatalog = getVal(catIdx);
+    const catalogNumber = normalizeCatalogNumber(rawCatalog);
+    const artist = getVal(artistIdx);
+    const rawReleaseDate = getVal(releaseIdx);
+    const releaseDate = normalizeReleaseDate(rawReleaseDate);
+
+    // Skip row if it doesn't have title and doesn't have catalogNumber
+    if (!title && !catalogNumber) return;
+
+    const rawCover = getVal(coverIdx);
+    // Extract image URL from =IFERROR(IMAGE("..."), "..."), =IMAGE("..."), or direct URL
+    let coverUrl: string | undefined = undefined;
+    if (rawCover) {
+      const urlMatch = rawCover.match(/https?:\/\/[^\s"',)]+/);
+      if (urlMatch) {
+        coverUrl = urlMatch[0];
+      } else if (rawCover.startsWith('data:image/')) {
+        coverUrl = rawCover;
+      }
+    }
+
+    // Attach tracks:
+    // Priority 1: From relational "収録曲リスト" sheet keyed by catalogNumber or title
+    let tracks: TrackInfo[] = [];
+    if (catalogNumber && tracksByCatNo.has(catalogNumber)) {
+      tracks = tracksByCatNo.get(catalogNumber) || [];
+    } else if (title && tracksByCatNo.has(title.toLowerCase())) {
+      tracks = tracksByCatNo.get(title.toLowerCase()) || [];
+    } else {
+      // Priority 2: Fallback to inline track column if present
+      const rawTracks = getVal(trackIdx);
+      if (rawTracks && rawTracks !== 'なし' && !rawTracks.includes('詳細は「収録曲リスト」')) {
+        const trackLines = rawTracks.split('\n').map((l) => l.trim()).filter(Boolean);
+        trackLines.forEach((line, tIdx) => {
+          const cleaned = line.replace(/^\d+[\.\:\s]+/, '');
+          const parts = cleaned.split(' - ');
+          tracks.push({
+            trackNumber: tIdx + 1,
+            title: parts[0] || line,
+            artist: parts[1] || artist || '',
+          });
+        });
+      }
+    }
+
+    const rawSource = getVal(sourceIdx).toLowerCase();
+    const validSource: APISource = 
+      rawSource.includes('musicbrainz') ? 'musicbrainz' :
+      rawSource.includes('discogs') ? 'discogs' :
+      rawSource.includes('itunes') ? 'itunes' :
+      rawSource.includes('spotify') ? 'spotify' :
+      rawSource.includes('rakuten') ? 'rakuten' :
+      rawSource.includes('gemini') ? 'gemini' : 'ndl';
+
+    const cd: CDMetadata = {
+      id: `sheet_${Date.now()}_${rowIdx}_${Math.random().toString(36).slice(2, 7)}`,
+      title: title || '名称未設定',
+      artist: artist || '不明なアーティスト',
+      catalogNumber: catalogNumber || '',
+      label: getVal(labelIdx) || undefined,
+      releaseDate: releaseDate || undefined,
+      barcode: getVal(barcodeIdx) || undefined,
+      country: getVal(countryIdx) || undefined,
+      format: getVal(formatIdx) || undefined,
+      coverUrl: coverUrl || undefined,
+      tracks,
+      source: validSource,
+      notes: getVal(notesIdx) || undefined,
+      createdAt: getVal(createdAtIdx) || getJSTISOString(),
+      updatedAt: getJSTISOString(),
+      syncedToSheets: true,
+    };
+
+    result.push(cd);
+  });
+
+  return result;
+}
