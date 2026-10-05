@@ -781,37 +781,48 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                 const isExpanded = expandedTracksRowId === row.id;
                 const trackCount = row.tracks ? row.tracks.length : 0;
                 const tagsStr = (row.tags || []).join(', ');
+                const isEven = rowIdx % 2 === 0;
+
+                const rowBgClass = isSelected
+                  ? 'bg-indigo-900/80 hover:bg-indigo-900/95 border-y-2 border-indigo-500/80 shadow-[inset_0_0_12px_rgba(99,102,241,0.25)] text-indigo-100 font-medium'
+                  : isDirty
+                  ? 'bg-emerald-950/60 hover:bg-emerald-900/60 border-y border-emerald-500/50'
+                  : isEven
+                  ? 'bg-slate-900/90 hover:bg-slate-800/80'
+                  : 'bg-slate-950/95 hover:bg-slate-800/80';
+
+                const fixedCellBgClass = isSelected
+                  ? 'bg-indigo-900/90 text-indigo-200'
+                  : isDirty
+                  ? 'bg-emerald-950/80 text-emerald-300'
+                  : isEven
+                  ? 'bg-slate-900/90 text-slate-400'
+                  : 'bg-slate-950/95 text-slate-400';
 
                 return (
                   <React.Fragment key={row.id}>
                     <tr
-                      className={`divide-x divide-slate-800/80 transition-colors ${
-                        isSelected
-                          ? 'bg-indigo-950/40 hover:bg-indigo-950/50'
-                          : isDirty
-                          ? 'bg-emerald-950/20 hover:bg-emerald-950/30'
-                          : 'hover:bg-slate-800/50'
-                      }`}
+                      className={`divide-x divide-slate-800/80 transition-colors ${rowBgClass}`}
                     >
                       {/* Checkbox Cell */}
-                      <td className="py-1.5 px-2 text-center bg-slate-950/40">
+                      <td className={`py-1.5 px-2 text-center transition-colors ${fixedCellBgClass}`}>
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleSelectRow(row.id)}
-                          className="rounded border-slate-700 text-emerald-600 focus:ring-0 cursor-pointer"
+                          className="rounded border-slate-700 text-indigo-500 focus:ring-0 cursor-pointer"
                         />
                       </td>
 
                       {/* Row Index & Dirty Dot */}
-                      <td className="py-1.5 px-1.5 text-center text-slate-500 font-mono text-[11px] bg-slate-950/40 relative">
+                      <td className={`py-1.5 px-1.5 text-center font-mono text-[11px] relative transition-colors ${fixedCellBgClass}`}>
                         {isDirty && (
                           <span
-                            className="absolute left-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-emerald-400"
+                            className="absolute left-0.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/80 animate-pulse"
                             title="未保存の編集あり"
                           />
                         )}
-                        <span>{rowIdx + 1}</span>
+                        <span className={isSelected ? 'text-indigo-200 font-bold' : ''}>{rowIdx + 1}</span>
                       </td>
 
                       {/* Jacket Thumbnail (Click to open CD detail modal) */}

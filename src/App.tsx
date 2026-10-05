@@ -107,7 +107,8 @@ export default function App() {
           setAccessToken(null);
           clearApiCredentialsLocal();
           setApiCredentials({});
-          loadLocalLibrary();
+          await clearLocalDB();
+          setSavedCDs([]);
         }
       );
 
@@ -142,7 +143,12 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      showToast(`ログインに失敗しました: ${err.message || ''}`);
+      if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
+        showToast('ログイン不可: ドメインが未承認です。アプリ情報ヘルプの解決手順をご確認ください。');
+        setIsAppInfoOpen(true);
+      } else {
+        showToast(`ログインに失敗しました: ${err.message || ''}`);
+      }
     }
     return null;
   };
@@ -153,7 +159,9 @@ export default function App() {
     setAccessToken(null);
     clearApiCredentialsLocal();
     setApiCredentials({});
-    showToast('ログアウトしました。APIキー設定をクリアしました。');
+    await clearLocalDB();
+    setSavedCDs([]);
+    showToast('ログアウトしました。APIキー設定および登録済みライブラリをクリアしました。');
   };
 
   const handleSaveApiCredentials = async (updated: APICredentials) => {

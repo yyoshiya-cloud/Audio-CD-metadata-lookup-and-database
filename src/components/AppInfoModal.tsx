@@ -109,6 +109,40 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({ onClose }) => {
 
           </div>
 
+          {/* Render / External Deploy Google Login Help Section */}
+          <div className="bg-indigo-950/70 border border-indigo-500/40 p-4 rounded-xl space-y-2.5 shadow-inner">
+            <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <span>【ヘルプ】Googleログインエラー (auth/unauthorized-domain) 解決手順</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Googleログイン時に「<code className="bg-slate-800 text-rose-300 px-1 py-0.5 rounded font-mono">Firebase: Error (auth/unauthorized-domain)</code>」が発生する場合は、Firebase Console側で該当ドメインのアクセス承認が必要です
+            </p>
+            <ol className="list-decimal list-inside text-[11px] text-slate-300 space-y-1 pl-1">
+              <li>
+                <a
+                  href="https://console.firebase.google.com/project/jumping-impact-cjf39/authentication/settings"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-indigo-400 underline hover:text-indigo-300 inline-flex items-center gap-1 font-semibold"
+                >
+                  <span>Firebase Console 認証設定</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                を開きます。
+              </li>
+              <li>
+                <strong>「Settings (設定)」</strong> タブ ➔ 下部の <strong>「Authorized domains (承認済みドメイン)」</strong> を開きます。
+              </li>
+              <li>
+                <strong>「Add domain (ドメインを追加)」</strong> を押し、<code className="bg-slate-800 text-emerald-300 px-1 py-0.5 rounded font-mono select-all">audio-cd-metadata-lookup-and-database.onrender.com</code> を追加・保存します。
+              </li>
+            </ol>
+            <p className="text-[10px] text-slate-400 italic">
+              ※ <code className="font-mono">https://</code> や末尾の <code className="font-mono">/</code> は含めずホスト名のみ入力して保存すると、数秒～1分ほどで反映されログイン可能になります。
+            </p>
+          </div>
+
           <div className="bg-indigo-950/50 border border-indigo-500/30 p-3 rounded-xl text-xs text-indigo-200 flex items-center justify-between flex-wrap gap-2">
             <span className="flex items-center gap-1.5 font-medium">
               <Code2 className="w-4 h-4 text-indigo-400 flex-shrink-0" />
