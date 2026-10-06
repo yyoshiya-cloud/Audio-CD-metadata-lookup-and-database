@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { CDMetadata, TrackInfo, APISource } from '../types/cd';
 import { getJSTISOString, normalizeCatalogNumber, normalizeReleaseDate } from '../lib/dateUtils';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
-import { X, Save, FileSpreadsheet, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2 } from 'lucide-react';
+import { enhanceImageWithCanvas } from '../utils/imageEnhancer';
+import { X, Save, FileSpreadsheet, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2 } from 'lucide-react';
 
 interface CDDetailModalProps {
   cd: CDMetadata | null;
@@ -44,6 +45,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [activeTab, setActiveTab] = useState<'edit' | 'tracks' | 'sourceComparison'>('edit');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [isSavedState, setIsSavedState] = useState(false);
+  const [isUpscaling, setIsUpscaling] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -197,6 +199,56 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       }
     } catch (err) {
       console.error('Image compression error:', err);
+    }
+  };
+
+  const handleUpscaleJacketInModal = async () => {
+    if (!coverUrl) {
+      setSaveSuccessMessage('アップスケーリング対象の画像URLがありません');
+      return;
+    }
+
+    setIsUpscaling(true);
+    try {
+      const res = await fetch('/api/upscale-jacket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: coverUrl,
+          title,
+          artist,
+          catalogNumber,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (data.enhancedImageBase64) {
+        setCoverUrl(data.enhancedImageBase64);
+        setSaveSuccessMessage('Gemini AIでジャケット画像を1K高画質化しました！「変更内容を保存」を押して保存してください。');
+        setTimeout(() => setSaveSuccessMessage(null), 4500);
+      } else if (data.isQuotaError || data.error) {
+        // Fallback to high-res canvas sharpening
+        const canvasEnhanced = await enhanceImageWithCanvas(coverUrl, 1000);
+        setCoverUrl(canvasEnhanced);
+        setSaveSuccessMessage('超解像キャンバスフィルターで1K高画質化を完了しました！「変更内容を保存」を押して保存してください。');
+        setTimeout(() => setSaveSuccessMessage(null), 5000);
+      } else {
+        throw new Error('高画質化処理に失敗しました');
+      }
+    } catch (err: any) {
+      console.error('Upscale error:', err);
+      try {
+        const canvasEnhanced = await enhanceImageWithCanvas(coverUrl, 1000);
+        setCoverUrl(canvasEnhanced);
+        setSaveSuccessMessage('キャンバス高画質化フィルターで1K超解像処理を適用しました。「変更内容を保存」を押してください。');
+        setTimeout(() => setSaveSuccessMessage(null), 4500);
+      } catch {
+        setSaveSuccessMessage('画像高画質化処理に失敗しました。直接画像を再アップロードしてください。');
+        setTimeout(() => setSaveSuccessMessage(null), 4500);
+      }
+    } finally {
+      setIsUpscaling(false);
     }
   };
 
@@ -503,14 +555,33 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
               </div>
 
               {/* Action under image */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="text-[11px] text-slate-400 hover:text-indigo-300 py-0.5 text-center flex items-center justify-center gap-1 transition-colors"
-              >
-                <Upload className="w-3 h-3" />
-                <span>画像を変更・登録</span>
-              </button>
+              <div className="flex flex-col gap-1 w-full">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-[11px] text-slate-400 hover:text-indigo-300 py-0.5 text-center flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>画像を変更・登録</span>
+                </button>
+
+                {coverUrl && (
+                  <button
+                    type="button"
+                    onClick={handleUpscaleJacketInModal}
+                    disabled={isUpscaling}
+                    className="text-[11px] text-purple-300 hover:text-purple-200 bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 rounded-lg py-1 text-center flex items-center justify-center gap-1 transition-all cursor-pointer font-semibold shadow-sm"
+                    title="Gemini AIで低画質ジャケット画像を1K高画質化・ノイズ除去"
+                  >
+                    {isUpscaling ? (
+                      <Loader2 className="w-3 h-3 animate-spin text-purple-300" />
+                    ) : (
+                      <Sparkles className="w-3 h-3 text-purple-300" />
+                    )}
+                    <span>{isUpscaling ? 'AI高画質化中...' : '✨ AI高画質化'}</span>
+                  </button>
+                )}
+              </div>
 
               <input
                 type="file"

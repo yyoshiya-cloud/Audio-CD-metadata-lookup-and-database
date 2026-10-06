@@ -17,6 +17,7 @@ import { AITaggingModal } from './components/AITaggingModal';
 import { AppInfoModal } from './components/AppInfoModal';
 import { DashboardView } from './components/DashboardView';
 import { DuplicateCheckView } from './components/DuplicateCheckView';
+import { JacketGalleryView } from './components/JacketGalleryView';
 import { Disc, Sparkles, Database, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function App() {
@@ -37,7 +38,7 @@ export default function App() {
   const [savedCDs, setSavedCDs] = useState<CDMetadata[]>([]);
   
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'search' | 'database' | 'dashboard' | 'duplicates'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'database' | 'gallery' | 'dashboard' | 'duplicates'>('search');
   const [librarySearchFilter, setLibrarySearchFilter] = useState<string>('');
 
   // Duplicate groups calculation
@@ -484,7 +485,21 @@ export default function App() {
           />
         )}
 
-        {/* TAB 3: COLLECTION ANALYTICS DASHBOARD */}
+        {/* TAB 3: JACKET GALLERY CARD VIEW */}
+        {activeTab === 'gallery' && (
+          <JacketGalleryView
+            cds={savedCDs}
+            onSelectCD={(cd, list) => {
+              setSelectedCDForModal(cd);
+              setModalCDList(list || savedCDs);
+            }}
+            onSaveCD={handleSaveCDToDB}
+            onDeleteCD={handleDeleteCD}
+            onNavigateToSpreadsheet={() => setActiveTab('database')}
+          />
+        )}
+
+        {/* TAB 4: COLLECTION ANALYTICS DASHBOARD */}
         {activeTab === 'dashboard' && (
           <DashboardView
             cds={savedCDs}

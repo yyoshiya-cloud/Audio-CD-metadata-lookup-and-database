@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CDMetadata, TrackInfo } from '../types/cd';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
 import {
@@ -20,6 +20,10 @@ import {
   ArrowUp,
   ArrowDown,
   Loader2,
+  ImageOff,
+  AlertTriangle,
+  ShieldAlert,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface SpreadsheetEditorViewProps {
@@ -103,6 +107,140 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
 
   // Delete confirmation state
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+
+  // Search input ref
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Focused cell state for keyboard shortcuts
+  const [focusedCell, setFocusedCell] = useState<{ rowIdx: number; colIdx: number } | null>(null);
+
+  // Columns order for cell keyboard navigation
+  const COLUMNS_ORDER = useMemo<(keyof CDMetadata | 'tagsStr')[]>(() => [
+    'catalogNumber',
+    'title',
+    'artist',
+    'label',
+    'releaseDate',
+    'barcode',
+    'format',
+    'genre',
+    'tagsStr',
+    'notes',
+  ], []);
+
+  // Image URL Verification State
+  const [isCheckingImages, setIsCheckingImages] = useState(false);
+  const [imageVerificationProgress, setImageVerificationProgress] = useState<{ current: number; total: number } | null>(null);
+  const [brokenImageRowIds, setBrokenImageRowIds] = useState<Set<string>>(new Set());
+  const [brokenImageReasons, setBrokenImageReasons] = useState<Map<string, string>>(new Map());
+  const [imageCheckResult, setImageCheckResult] = useState<{ total: number; validCount: number; brokenCount: number; emptyCount: number } | null>(null);
+  const [filterOnlyBrokenImages, setFilterOnlyBrokenImages] = useState(false);
+
+  // Helper to test if image URL is accessible
+  const checkImageAccessibility = (url: string, timeoutMs = 3500): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (!url || !url.trim()) {
+        resolve(false);
+        return;
+      }
+      const trimmed = url.trim();
+      if (trimmed.startsWith('data:image/')) {
+        resolve(true);
+        return;
+      }
+
+      let settled = false;
+      const img = new Image();
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(false);
+        }
+      }, timeoutMs);
+
+      img.onload = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(img.width > 0 && img.height > 0);
+        }
+      };
+
+      img.onerror = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          // Try fallback via proxy
+          const proxyImg = new Image();
+          const proxyTimer = setTimeout(() => resolve(false), 2500);
+          proxyImg.onload = () => {
+            clearTimeout(proxyTimer);
+            resolve(proxyImg.width > 0);
+          };
+          proxyImg.onerror = () => {
+            clearTimeout(proxyTimer);
+            resolve(false);
+          };
+          proxyImg.src = `/api/image-proxy?url=${encodeURIComponent(trimmed)}`;
+        }
+      };
+
+      img.src = trimmed;
+    });
+  };
+
+  // Run batch verification across all grid rows
+  const handleVerifyImageUrls = async () => {
+    if (isCheckingImages || gridRows.length === 0) return;
+
+    setIsCheckingImages(true);
+    setImageVerificationProgress({ current: 0, total: gridRows.length });
+
+    const newBrokenSet = new Set<string>();
+    const newReasonsMap = new Map<string, string>();
+    let validCount = 0;
+    let brokenCount = 0;
+    let emptyCount = 0;
+
+    const concurrency = 5;
+    let completed = 0;
+
+    for (let i = 0; i < gridRows.length; i += concurrency) {
+      const chunk = gridRows.slice(i, i + concurrency);
+      await Promise.all(
+        chunk.map(async (row) => {
+          if (!row.coverUrl || !row.coverUrl.trim()) {
+            emptyCount++;
+            brokenCount++;
+            newBrokenSet.add(row.id);
+            newReasonsMap.set(row.id, '画像URL未設定');
+          } else {
+            const isValid = await checkImageAccessibility(row.coverUrl);
+            if (isValid) {
+              validCount++;
+            } else {
+              brokenCount++;
+              newBrokenSet.add(row.id);
+              newReasonsMap.set(row.id, '画像URLにアクセスできません (404/リンク切れ)');
+            }
+          }
+          completed++;
+          setImageVerificationProgress({ current: completed, total: gridRows.length });
+        })
+      );
+    }
+
+    setBrokenImageRowIds(newBrokenSet);
+    setBrokenImageReasons(newReasonsMap);
+    setImageCheckResult({
+      total: gridRows.length,
+      validCount,
+      brokenCount,
+      emptyCount,
+    });
+    setIsCheckingImages(false);
+    setImageVerificationProgress(null);
+  };
 
   // Handle column header click for sorting
   const handleColumnSort = (field: SortableField) => {
@@ -423,6 +561,11 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
   const displayRows = useMemo(() => {
     let result = [...gridRows];
 
+    // Filter by broken images if enabled
+    if (filterOnlyBrokenImages) {
+      result = result.filter((r) => brokenImageRowIds.has(r.id));
+    }
+
     // Filter by keyword
     if (searchKeyword.trim()) {
       const kw = searchKeyword.toLowerCase().trim();
@@ -465,7 +608,84 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
     }
 
     return result;
-  }, [gridRows, searchKeyword, sortField, sortDirection]);
+  }, [gridRows, searchKeyword, sortField, sortDirection, filterOnlyBrokenImages, brokenImageRowIds]);
+
+  // Global Keyboard Shortcuts (Ctrl+S, Ctrl+F, Arrow / hjkl navigation, Enter/F2)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.tagName === 'SELECT' ||
+          activeEl.isContentEditable);
+
+      // Ctrl+S or Cmd+S -> Global Save
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (editedRowIds.size > 0) {
+          handleSaveAll();
+        }
+        return;
+      }
+
+      // Ctrl+F or Cmd+F -> Focus Search
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      // If active inside an input/textarea, do NOT trigger hjkl / arrow cell navigation
+      if (isInput) {
+        if (e.key === 'Escape') {
+          activeEl.blur();
+        }
+        return;
+      }
+
+      // Navigation when NOT actively typing inside a text input
+      if (focusedCell) {
+        let { rowIdx, colIdx } = focusedCell;
+        let moved = false;
+
+        if (e.key === 'ArrowUp' || e.key === 'k') {
+          rowIdx = Math.max(0, rowIdx - 1);
+          moved = true;
+        } else if (e.key === 'ArrowDown' || e.key === 'j') {
+          rowIdx = Math.min(displayRows.length - 1, rowIdx + 1);
+          moved = true;
+        } else if (e.key === 'ArrowLeft' || e.key === 'h') {
+          colIdx = Math.max(0, colIdx - 1);
+          moved = true;
+        } else if (e.key === 'ArrowRight' || e.key === 'l') {
+          colIdx = Math.min(COLUMNS_ORDER.length - 1, colIdx + 1);
+          moved = true;
+        } else if (e.key === 'Enter' || e.key === 'F2') {
+          e.preventDefault();
+          const targetRow = displayRows[rowIdx];
+          if (targetRow && onSelectCD) {
+            onSelectCD(targetRow, gridRows);
+          }
+          return;
+        } else if (e.key === 'Escape') {
+          setFocusedCell(null);
+          return;
+        }
+
+        if (moved) {
+          e.preventDefault();
+          setFocusedCell({ rowIdx, colIdx });
+        }
+      } else if (displayRows.length > 0 && (e.key === 'ArrowDown' || e.key === 'j')) {
+        setFocusedCell({ rowIdx: 0, colIdx: 0 });
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [focusedCell, displayRows, gridRows, editedRowIds]);
 
   // Helper to render sortable header with resize handle
   const renderSortableHeader = (
@@ -542,10 +762,11 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
           <div className="relative w-full sm:w-64">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
-              placeholder="表内をリアルタイム検索..."
+              placeholder="表内を検索 (Ctrl+F)..."
               className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl py-1.5 pl-8 pr-7 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
             />
             {searchKeyword && (
@@ -583,6 +804,34 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
               <span>未保存: {editedRowIds.size} 件</span>
             </span>
           )}
+
+          {/* Image Link Verification Button */}
+          <button
+            type="button"
+            onClick={handleVerifyImageUrls}
+            disabled={isCheckingImages || gridRows.length === 0}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+              isCheckingImages
+                ? 'bg-amber-950/80 text-amber-200 border-amber-500/50 cursor-wait'
+                : brokenImageRowIds.size > 0
+                ? 'bg-rose-950/80 hover:bg-rose-900 text-rose-200 border-rose-500/50 shadow-md'
+                : 'bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600'
+            }`}
+            title="すべてのCDジャケット画像URLのアクセス可能性・リンク切れを検証"
+          >
+            {isCheckingImages ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+            ) : (
+              <ImageOff className="w-3.5 h-3.5 text-amber-400" />
+            )}
+            <span>
+              {isCheckingImages
+                ? `画像検証中... (${imageVerificationProgress?.current || 0}/${imageVerificationProgress?.total || 0})`
+                : brokenImageRowIds.size > 0
+                ? `リンク切れ: ${brokenImageRowIds.size}件`
+                : '画像リンク検証'}
+            </span>
+          </button>
 
           {/* Add Row Button */}
           <button
@@ -663,6 +912,49 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
       </div>
 
       {/* Notifications & Progress Banner */}
+      {imageCheckResult && !isCheckingImages && (
+        <div className="bg-slate-900/90 border border-slate-700/80 p-3.5 rounded-xl flex items-center justify-between gap-3 text-xs flex-wrap shadow-md animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4.5 h-4.5 text-amber-400 flex-shrink-0" />
+            <span className="text-slate-200 font-medium">
+              画像検証完了: 全 {imageCheckResult.total} 件中、
+              <span className="font-bold text-emerald-400 font-mono ml-1">{imageCheckResult.validCount} 件正常</span>、
+              <span className={`font-bold font-mono ml-1 ${imageCheckResult.brokenCount > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                {imageCheckResult.brokenCount} 件の警告検出
+              </span>
+              （リンク切れ: {imageCheckResult.brokenCount - imageCheckResult.emptyCount}件 / URL未設定: {imageCheckResult.emptyCount}件）
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {imageCheckResult.brokenCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterOnlyBrokenImages(!filterOnlyBrokenImages)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  filterOnlyBrokenImages
+                    ? 'bg-rose-600 text-white shadow-md'
+                    : 'bg-rose-950/80 text-rose-300 border border-rose-500/40 hover:bg-rose-900'
+                }`}
+              >
+                {filterOnlyBrokenImages ? 'すべての行を表示' : '⚠️ 警告・リンク切れのみ絞り込み'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setImageCheckResult(null);
+                setFilterOnlyBrokenImages(false);
+              }}
+              className="text-slate-400 hover:text-white px-2 py-0.5 cursor-pointer font-bold"
+              title="通知を閉じる"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {isSaving && (
         <div className="bg-indigo-950/90 border border-indigo-500/50 rounded-xl p-3.5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
@@ -716,6 +1008,30 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
 
       {/* 2. Interactive Spreadsheet Grid Container */}
       <div className="bg-slate-900/90 rounded-2xl border border-slate-700/80 shadow-2xl flex-1 min-h-0 flex flex-col overflow-hidden">
+        
+        {/* Keyboard Shortcuts Helper Ribbon */}
+        <div className="flex items-center gap-2.5 px-3.5 py-1.5 bg-slate-950/90 border-b border-slate-800 text-[10px] text-slate-400 font-mono font-medium overflow-x-auto select-none flex-shrink-0">
+          <span className="text-slate-200 font-extrabold flex items-center gap-1">
+            <span>⌨️</span>
+            <span>ショートカット:</span>
+          </span>
+          <span className="text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/40 font-bold">
+            [Ctrl+S] 一括保存
+          </span>
+          <span className="text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded-md border border-indigo-500/40 font-bold">
+            [↑↓←→ / hjkl] セル移動
+          </span>
+          <span className="text-purple-300 bg-purple-950/80 px-2 py-0.5 rounded-md border border-purple-500/40 font-bold">
+            [Enter / F2] 詳細表示
+          </span>
+          <span className="text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded-md border border-amber-500/40 font-bold">
+            [Ctrl+F] 検索
+          </span>
+          <span className="text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700">
+            [Esc] 解除
+          </span>
+        </div>
+
         <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
           <table className="text-left text-xs text-slate-300 border-collapse">
             
@@ -833,8 +1149,12 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                       <td className={`sticky left-[76px] z-10 py-1 px-1 text-center transition-colors ${fixedCellBgClass} border-r-2 border-slate-800/90 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.6)]`}>
                         <div
                           onClick={() => onSelectCD && onSelectCD(row, gridRows)}
-                          className="w-10 h-10 rounded-lg bg-slate-950 overflow-hidden mx-auto border border-slate-800 flex items-center justify-center relative group cursor-pointer hover:border-indigo-400 hover:scale-105 transition-all shadow-sm"
-                          title="クリックしてCDメタデータ詳細・編集画面を開く"
+                          className={`w-10 h-10 rounded-lg bg-slate-950 overflow-hidden mx-auto border flex items-center justify-center relative group cursor-pointer hover:scale-105 transition-all shadow-sm ${
+                            brokenImageRowIds.has(row.id)
+                              ? 'border-rose-500/80 ring-2 ring-rose-500/50'
+                              : 'border-slate-800 hover:border-indigo-400'
+                          }`}
+                          title={brokenImageRowIds.has(row.id) ? (brokenImageReasons.get(row.id) || '画像URLリンク切れ・アクセス不可') : 'クリックしてCDメタデータ詳細・編集画面を開く'}
                         >
                           {row.coverUrl ? (
                             <img
@@ -842,9 +1162,25 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                               alt={row.title}
                               className="w-full h-full object-cover"
                               referrerPolicy="no-referrer"
+                              onError={() => {
+                                if (!brokenImageRowIds.has(row.id)) {
+                                  setBrokenImageRowIds((prev) => new Set(prev).add(row.id));
+                                  setBrokenImageReasons((prev) => new Map(prev).set(row.id, '画像読み込みエラー (404/アクセス不可)'));
+                                }
+                              }}
                             />
                           ) : (
                             <Disc className="w-4 h-4 text-slate-600 group-hover:text-indigo-400" />
+                          )}
+
+                          {/* Warning Alert Badge for Broken Image */}
+                          {brokenImageRowIds.has(row.id) && (
+                            <span
+                              className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full p-0.5 shadow-lg animate-bounce"
+                              title={brokenImageReasons.get(row.id) || '画像URLリンク切れ・未設定'}
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5 text-white" />
+                            </span>
                           )}
                         </div>
                       </td>

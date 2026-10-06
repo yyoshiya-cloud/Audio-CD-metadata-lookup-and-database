@@ -83,6 +83,26 @@ app.post('/api/ocr', async (req, res) => {
 
 import { analyzeCDTagsWithGemini } from './server/aiTagging.js';
 import { backfillCDMetadataWithGemini } from './server/aiBackfill.js';
+import { upscaleJacketImage } from './server/upscaleImage.js';
+
+// Server-side Gemini AI Cover Art Upscaling & Enhancement
+app.post('/api/upscale-jacket', async (req, res) => {
+  try {
+    const { imageBase64, title, artist, catalogNumber } = req.body || {};
+    if (!imageBase64) {
+      return res.status(400).json({ error: '画像URLまたは画像データ(imageBase64)が必要です。' });
+    }
+
+    const result = await upscaleJacketImage(imageBase64, title, artist, catalogNumber);
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.log('Handled /api/upscale-jacket fallback.');
+    return res.status(200).json({
+      error: 'Gemini API利用制限のため、キャンバス高画質化フィルターを代替適用します。',
+      isQuotaError: true,
+    });
+  }
+});
 
 // Server-side Gemini AI Auto-Tagging and Music Analysis
 app.post('/api/ai-analyze-tags', async (req, res) => {

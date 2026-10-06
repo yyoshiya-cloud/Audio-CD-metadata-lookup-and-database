@@ -1,5 +1,5 @@
 import React from 'react';
-import { Disc, LogIn, LogOut, Database, Sparkles, Key, BarChart3, Plus, Copy, Info, Cloud, CloudOff } from 'lucide-react';
+import { Disc, LogIn, LogOut, Database, Sparkles, Key, BarChart3, Plus, Copy, Info, Cloud, CloudOff, LayoutGrid } from 'lucide-react';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -18,8 +18,8 @@ interface HeaderProps {
   onOpenAppInfo: () => void;
   onLogin: () => void;
   onLogout: () => void;
-  activeTab: 'search' | 'database' | 'dashboard' | 'duplicates';
-  setActiveTab: (tab: 'search' | 'database' | 'dashboard' | 'duplicates') => void;
+  activeTab: 'search' | 'database' | 'gallery' | 'dashboard' | 'duplicates';
+  setActiveTab: (tab: 'search' | 'database' | 'gallery' | 'dashboard' | 'duplicates') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -87,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Database className="w-3.5 h-3.5 text-indigo-300" />
-            <span>登録済みライブラリ</span>
+            <span>登録ライブラリ</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
               activeTab === 'database'
                 ? 'bg-indigo-900/80 text-white'
@@ -95,6 +95,17 @@ export const Header: React.FC<HeaderProps> = ({
             }`}>
               {totalCDsCount}
             </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('gallery')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+              activeTab === 'gallery'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5 text-indigo-300" />
+            <span>ジャケットギャラリー</span>
           </button>
           <button
             onClick={() => setActiveTab('dashboard')}
