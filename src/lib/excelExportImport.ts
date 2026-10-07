@@ -110,7 +110,7 @@ export async function parseExcelFileToCDs(file: File): Promise<{
     sheetNames[0];
 
   const wsAlbum = wb.Sheets[albumSheetName];
-  const albumData: any[][] = XLSX.utils.sheet_to_json(wsAlbum, { header: 1, defval: '' });
+  const albumData: any[][] = XLSX.utils.sheet_to_json(wsAlbum, { header: 1, defval: '', raw: false });
 
   if (!albumData || albumData.length === 0) {
     throw new Error(`シート「${albumSheetName}」にデータがありません。`);
@@ -129,7 +129,7 @@ export async function parseExcelFileToCDs(file: File): Promise<{
 
   if (trackSheetName && wb.Sheets[trackSheetName]) {
     const wsTrack = wb.Sheets[trackSheetName];
-    const trackData: any[][] = XLSX.utils.sheet_to_json(wsTrack, { header: 1, defval: '' });
+    const trackData: any[][] = XLSX.utils.sheet_to_json(wsTrack, { header: 1, defval: '', raw: false });
     if (trackData && trackData.length > 0) {
       trackHeaders = (trackData[0] || []).map((h: any) => String(h || '').trim());
       trackRows = trackData.slice(1);

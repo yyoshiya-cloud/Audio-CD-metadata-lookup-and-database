@@ -1,5 +1,5 @@
-import { CDMetadata } from '../types/cd';
-import { normalizeCatalogNumber } from './dateUtils';
+import { CDMetadata, APISource } from '../types/cd';
+import { normalizeCatalogNumber, normalizeReleaseDate, formatJSTTimestampCompact, getJSTISOString } from './dateUtils';
 
 export interface JSONExportData {
   app: string;
@@ -29,8 +29,9 @@ export function exportCDsToJSON(
     ? JSON.stringify(exportPayload, null, 2)
     : JSON.stringify(exportPayload);
 
-  const defaultDate = new Date().toISOString().slice(0, 10);
-  const finalFileName = (fileName?.trim() || `CDコレクション_backup_${defaultDate}`) + '.json';
+  const defaultTimestamp = formatJSTTimestampCompact();
+  const baseName = (fileName?.trim() || `CDコレクション_backup_${defaultTimestamp}`).replace(/\.json$/i, '');
+  const finalFileName = `${baseName}.json`;
 
   // Trigger browser download
   const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
@@ -41,7 +42,7 @@ export function exportCDsToJSON(
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 
   return {
     fileName: finalFileName,
@@ -60,9 +61,14 @@ export function parseJSONToCDs(jsonText: string): {
   exportedAt?: string;
   appVersion?: string;
 } {
+  let cleanText = jsonText.trim();
+  if (cleanText.charCodeAt(0) === 0xfeff) {
+    cleanText = cleanText.slice(1);
+  }
+
   let parsedRaw: any;
   try {
-    parsedRaw = JSON.parse(jsonText);
+    parsedRaw = JSON.parse(cleanText);
   } catch (err: any) {
     throw new Error(`JSON構文エラー: 形式が正しくありません (${err.message})`);
   }
@@ -94,41 +100,69 @@ export function parseJSONToCDs(jsonText: string): {
     throw new Error('JSONデータ内に有効なCDレコードが見つかりませんでした。');
   }
 
+  const validSources: APISource[] = ['musicbrainz', 'discogs', 'itunes', 'ndl', 'spotify', 'rakuten', 'vgmdb', 'yahoo', 'gemini'];
+
   let totalTracks = 0;
   const cds: CDMetadata[] = cdListRaw
-    .filter((item) => item && (item.title || item.artist || item.catalogNumber))
+    .filter((item) => item && (item.title || item.album || item.artist || item.performer || item.catalogNumber || item.catNo || item.catalog_number))
     .map((item, idx) => {
       const cleanCat = normalizeCatalogNumber(item.catalogNumber || item.catNo || item.catalog_number || '');
+      const cleanReleaseDate = normalizeReleaseDate(item.releaseDate || item.release_date || '');
+
       const tracks = Array.isArray(item.tracks)
         ? item.tracks.map((t: any, tIdx: number) => ({
-            trackNumber: t.trackNumber || t.track_number || tIdx + 1,
-            title: String(t.title || t.name || '').trim(),
-            duration: t.duration || t.length || '',
-            artist: t.artist || '',
-            previewUrl: t.previewUrl || t.preview_url || '',
+            trackNumber: Number(t.trackNumber || t.track_number) || tIdx + 1,
+            title: String(t.title || t.name || `Track ${tIdx + 1}`).trim(),
+            duration: t.duration || t.length ? String(t.duration || t.length).trim() : undefined,
+            artist: t.artist ? String(t.artist).trim() : undefined,
+            previewUrl: t.previewUrl || t.preview_url ? String(t.previewUrl || t.preview_url).trim() : undefined,
           }))
         : [];
 
       totalTracks += tracks.length;
 
+      let tags: string[] | undefined = undefined;
+      if (Array.isArray(item.tags)) {
+        tags = item.tags.map((tg: any) => String(tg).trim()).filter(Boolean);
+      } else if (typeof item.tags === 'string' && item.tags.trim()) {
+        tags = item.tags.split(/[,、，]/).map((tg: string) => tg.trim()).filter(Boolean);
+      }
+
+      const rawSource = String(item.source || '').toLowerCase() as APISource;
+      const source: APISource = validSources.includes(rawSource) ? rawSource : 'gemini';
+
       return {
-        id: item.id || `json_import_${Date.now()}_${idx}`,
+        id: item.id || `json_import_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
         title: String(item.title || item.album || '無題').trim(),
         artist: String(item.artist || item.performer || '不明なアーティスト').trim(),
         catalogNumber: cleanCat,
-        label: item.label || '',
-        releaseDate: item.releaseDate || item.release_date || '',
-        barcode: item.barcode || item.jan || item.ean || '',
-        country: item.country || '',
-        format: item.format || 'CD',
-        coverUrl: item.coverUrl || item.cover_url || item.image || item.jacketUrl || '',
-        source: item.source || 'import',
-        notes: item.notes || '',
+        label: item.label ? String(item.label).trim() : undefined,
+        releaseDate: cleanReleaseDate || undefined,
+        barcode: item.barcode || item.jan || item.ean ? String(item.barcode || item.jan || item.ean).trim() : undefined,
+        country: item.country ? String(item.country).trim() : undefined,
+        format: item.format ? String(item.format).trim() : 'CD',
+        genre: item.genre ? String(item.genre).trim() : undefined,
+        coverUrl: item.coverUrl || item.cover_url || item.image || item.jacketUrl || undefined,
+        source,
+        sourceDetails: item.sourceDetails || undefined,
+        rawSources: item.rawSources || undefined,
+        confidenceScore: typeof item.confidenceScore === 'number' ? item.confidenceScore : undefined,
+        tags,
+        notes: item.notes ? String(item.notes) : undefined,
+        verifiedByAI: Boolean(item.verifiedByAI),
+        aiVerificationSummary: item.aiVerificationSummary || undefined,
+        isExactMatch: Boolean(item.isExactMatch),
+        exactMatchTypes: Array.isArray(item.exactMatchTypes) ? item.exactMatchTypes : undefined,
         tracks,
-        createdAt: item.createdAt || new Date().toISOString(),
-        updatedAt: item.updatedAt || new Date().toISOString(),
+        createdAt: item.createdAt || getJSTISOString(),
+        updatedAt: item.updatedAt || getJSTISOString(),
+        syncedToSheets: Boolean(item.syncedToSheets ?? true),
       };
     });
+
+  if (cds.length === 0) {
+    throw new Error('JSONデータ内に有効なCDレコード（タイトル・アーティスト・型番）が見つかりませんでした。');
+  }
 
   return {
     cds,

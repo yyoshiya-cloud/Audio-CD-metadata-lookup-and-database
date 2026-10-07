@@ -199,7 +199,7 @@ export function exportCDCombinedDetailedCSV(cds: CDMetadata[]): void {
 }
 
 /**
- * Parse 2D raw array from File (CSV or Excel)
+ * Parse 2D raw array from File (CSV or Excel) with proper UTF-8 / Shift-JIS encoding detection
  */
 export async function parseFileTo2DArray(file: File): Promise<{
   headers: string[];
@@ -209,7 +209,28 @@ export async function parseFileTo2DArray(file: File): Promise<{
   workbook?: XLSX.WorkBook;
 }> {
   const arrayBuffer = await file.arrayBuffer();
-  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const isCSV = file.name.toLowerCase().endsWith('.csv');
+
+  let wb: XLSX.WorkBook;
+  if (isCSV) {
+    // Decode CSV explicitly as UTF-8 (fallback to Shift_JIS if invalid UTF-8 sequences exist)
+    let csvText = '';
+    try {
+      const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+      csvText = utf8Decoder.decode(arrayBuffer);
+    } catch {
+      const sjisDecoder = new TextDecoder('shift-jis');
+      csvText = sjisDecoder.decode(arrayBuffer);
+    }
+    // Strip BOM if present
+    if (csvText.charCodeAt(0) === 0xfeff) {
+      csvText = csvText.slice(1);
+    }
+    wb = XLSX.read(csvText, { type: 'string', raw: true });
+  } else {
+    wb = XLSX.read(arrayBuffer, { type: 'array', raw: false });
+  }
+
   const sheetNames = wb.SheetNames;
   if (!sheetNames || sheetNames.length === 0) {
     throw new Error(`ファイル「${file.name}」からシートを読み込めませんでした。`);
@@ -217,7 +238,7 @@ export async function parseFileTo2DArray(file: File): Promise<{
 
   const firstSheetName = sheetNames[0];
   const ws = wb.Sheets[firstSheetName];
-  const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
 
   if (!data || data.length === 0) {
     throw new Error(`ファイル「${file.name}」に有効な行データがありません。`);
@@ -267,7 +288,7 @@ export async function parseMultipleCSVFilesToCDs(files: File[]): Promise<{
   }
 
   // Case A: 1 Excel file with multiple sheets
-  if (files.length === 1 && (files[0].name.endsWith('.xlsx') || files[0].name.endsWith('.xls'))) {
+  if (files.length === 1 && (files[0].name.toLowerCase().endsWith('.xlsx') || files[0].name.toLowerCase().endsWith('.xls'))) {
     const file = files[0];
     const arrayBuffer = await file.arrayBuffer();
     const wb = XLSX.read(arrayBuffer, { type: 'array' });
@@ -280,7 +301,7 @@ export async function parseMultipleCSVFilesToCDs(files: File[]): Promise<{
     );
 
     const wsAlbum = wb.Sheets[albumSheetName];
-    const albumData: any[][] = XLSX.utils.sheet_to_json(wsAlbum, { header: 1, defval: '' });
+    const albumData: any[][] = XLSX.utils.sheet_to_json(wsAlbum, { header: 1, defval: '', raw: false });
     const albumHeaders = (albumData[0] || []).map((h: any) => String(h || '').trim());
     const albumRows = albumData.slice(1);
 
@@ -288,7 +309,7 @@ export async function parseMultipleCSVFilesToCDs(files: File[]): Promise<{
     let trackRows: any[][] | undefined;
     if (trackSheetName && wb.Sheets[trackSheetName]) {
       const wsTrack = wb.Sheets[trackSheetName];
-      const trackData: any[][] = XLSX.utils.sheet_to_json(wsTrack, { header: 1, defval: '' });
+      const trackData: any[][] = XLSX.utils.sheet_to_json(wsTrack, { header: 1, defval: '', raw: false });
       if (trackData && trackData.length > 0) {
         trackHeaders = (trackData[0] || []).map((h: any) => String(h || '').trim());
         trackRows = trackData.slice(1);
@@ -308,11 +329,26 @@ export async function parseMultipleCSVFilesToCDs(files: File[]): Promise<{
     };
   }
 
-  // Case B: 2 CSV files (or multiple CSV files)
+  // Case B: 1 or more CSV files
   const parsedFiles = await Promise.all(files.map((f) => parseFileTo2DArray(f)));
 
   let albumParsed = parsedFiles.find((p) => !isTracklistHeader(p.headers));
   let trackParsed = parsedFiles.find((p) => isTracklistHeader(p.headers));
+
+  // If ONLY a Tracklist CSV was uploaded (1 file and it's a tracklist), parse it as a 1-row-per-track combined table
+  // so it groups tracks into albums by catalogNumber / CDタイトル instead of creating 1 album per track!
+  if (!albumParsed && trackParsed && parsedFiles.length === 1) {
+    const cds = parseSpreadsheetRowsToCDs(trackParsed.headers, trackParsed.rows);
+    const totalTracks = cds.reduce((sum, cd) => sum + (cd.tracks?.length || 0), 0);
+    return {
+      cds,
+      totalAlbums: cds.length,
+      totalTracks,
+      fileNames: files.map((f) => f.name),
+      matchedTracksCount: totalTracks,
+      albumFileName: trackParsed.fileName,
+    };
+  }
 
   // Fallback if neither or both matched
   if (!albumParsed) {

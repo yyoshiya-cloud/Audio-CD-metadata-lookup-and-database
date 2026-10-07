@@ -254,13 +254,44 @@ export async function saveCD(cd: CDMetadata): Promise<void> {
   }
 }
 
+/**
+ * Save multiple CDs to local IndexedDB in a single transaction
+ */
+async function saveMultipleLocalCDs(cds: CDMetadata[]): Promise<void> {
+  if (cds.length === 0) return;
+  const normalizedList = cds.map(normalizeCDRecord);
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      for (const item of normalizedList) {
+        store.put(item);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    const items = await getLocalCDs();
+    const map = new Map<string, CDMetadata>();
+    items.forEach((i) => map.set(i.id, i));
+    normalizedList.forEach((i) => map.set(i.id, i));
+    localStorage.setItem(STORE_NAME, JSON.stringify(Array.from(map.values())));
+  }
+}
+
 export async function saveMultipleCDs(
   cds: CDMetadata[],
   onProgress?: (completed: number, total: number) => void
 ): Promise<void> {
+  await saveMultipleLocalCDs(cds);
+  const user = auth.currentUser;
+  const syncCloud = user && getCloudSyncEnabled();
   let count = 0;
   for (const cd of cds) {
-    await saveCD(cd);
+    if (syncCloud) {
+      await saveFirestoreCD(cd);
+    }
     count++;
     if (onProgress) {
       onProgress(count, cds.length);
@@ -269,27 +300,24 @@ export async function saveMultipleCDs(
 }
 
 /**
- * Import CDs: saves locally, and if cloud sync is enabled, clears cloud data first then uploads imported CDs to cloud
+ * Import CDs: saves locally immediately in a single transaction, and if cloud sync is enabled,
+ * merges/upserts the imported CDs to Firestore without deleting existing records.
  */
 export async function importCDs(cds: CDMetadata[]): Promise<void> {
-  await saveMultipleCDs(cds);
+  await saveMultipleLocalCDs(cds);
   const user = auth.currentUser;
   if (user && getCloudSyncEnabled()) {
-    try {
-      const colRef = collection(firestoreDb, 'users', user.uid, 'cds');
-      const snapshot = await getDocs(colRef);
-      const deletePromises: Promise<void>[] = [];
-      snapshot.forEach((docSnap) => {
-        deletePromises.push(deleteDoc(docSnap.ref));
-      });
-      await Promise.all(deletePromises);
-
+    // Sync to cloud in background without blocking local import completion
+    (async () => {
       for (const cd of cds) {
-        await saveFirestoreCD(cd);
+        try {
+          await saveFirestoreCD(cd);
+        } catch (e) {
+          console.warn('Cloud sync warning during import:', e);
+          break; // Stop cloud sync loop if quota exhausted
+        }
       }
-    } catch (e) {
-      console.warn('Import cloud clear and save error:', e);
-    }
+    })();
   }
 }
 

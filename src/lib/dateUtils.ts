@@ -29,6 +29,40 @@ export function getJSTISOString(): string {
 }
 
 /**
+ * Formats a date into JST compact timestamp e.g. "20261006175438" (YYYYMMDDHHMMSS)
+ */
+export function formatJSTTimestampCompact(dateInput: string | Date | number = new Date()): string {
+  const date = new Date(dateInput);
+  const d = isNaN(date.getTime()) ? new Date() : date;
+
+  const formatter = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(d);
+  const map: Record<string, string> = {};
+  parts.forEach((p) => {
+    map[p.type] = p.value;
+  });
+
+  const year = map.year || '2026';
+  const month = map.month || '01';
+  const day = map.day || '01';
+  const hour = map.hour === '24' ? '00' : (map.hour || '00');
+  const minute = map.minute || '00';
+  const second = map.second || '00';
+
+  return `${year}${month}${day}${hour}${minute}${second}`;
+}
+
+/**
  * Formats a date or date string into JST format e.g. "YYYY-MM-DD HH:MM:SS" (2026-10-01 22:27:41)
  */
 export function formatJSTDateTime(dateInput?: string | Date | number): string {

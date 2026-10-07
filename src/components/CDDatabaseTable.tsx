@@ -9,6 +9,7 @@ interface CDDatabaseTableProps {
   onDeleteCD: (id: string) => void;
   onBatchDeleteCDs: (ids: string[]) => void;
   onOpenExportSheetsModal: (selectedCDs: CDMetadata[]) => void;
+  onOpenImportSheetsModal?: () => void;
   onOpenManualAdd?: () => void;
   onOpenBatchModal?: () => void;
   onOpenAITagging?: (selectedCDs: CDMetadata[]) => void;
@@ -22,6 +23,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   onDeleteCD,
   onBatchDeleteCDs,
   onOpenExportSheetsModal,
+  onOpenImportSheetsModal,
   onOpenManualAdd,
   onOpenBatchModal,
   onOpenAITagging,
@@ -295,13 +297,24 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             </button>
           )}
 
+          {onOpenImportSheetsModal && (
+            <button
+              onClick={onOpenImportSheetsModal}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 transition-all cursor-pointer shadow-sm"
+              title="Googleスプレッドシート・Excel・CSV・JSONバックアップからデータをインポート・復元"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span>インポート・復元</span>
+            </button>
+          )}
+
           <button
             onClick={() => onOpenExportSheetsModal(selectedIds.length > 0 ? selectedCDs : filteredCDs)}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/30 transition-all cursor-pointer border border-emerald-500/40"
-            title="Googleスプレッドシート・Excel・CSVファイル（2ファイル一括対応）の双方向連携"
+            title="Googleスプレッドシート・Excel・CSV・JSONの双方向連携・書き出し"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
-            <span>スプレッドシート / Excel / CSV連携</span>
+            <span>データ連携・書き出し</span>
             <span className="text-[10px] bg-emerald-950/80 text-emerald-200 px-1.5 py-0.5 rounded-full border border-emerald-400/40 font-mono font-bold">
               {syncedCount}
             </span>
@@ -640,12 +653,26 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
 
         </div>
       ) : (
-        <div className="bg-slate-800/40 rounded-2xl border border-slate-700/60 p-12 text-center text-slate-400">
+        <div className="bg-slate-800/40 rounded-2xl border border-slate-700/60 p-12 text-center text-slate-400 space-y-4">
           <Disc className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-base font-semibold text-slate-300">データベースに登録されたCDがありません</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            「Web検索・メタデータ取得」タブから検索し、ライブラリにCDを追加してください。
-          </p>
+          <div>
+            <h3 className="text-base font-semibold text-slate-300">データベースに登録されたCDがありません</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+              「Web検索・メタデータ取得」からCDを追加するか、バックアップファイル（JSON / Excel / CSV / Googleスプレッドシート）からインポートしてください。
+            </p>
+          </div>
+          {onOpenImportSheetsModal && (
+            <div className="pt-2 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={onOpenImportSheetsModal}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>ファイル / スプレッドシートからインポート</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

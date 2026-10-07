@@ -10,6 +10,7 @@ export const DEFAULT_COLUMN_CONFIG: ExportColumnConfig[] = [
   { key: 'barcode', label: 'JAN/EANバーコード', enabled: true },
   { key: 'country', label: '発売国/仕様', enabled: true },
   { key: 'format', label: 'フォーマット', enabled: true },
+  { key: 'tags', label: 'タグ', enabled: true },
   { key: 'coverUrl', label: 'ジャケット画像URL', enabled: true },
   { key: 'source', label: '取得データ元', enabled: true },
   { key: 'notes', label: 'メモ', enabled: true },
@@ -824,16 +825,18 @@ export async function readSpreadsheetValues(
     console.warn('Failed to fetch spreadsheet metadata:', e);
   }
 
-  // 1. Read Album Master Sheet
+  // 1. Read Album Master Sheet (both FORMATTED_VALUE for dates/text and FORMULA for =IMAGE("...") URLs)
   const range = targetSheetName ? formatA1Range(targetSheetName, 'A1:Z5000') : 'A1:Z5000';
-  const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
+  const [response, formulaRes] = await Promise.all([
+    fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    ),
+    fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=FORMULA`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    ).catch(() => null),
+  ]);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -841,7 +844,28 @@ export async function readSpreadsheetValues(
   }
 
   const data = await response.json();
-  const values = data.values || [];
+  const values: any[][] = data.values || [];
+
+  // Merge any =IMAGE("...") formula strings into empty formatted cells so coverUrl is never lost
+  if (formulaRes && formulaRes.ok) {
+    try {
+      const formulaData = await formulaRes.json();
+      const fValues: any[][] = formulaData.values || [];
+      for (let r = 1; r < values.length; r++) {
+        const fRow = fValues[r] || [];
+        const vRow = values[r] || [];
+        const maxCols = Math.max(vRow.length, fRow.length);
+        for (let c = 0; c < maxCols; c++) {
+          const fCell = String(fRow[c] ?? '');
+          if (fCell.startsWith('=') && fCell.toUpperCase().includes('IMAGE')) {
+            vRow[c] = fCell;
+          }
+        }
+        values[r] = vRow;
+      }
+    } catch {}
+  }
+
   const headers = (values[0] || []).map((h: any) => String(h || '').trim());
   const rows = values.slice(1);
 
@@ -894,6 +918,7 @@ export async function readSpreadsheetValues(
 /**
  * Parse rows into CDMetadata objects based on detected headers,
  * joining tracks from the relational "収録曲リスト" sheet by Catalog Number
+ * or grouping combined 1-row-per-track tables automatically.
  */
 export function parseSpreadsheetRowsToCDs(
   headers: string[],
@@ -904,14 +929,33 @@ export function parseSpreadsheetRowsToCDs(
   const headerMap: Record<string, number> = {};
   headers.forEach((h, idx) => {
     const clean = String(h || '').trim().toLowerCase();
-    headerMap[clean] = idx;
+    if (clean && headerMap[clean] === undefined) {
+      headerMap[clean] = idx;
+    }
   });
 
   const findColIndex = (...candidates: string[]): number => {
+    // Pass 1: Exact match
+    for (const c of candidates) {
+      const lower = c.toLowerCase();
+      if (headerMap[lower] !== undefined) {
+        return headerMap[lower];
+      }
+    }
+    // Pass 2: Header contains candidate
     for (const c of candidates) {
       const lower = c.toLowerCase();
       for (const [h, idx] of Object.entries(headerMap)) {
-        if (h === lower || h.includes(lower) || lower.includes(h)) {
+        if (h.includes(lower)) {
+          return idx;
+        }
+      }
+    }
+    // Pass 3: Candidate contains header (only for meaningful headers >= 2 chars)
+    for (const c of candidates) {
+      const lower = c.toLowerCase();
+      for (const [h, idx] of Object.entries(headerMap)) {
+        if (h.length >= 2 && lower.includes(h)) {
           return idx;
         }
       }
@@ -919,19 +963,23 @@ export function parseSpreadsheetRowsToCDs(
     return -1;
   };
 
-  const catIdx = findColIndex('型番', '規格品番', 'catalog', 'catno');
-  const titleIdx = findColIndex('アルバム/cdタイトル', 'cdタイトル', 'アルバム', 'タイトル', 'title', 'album');
-  const artistIdx = findColIndex('歌手/アーティスト', '歌手', 'アーティスト', 'artist', 'creator');
-  const labelIdx = findColIndex('レーベル/発売元', 'レーベル', '発売元', 'label', 'publisher');
-  const releaseIdx = findColIndex('発売年月日', '発売日', 'releasedate', 'release', 'date');
-  const barcodeIdx = findColIndex('jan/eanバーコード', 'バーコード', 'jan', 'ean', 'barcode');
-  const countryIdx = findColIndex('発売国/仕様', '発売国', '国', '仕様', 'country');
+  const catIdx = findColIndex('型番（規格品番）', '型番', '規格品番', 'catalognumber', 'catalog', 'catno');
+  const titleIdx = findColIndex('アルバム/cdタイトル', 'cdタイトル', 'アルバムタイトル', 'アルバム名', 'アルバム', 'タイトル', 'title', 'album');
+  const artistIdx = findColIndex('歌手/アーティスト', '歌手・アーティスト名', 'アーティスト名', '歌手', 'アーティスト', 'artist', 'creator');
+  const labelIdx = findColIndex('レーベル/発売元', 'レーベル・発売元', 'レーベル', '発売元', 'label', 'publisher');
+  const releaseIdx = findColIndex('発売年月日', '発売日', 'releasedate', 'release');
+  const barcodeIdx = findColIndex('jan/eanバーコード', 'バーコード(jan)', 'バーコード', 'jan', 'ean', 'barcode');
+  const countryIdx = findColIndex('発売国/仕様', '発売国', '仕様', 'country');
   const formatIdx = findColIndex('フォーマット', 'format');
-  const trackIdx = findColIndex('トラックリスト（収録曲）', 'トラックリスト', 'トラック', '収録曲', 'track', '曲目');
-  const coverIdx = findColIndex('ジャケット画像url', 'ジャケット', '画像', 'cover', 'image');
-  const sourceIdx = findColIndex('取得データ元', 'データ元', 'source');
-  const notesIdx = findColIndex('メモ', 'notes', 'memo');
-  const createdAtIdx = findColIndex('登録日時', 'createdat', 'created');
+  const tagsIdx = findColIndex('タグ', 'ジャンル', 'tags', 'tag', 'genre');
+  const trackIdx = findColIndex('トラックリスト（収録曲）', 'トラックリスト', '収録曲リスト', '曲目');
+  const singleTrackNumIdx = findColIndex('トラック番号', '曲順（トラック番号）', '曲順', 'tracknumber');
+  const singleTrackTitleIdx = findColIndex('曲名（トラックタイトル）', '曲名', 'トラックタイトル', 'tracktitle');
+  const singleTrackDurationIdx = findColIndex('演奏時間（分:秒）', '演奏時間', '再生時間', 'duration');
+  const coverIdx = findColIndex('ジャケット画像url', 'ジャケット画像', 'ジャケット', '画像url', 'coverurl', 'cover', 'image');
+  const sourceIdx = findColIndex('取得データ元', 'データ取得元', 'データ元', '取得元', 'source');
+  const notesIdx = findColIndex('メモ・状態記録', 'メモ', '備考', 'notes', 'memo');
+  const createdAtIdx = findColIndex('登録日時', '作成日時', 'createdat', 'created');
 
   // Parse relational Tracklist Sheet if provided
   // Key: normalized catalogNumber or lowercase albumTitle -> TrackInfo[]
@@ -940,32 +988,37 @@ export function parseSpreadsheetRowsToCDs(
   if (trackHeaders && trackRows && trackRows.length > 0) {
     const tHeaderMap: Record<string, number> = {};
     trackHeaders.forEach((h, idx) => {
-      tHeaderMap[String(h || '').trim().toLowerCase()] = idx;
+      const clean = String(h || '').trim().toLowerCase();
+      if (clean && tHeaderMap[clean] === undefined) {
+        tHeaderMap[clean] = idx;
+      }
     });
 
     const findTrackColIndex = (...candidates: string[]): number => {
       for (const c of candidates) {
         const lower = c.toLowerCase();
+        if (tHeaderMap[lower] !== undefined) return tHeaderMap[lower];
+      }
+      for (const c of candidates) {
+        const lower = c.toLowerCase();
         for (const [h, idx] of Object.entries(tHeaderMap)) {
-          if (h === lower || h.includes(lower) || lower.includes(h)) {
-            return idx;
-          }
+          if (h.includes(lower)) return idx;
         }
       }
       return -1;
     };
 
-    const tCatIdx = findTrackColIndex('型番', '規格品番', 'catalog', 'catno');
-    const tNumIdx = findTrackColIndex('曲順', 'トラック番号', 'トラック', 'track');
-    const tTitleIdx = findTrackColIndex('曲名', 'トラックタイトル', 'タイトル', 'title');
-    const tDurationIdx = findTrackColIndex('演奏時間', '再生時間', '時間', 'duration', 'time');
-    const tAlbumIdx = findTrackColIndex('アルバム名', 'アルバム', 'album');
-    const tArtistIdx = findTrackColIndex('トラックアーティスト', 'アーティスト', 'artist');
+    const tCatIdx = findTrackColIndex('型番（規格品番）', '型番', '規格品番', 'catalog', 'catno');
+    const tNumIdx = findTrackColIndex('曲順（トラック番号）', 'トラック番号', '曲順', 'トラック', 'track');
+    const tTitleIdx = findTrackColIndex('曲名（トラックタイトル）', '曲名', 'トラックタイトル', 'タイトル', 'title');
+    const tDurationIdx = findTrackColIndex('演奏時間（分:秒）', '演奏時間', '再生時間', '時間', 'duration', 'time');
+    const tAlbumIdx = findTrackColIndex('cdタイトル', 'アルバム名', 'アルバム', 'album');
+    const tArtistIdx = findTrackColIndex('トラックアーティスト/演奏者', 'トラックアーティスト', 'アーティスト', 'artist');
     const tPreviewIdx = findTrackColIndex('試聴url', 'preview', 'url');
 
     trackRows.forEach((trRow) => {
       if (!trRow || trRow.length === 0) return;
-      const getTVal = (idx: number) => (idx >= 0 && idx < trRow.length ? String(trRow[idx] || '').trim() : '');
+      const getTVal = (idx: number) => (idx >= 0 && idx < trRow.length ? String(trRow[idx] ?? '').trim() : '');
 
       const catNo = normalizeCatalogNumber(getTVal(tCatIdx));
       const albumName = getTVal(tAlbumIdx).toLowerCase();
@@ -985,11 +1038,15 @@ export function parseSpreadsheetRowsToCDs(
         previewUrl: previewUrl || undefined,
       };
 
-      const groupKey = catNo || albumName;
-      if (groupKey) {
-        const list = tracksByCatNo.get(groupKey) || [];
+      if (catNo) {
+        const list = tracksByCatNo.get(catNo) || [];
         list.push(trackObj);
-        tracksByCatNo.set(groupKey, list);
+        tracksByCatNo.set(catNo, list);
+      }
+      if (albumName) {
+        const listByAlbum = tracksByCatNo.get(`title:${albumName}`) || [];
+        listByAlbum.push(trackObj);
+        tracksByCatNo.set(`title:${albumName}`, listByAlbum);
       }
     });
 
@@ -999,14 +1056,18 @@ export function parseSpreadsheetRowsToCDs(
     });
   }
 
+  // Check if this is a Combined 1-row-per-track format (has singleTrackTitleIdx and no separate trackRows)
+  const isCombinedSingleFile = (!trackRows || trackRows.length === 0) && singleTrackTitleIdx >= 0;
+
   const result: CDMetadata[] = [];
+  const combinedAlbumMap = new Map<string, CDMetadata>();
 
   rows.forEach((row, rowIdx) => {
     if (!row || row.length === 0) return;
 
     const getVal = (colIdx: number) => {
       if (colIdx < 0 || colIdx >= row.length) return '';
-      return String(row[colIdx] || '').trim();
+      return String(row[colIdx] ?? '').trim();
     };
 
     const title = getVal(titleIdx);
@@ -1031,17 +1092,88 @@ export function parseSpreadsheetRowsToCDs(
       }
     }
 
-    // Attach tracks:
+    const rawTags = getVal(tagsIdx);
+    const tags = rawTags
+      ? rawTags.split(/[,、，]/).map((t) => t.trim()).filter(Boolean)
+      : undefined;
+
+    const rawSource = getVal(sourceIdx).toLowerCase();
+    const validSource: APISource = 
+      rawSource.includes('musicbrainz') ? 'musicbrainz' :
+      rawSource.includes('discogs') ? 'discogs' :
+      rawSource.includes('itunes') ? 'itunes' :
+      rawSource.includes('spotify') ? 'spotify' :
+      rawSource.includes('rakuten') || rawSource.includes('楽天') ? 'rakuten' :
+      rawSource.includes('gemini') || rawSource.includes('ai') ? 'gemini' : 'ndl';
+
+    // Handle Combined 1-row-per-track format by grouping rows into albums
+    if (isCombinedSingleFile) {
+      const albumKey = catalogNumber ? `cat:${catalogNumber}` : `ta:${title.toLowerCase()}_${artist.toLowerCase()}`;
+      const trTitle = getVal(singleTrackTitleIdx);
+      const trNum = parseInt(getVal(singleTrackNumIdx), 10) || 1;
+      const trDur = getVal(singleTrackDurationIdx);
+
+      const existingAlbum = combinedAlbumMap.get(albumKey);
+      if (existingAlbum) {
+        if (trTitle) {
+          existingAlbum.tracks.push({
+            trackNumber: trNum || existingAlbum.tracks.length + 1,
+            title: trTitle,
+            duration: trDur || undefined,
+            artist: artist || undefined,
+          });
+        }
+        return;
+      }
+
+      const initialTracks: TrackInfo[] = [];
+      if (trTitle) {
+        initialTracks.push({
+          trackNumber: trNum,
+          title: trTitle,
+          duration: trDur || undefined,
+          artist: artist || undefined,
+        });
+      }
+
+      const newCd: CDMetadata = {
+        id: `sheet_${Date.now()}_${rowIdx}_${Math.random().toString(36).slice(2, 7)}`,
+        title: title || '名称未設定',
+        artist: artist || '不明なアーティスト',
+        catalogNumber: catalogNumber || '',
+        label: getVal(labelIdx) || undefined,
+        releaseDate: releaseDate || undefined,
+        barcode: getVal(barcodeIdx) || undefined,
+        country: getVal(countryIdx) || undefined,
+        format: getVal(formatIdx) || undefined,
+        coverUrl: coverUrl || undefined,
+        tags,
+        tracks: initialTracks,
+        source: validSource,
+        notes: getVal(notesIdx) || undefined,
+        createdAt: getVal(createdAtIdx) || getJSTISOString(),
+        updatedAt: getJSTISOString(),
+        syncedToSheets: true,
+      };
+
+      combinedAlbumMap.set(albumKey, newCd);
+      result.push(newCd);
+      return;
+    }
+
+    // Standard Album Row Mode:
     // Priority 1: From relational "収録曲リスト" sheet keyed by catalogNumber or title
     let tracks: TrackInfo[] = [];
     if (catalogNumber && tracksByCatNo.has(catalogNumber)) {
       tracks = tracksByCatNo.get(catalogNumber) || [];
+    } else if (title && tracksByCatNo.has(`title:${title.toLowerCase()}`)) {
+      tracks = tracksByCatNo.get(`title:${title.toLowerCase()}`) || [];
     } else if (title && tracksByCatNo.has(title.toLowerCase())) {
       tracks = tracksByCatNo.get(title.toLowerCase()) || [];
     } else {
       // Priority 2: Fallback to inline track column if present
       const rawTracks = getVal(trackIdx);
-      if (rawTracks && rawTracks !== 'なし' && !rawTracks.includes('詳細は「収録曲リスト」')) {
+      if (rawTracks && rawTracks !== 'なし' && !rawTracks.includes('詳細は「収録曲リスト」') && !/^\d+曲$/.test(rawTracks)) {
         const trackLines = rawTracks.split('\n').map((l) => l.trim()).filter(Boolean);
         trackLines.forEach((line, tIdx) => {
           const cleaned = line.replace(/^\d+[\.\:\s]+/, '');
@@ -1055,15 +1187,6 @@ export function parseSpreadsheetRowsToCDs(
       }
     }
 
-    const rawSource = getVal(sourceIdx).toLowerCase();
-    const validSource: APISource = 
-      rawSource.includes('musicbrainz') ? 'musicbrainz' :
-      rawSource.includes('discogs') ? 'discogs' :
-      rawSource.includes('itunes') ? 'itunes' :
-      rawSource.includes('spotify') ? 'spotify' :
-      rawSource.includes('rakuten') ? 'rakuten' :
-      rawSource.includes('gemini') ? 'gemini' : 'ndl';
-
     const cd: CDMetadata = {
       id: `sheet_${Date.now()}_${rowIdx}_${Math.random().toString(36).slice(2, 7)}`,
       title: title || '名称未設定',
@@ -1075,6 +1198,7 @@ export function parseSpreadsheetRowsToCDs(
       country: getVal(countryIdx) || undefined,
       format: getVal(formatIdx) || undefined,
       coverUrl: coverUrl || undefined,
+      tags,
       tracks,
       source: validSource,
       notes: getVal(notesIdx) || undefined,

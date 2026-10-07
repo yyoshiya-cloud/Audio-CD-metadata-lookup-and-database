@@ -316,21 +316,26 @@ export default function App() {
     setIsSheetsModalOpen(true);
   };
 
-  // Import CDs from Sheets into library
+  // Import CDs from Sheets / Excel / CSV / JSON into library
   const handleImportCDsFromSheets = async (importedCDs: CDMetadata[]) => {
+    const existingMapById = new Map<string, CDMetadata>();
     const existingMapByCat = new Map<string, CDMetadata>();
     const existingMapByTitleArtist = new Map<string, CDMetadata>();
     savedCDs.forEach((c) => {
+      if (c.id) existingMapById.set(c.id, c);
       if (c.catalogNumber) existingMapByCat.set(c.catalogNumber.trim().toUpperCase(), c);
       if (c.title && c.artist) {
         existingMapByTitleArtist.set(`${c.title.trim()}_${c.artist.trim()}`.toLowerCase(), c);
       }
     });
 
-    const toSave: CDMetadata[] = [];
+    const toSaveMap = new Map<string, CDMetadata>();
     importedCDs.forEach((imported) => {
       let existingMatch: CDMetadata | undefined;
-      if (imported.catalogNumber) {
+      if (imported.id && existingMapById.has(imported.id)) {
+        existingMatch = existingMapById.get(imported.id);
+      }
+      if (!existingMatch && imported.catalogNumber) {
         existingMatch = existingMapByCat.get(imported.catalogNumber.trim().toUpperCase());
       }
       if (!existingMatch && imported.title && imported.artist) {
@@ -338,26 +343,43 @@ export default function App() {
       }
 
       if (existingMatch) {
-        toSave.push({
+        const mergedRecord: CDMetadata = {
           ...existingMatch,
           ...imported,
           id: existingMatch.id,
           tracks: imported.tracks && imported.tracks.length > 0 ? imported.tracks : existingMatch.tracks,
+          tags: imported.tags && imported.tags.length > 0 ? imported.tags : existingMatch.tags,
           coverUrl: imported.coverUrl || existingMatch.coverUrl,
+          label: imported.label || existingMatch.label,
+          releaseDate: imported.releaseDate || existingMatch.releaseDate,
+          barcode: imported.barcode || existingMatch.barcode,
+          notes: imported.notes || existingMatch.notes,
           syncedToSheets: true,
           updatedAt: getJSTISOString(),
-        });
+        };
+        toSaveMap.set(mergedRecord.id, mergedRecord);
+        if (mergedRecord.catalogNumber) existingMapByCat.set(mergedRecord.catalogNumber.trim().toUpperCase(), mergedRecord);
+        if (mergedRecord.title && mergedRecord.artist) {
+          existingMapByTitleArtist.set(`${mergedRecord.title.trim()}_${mergedRecord.artist.trim()}`.toLowerCase(), mergedRecord);
+        }
       } else {
-        toSave.push({
+        const newRecord: CDMetadata = {
           ...imported,
           syncedToSheets: true,
-        });
+          updatedAt: imported.updatedAt || getJSTISOString(),
+        };
+        toSaveMap.set(newRecord.id, newRecord);
+        if (newRecord.catalogNumber) existingMapByCat.set(newRecord.catalogNumber.trim().toUpperCase(), newRecord);
+        if (newRecord.title && newRecord.artist) {
+          existingMapByTitleArtist.set(`${newRecord.title.trim()}_${newRecord.artist.trim()}`.toLowerCase(), newRecord);
+        }
       }
     });
 
+    const toSave = Array.from(toSaveMap.values());
     await importCDs(toSave);
     await loadLocalLibrary();
-    showToast(`${importedCDs.length} 件のCDデータをインポート・反映しました`);
+    showToast(`${toSave.length} 件のCDデータをインポート・反映しました`);
   };
 
   // Mark items as synced
@@ -477,6 +499,7 @@ export default function App() {
             onDeleteCD={handleDeleteCD}
             onBatchDeleteCDs={handleBatchDelete}
             onOpenExportSheetsModal={handleOpenSheetsModalForItems}
+            onOpenImportSheetsModal={handleOpenImportSheetsModal}
             onOpenManualAdd={handleOpenManualAdd}
             onOpenBatchModal={() => setIsBatchModalOpen(true)}
             onOpenAITagging={handleOpenAITagging}

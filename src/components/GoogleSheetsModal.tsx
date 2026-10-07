@@ -25,7 +25,7 @@ import {
   exportCDCombinedDetailedCSV, 
   parseMultipleCSVFilesToCDs 
 } from '../lib/csvExportImport';
-import { formatJSTShort } from '../lib/dateUtils';
+import { formatJSTShort, formatJSTTimestampCompact } from '../lib/dateUtils';
 import { 
   X, 
   FileSpreadsheet, 
@@ -83,7 +83,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   const [importSourceType, setImportSourceType] = useState<'sheets' | 'excel' | 'csv' | 'json'>('sheets');
 
   // JSON Export & Import State
-  const [jsonFileName, setJsonFileName] = useState(`CDコレクション_backup_${new Date().toISOString().slice(0, 10)}`);
+  const [jsonFileName, setJsonFileName] = useState(() => `CDコレクション_backup_${formatJSTTimestampCompact()}`);
   const [jsonPrettyPrint, setJsonPrettyPrint] = useState(true);
   const [jsonExportSuccess, setJsonExportSuccess] = useState(false);
   const [jsonCopySuccess, setJsonCopySuccess] = useState(false);
@@ -1318,7 +1318,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                         type="text"
                         value={jsonFileName}
                         onChange={(e) => setJsonFileName(e.target.value)}
-                        placeholder="CDコレクション_backup_YYYY-MM-DD"
+                        placeholder="CDコレクション_backup_YYYYMMDDHHMMSS"
                         className="flex-1 bg-slate-800/90 border border-slate-700 focus:border-amber-500 rounded-xl py-2 px-3 text-xs text-white font-medium"
                       />
                       <span className="text-xs font-mono text-slate-400 font-bold">.json</span>
@@ -1738,7 +1738,10 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       type="file"
                       multiple
                       accept=".xlsx,.xls,.csv"
-                      onChange={handleExcelFileSelect}
+                      onChange={(e) => {
+                        handleExcelFileSelect(e);
+                        e.target.value = '';
+                      }}
                       className="hidden"
                     />
                     <div className="w-12 h-12 rounded-2xl bg-teal-600/20 border border-teal-500/40 flex items-center justify-center mx-auto text-teal-400">
@@ -1863,6 +1866,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                         if (e.target.files && e.target.files.length > 0) {
                           handleProcessCSVFiles(e.target.files);
                         }
+                        e.target.value = '';
                       }}
                       className="hidden"
                     />
@@ -1907,6 +1911,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                           if (!f) return;
                           setCsvAlbumFile(f);
                           handleProcessCSVFiles([f, csvTrackFile].filter(Boolean) as File[]);
+                          e.target.value = '';
                         }}
                         className="hidden"
                       />
@@ -1939,6 +1944,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                           if (!f) return;
                           setCsvTrackFile(f);
                           handleProcessCSVFiles([csvAlbumFile, f].filter(Boolean) as File[]);
+                          e.target.value = '';
                         }}
                         className="hidden"
                       />
@@ -2058,6 +2064,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) handleProcessJSONInput(undefined, file);
+                        e.target.value = '';
                       }}
                       className="hidden"
                     />
