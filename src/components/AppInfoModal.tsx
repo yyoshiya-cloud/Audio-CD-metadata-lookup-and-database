@@ -100,10 +100,10 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({ onClose }) => {
                 <div className="w-6 h-6 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
                   <Database className="w-3.5 h-3.5" />
                 </div>
-                <span>クラウド同期 & 2ファイル一括連携</span>
+                <span>Dexie.js (IndexedDB) 高速DB & 各種データ連携</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Firebase Firestoreによる永続保存。Google Sheets / Excel(.xlsx) / CSVへの「アルバム情報」＋「収録曲リスト」の2ファイル一括双方向連携に対応。
+                Dexie.jsによるオフライン対応・無制限ローカルIndexedDBストレージ。Googleスプレッドシート（自動更新）/ Excel(.xlsx) / CSV / JSONバックアップの双方向データ交換に対応。
               </p>
             </div>
 

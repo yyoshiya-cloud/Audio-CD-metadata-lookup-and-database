@@ -6,13 +6,11 @@ import {
   onAuthStateChanged, 
   User 
 } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase App instance safely
+// Initialize Firebase App instance safely (used strictly for Google OAuth / Sheets API)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
-export const firestoreDb = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId);
 
 const provider = new GoogleAuthProvider();
 // Workspace scopes requested for Google Sheets & Google Drive

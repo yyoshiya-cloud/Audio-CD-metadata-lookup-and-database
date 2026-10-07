@@ -148,16 +148,10 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
               <p>
                 <strong>キー未設定の場合でもパブリックアクセスで検索可能</strong>ですが、ご自身のAPIキーを登録することでレート制限を回避し、より安定・高速に横断検索が実行できます。
               </p>
-              {user ? (
-                <p className="text-emerald-300 font-bold flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Googleアカウント ({user.email}) と連携中: 登録したAPIキーはクラウド上に安全に自動保管され、他の端末でログインした際にも自動ロードされます。</span>
-                </p>
-              ) : (
-                <p className="text-slate-400">
-                  ※Googleアカウントでログインすると、登録したAPIキーがクラウドに紐づけ保存され、次回ログイン時に自動復元されます。
-                </p>
-              )}
+              <p className="text-emerald-300 font-bold flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>登録したAPIキーはブラウザ内のIndexedDB（Dexie.js）に安全に永続保存され、次回起動時も自動で読み込まれます。</span>
+              </p>
             </div>
           </div>
 

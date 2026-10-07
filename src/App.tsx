@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { initAuth, googleSignIn, logout, getAccessToken } from './lib/firebase';
-import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, markCDsAsSynced, exportToCSV, clearLocalDB, importCDs, getCloudSyncEnabled, setCloudSyncEnabled, loadApiCredentialsDB, saveApiCredentialsDB, clearApiCredentialsLocal } from './lib/db';
+import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, markCDsAsSynced, exportToCSV, clearLocalDB, importCDs, getCloudSyncEnabled, setCloudSyncEnabled, loadApiCredentialsDB, saveApiCredentialsDB, clearApiCredentialsLocal, initPersistentStorage } from './lib/db';
 import { CDMetadata, SearchQuery, SearchResponse, APICredentials } from './types/cd';
 import { getJSTISOString } from './lib/dateUtils';
 import { Header } from './components/Header';
@@ -85,35 +85,25 @@ export default function App() {
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Load Auth state and Local Database on mount
+  // Load Auth state (strictly for Google Sheets OAuth) and Dexie IndexedDB on mount
   useEffect(() => {
     (async () => {
-      const isNewlyLaunched = !sessionStorage.getItem('cd_app_session_launched');
-      if (isNewlyLaunched) {
-        sessionStorage.setItem('cd_app_session_launched', 'true');
-        await clearLocalDB();
-      }
+      await initPersistentStorage();
+      await loadLocalLibrary();
+      const creds = await loadApiCredentialsDB();
+      setApiCredentials(creds);
 
       initAuth(
         async (u, token) => {
           setUser(u);
           const tok = token || (await getAccessToken());
           setAccessToken(tok);
-          loadLocalLibrary();
-          const creds = await loadApiCredentialsDB();
-          setApiCredentials(creds);
         },
         async () => {
           setUser(null);
           setAccessToken(null);
-          clearApiCredentialsLocal();
-          setApiCredentials({});
-          await clearLocalDB();
-          setSavedCDs([]);
         }
       );
-
-      loadLocalLibrary();
     })();
   }, []);
 
@@ -137,9 +127,7 @@ export default function App() {
       if (res) {
         setUser(res.user);
         setAccessToken(res.accessToken);
-        const cloudCreds = await loadApiCredentialsDB();
-        setApiCredentials(cloudCreds);
-        showToast('Googleアカウントでログインしました。APIキー設定をクラウドから同期しました。');
+        showToast('Googleアカウントでログインしました（Googleスプレッドシート連携が利用可能です）');
         return res;
       }
     } catch (err: any) {
@@ -158,17 +146,13 @@ export default function App() {
     await logout();
     setUser(null);
     setAccessToken(null);
-    clearApiCredentialsLocal();
-    setApiCredentials({});
-    await clearLocalDB();
-    setSavedCDs([]);
-    showToast('ログアウトしました。APIキー設定および登録済みライブラリをクリアしました。');
+    showToast('Googleアカウントからログアウトしました（ローカルDBのデータはそのまま保持されています）');
   };
 
   const handleSaveApiCredentials = async (updated: APICredentials) => {
     setApiCredentials(updated);
     await saveApiCredentialsDB(updated);
-    showToast(user ? 'GoogleアカウントにAPI設定を保存しました' : 'API設定を更新・保存しました');
+    showToast('API設定をローカルデータベース（IndexedDB）に保存しました');
   };
 
   // Perform multi-source aggregated search

@@ -138,22 +138,13 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Buttons & Profile */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={onToggleCloudSync}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer shadow-sm whitespace-nowrap ${
-              cloudSyncEnabled
-                ? 'bg-emerald-950/80 hover:bg-emerald-900/80 text-emerald-300 border-emerald-500/40'
-                : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
-            }`}
-            title="クラウド同期の有効/無効を切替"
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-sm whitespace-nowrap select-none"
+            title="Dexie.js (IndexedDB) ローカルデータベース稼働中：容量・書き込み制限なし・オフライン高速対応"
           >
-            {cloudSyncEnabled ? (
-              <Cloud className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            ) : (
-              <CloudOff className="w-3.5 h-3.5 text-slate-500" />
-            )}
-            <span className="hidden sm:inline">クラウド同期: {cloudSyncEnabled ? 'ON' : 'OFF'}</span>
-          </button>
+            <Database className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">IndexedDB (Dexie) 高速保存</span>
+          </div>
 
           <button
             onClick={onOpenAppInfo}
