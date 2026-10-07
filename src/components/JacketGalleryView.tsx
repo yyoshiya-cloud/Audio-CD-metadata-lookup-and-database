@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Link2,
+  BookOpen,
 } from 'lucide-react';
 
 interface JacketGalleryViewProps {
@@ -20,6 +21,7 @@ interface JacketGalleryViewProps {
   onSaveCD: (updatedCD: CDMetadata) => Promise<void>;
   onBatchUpdateCDs?: (updatedCDs: CDMetadata[], onProgress?: (completed: number, total: number) => void) => Promise<void>;
   onNavigateToSpreadsheet?: () => void;
+  onOpenPDFCatalog?: (selectedCDs: CDMetadata[]) => void;
 }
 
 type SortOption = 'updatedAt' | 'releaseDate' | 'title' | 'artist' | 'trackCount';
@@ -30,6 +32,7 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
   onSaveCD,
   onBatchUpdateCDs,
   onNavigateToSpreadsheet,
+  onOpenPDFCatalog,
 }) => {
   const [searchQuery, setSearchKeyword] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
@@ -392,6 +395,19 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
                   ? `BASE64変換中 (${batchConvertProgress?.current || 0}/${batchConvertProgress?.total || 0})`
                   : `外部リンク画像をBASE64保存 (${externalLinkCDs.length}件)`}
               </span>
+            </button>
+          )}
+
+          {/* PDF Catalog / Analog Sleeve Export Button */}
+          {onOpenPDFCatalog && (
+            <button
+              type="button"
+              onClick={() => onOpenPDFCatalog(filteredCDs)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white border border-amber-400/40 shadow-md transition-all cursor-pointer"
+              title="現在表示中のCDコレクションを印刷用CDカタログ / LPアナログジャケット風PDFとして出力"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-amber-100" />
+              <span>アナログジャケット・PDFカタログ出力 ({filteredCDs.length}件)</span>
             </button>
           )}
 

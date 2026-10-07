@@ -14,6 +14,13 @@ export interface CDTagAnalysisInput {
   notes?: string;
 }
 
+export interface TagEvidenceItem {
+  tag: string;
+  category: 'genre' | 'mood' | 'era' | 'style';
+  evidence: string;
+  sourceFields: string[];
+}
+
 export interface CDTagAnalysisResult {
   id: string;
   genre: string;
@@ -22,6 +29,7 @@ export interface CDTagAnalysisResult {
   era: string;
   suggestedTags: string[];
   reasoning?: string;
+  tagEvidence?: TagEvidenceItem[];
 }
 
 export interface AITaggingOptions {
@@ -58,14 +66,16 @@ export async function analyzeCDTagsWithGemini(
       catalogNumber: cd.catalogNumber || '',
       label: cd.label || '',
       releaseDate: cd.releaseDate || '',
-      trackListSample: (cd.tracks || []).slice(0, 8).map((t) => t.title).join(', '),
+      trackListSample: (cd.tracks || []).slice(0, 10).map((t) => t.title).join(', '),
       existingGenre: cd.genre || '',
       existingTags: cd.existingTags || [],
+      notes: cd.notes || '',
     }));
 
     const prompt = `
 You are an expert Japanese and international music archivist, record store curator, and discographer.
 Analyze the following CD albums to classify their musical genre, mood/atmosphere, release era/decade, and produce 3 to 5 concise, standardized Japanese tags for music collection management.
+Crucially, you must explicitly provide the objective/analytical BASIS (根拠) for why each tag was selected based on the input metadata (Artist profile, Album title, Release date, Record label/Catalog prefix, and Tracklist titles).
 
 Options requested:
 - Include Musical Genre/Sub-genre: ${options.includeGenre !== false ? 'Yes' : 'No'}
@@ -80,9 +90,14 @@ Instructions:
 1. "genre": The primary music genre in Japanese (e.g., "J-POP", "シティポップ", "ロック", "アニメソング", "ジャズ", "昭和歌謡", "フォーク", "R&B", "ヒップホップ", "アイドル", "クラシック", "ハードロック", "ニューミュージック", "エレクトロニック").
 2. "subGenre": Sub-genre or musical style if applicable (e.g., "ガールズポップ", "青春パンク", "AOR", "メロコア", "渋谷系", "テクノポップ").
 3. "mood": Atmosphere & emotional feel keywords in Japanese (e.g., "爽快・疾走感", "切ない・哀愁", "メロウ・チル", "エモーショナル", "リラックス・夜", "ダンサブル", "重厚・ダーク").
-4. "era": Era/decade classification (e.g., "70年代", "80年代", "90年代", "2000年代", "2010年代", "2020年代", "昭和歌謡", "平成初期", "令和").
-5. "suggestedTags": Array of 3 to 5 concise Japanese tags. Examples: ["J-POP", "90年代", "ミリオンセラー", "切ない", "名盤"], ["シティポップ", "80年代", "爽やか", "ドライブ"], ["アニソン", "2000年代", "熱い", "主題歌"].
-6. "reasoning": A 1-sentence Japanese summary describing the musical sound and features.
+4. "era": Era/decade classification derived from releaseDate or original release period (e.g., "70年代", "80年代", "90年代", "2000年代", "2010年代", "2020年代", "昭和歌謡", "平成初期", "令和").
+5. "suggestedTags": Array of 3 to 5 concise Japanese tags.
+6. "reasoning": A clear 1-2 sentence Japanese explanation summarizing the overall musical characteristics and why these tags fit this album.
+7. "tagEvidence": An array corresponding to each tag in "suggestedTags", explaining the concrete basis (根拠):
+   - "tag": The exact tag string.
+   - "category": One of "genre" | "mood" | "era" | "style".
+   - "evidence": Specific Japanese explanation of why this tag was chosen (e.g., "発売日(1998-04-08)から90年代後半のJ-POPと判定", "アーティストの音楽性と収録曲『...』のバンドサウンドから判定", "規格品番・レーベルの特徴からアニメ主題歌シングルと判定").
+   - "sourceFields": Array of input fields used as evidence in Japanese (e.g., ["アーティスト名", "収録曲リスト"], ["発売年月日"], ["規格品番・レーベル", "タイトル"]).
 
 Return ONLY a valid JSON object matching this schema with no markdown backticks:
 {
@@ -94,7 +109,15 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
       "mood": "...",
       "era": "...",
       "suggestedTags": ["tag1", "tag2", "tag3"],
-      "reasoning": "..."
+      "reasoning": "...",
+      "tagEvidence": [
+        {
+          "tag": "tag1",
+          "category": "genre",
+          "evidence": "...",
+          "sourceFields": ["アーティスト名", "収録曲リスト"]
+        }
+      ]
     }
   ]
 }
@@ -135,13 +158,32 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
           else if (y >= 2020) era = '2020年代';
         }
 
+        const suggested = [era, cd.genre || 'J-POP', '邦楽'].filter(Boolean);
         allResults.push({
           id: cd.id,
-          genre: 'J-POP / 邦楽',
+          genre: cd.genre || 'J-POP / 邦楽',
           mood: 'ポップ・メロディアス',
           era: era || '邦楽',
-          suggestedTags: [era, 'J-POP', '邦楽'].filter(Boolean),
-          reasoning: 'AI通信フォールバックによる簡易判定',
+          suggestedTags: suggested,
+          reasoning: `アーティスト「${cd.artist}」・タイトル「${cd.title}」${cd.releaseDate ? `・発売日(${cd.releaseDate})` : ''}のメタデータに基づく自動分類`,
+          tagEvidence: [
+            ...(era
+              ? [
+                  {
+                    tag: era,
+                    category: 'era' as const,
+                    evidence: `発売年月日（${cd.releaseDate}）の西暦から${era}の作品と判定`,
+                    sourceFields: ['発売年月日'],
+                  },
+                ]
+              : []),
+            {
+              tag: cd.genre || 'J-POP',
+              category: 'genre' as const,
+              evidence: `アーティスト「${cd.artist}」およびレーベル（${cd.label || '国内盤規格'}）の傾向から判定`,
+              sourceFields: ['アーティスト名', 'レーベル'],
+            },
+          ],
         });
       });
     }

@@ -8,6 +8,23 @@ export interface TrackInfo {
   previewUrl?: string; // audio sample if available from iTunes
 }
 
+export interface AITagEvidenceItem {
+  tag: string;
+  category: 'genre' | 'mood' | 'era' | 'style';
+  evidence: string;
+  sourceFields: string[];
+}
+
+export interface AITagAnalysisMetadata {
+  genre?: string;
+  subGenre?: string;
+  mood?: string;
+  era?: string;
+  reasoning?: string;
+  tagEvidence?: AITagEvidenceItem[];
+  analyzedAt?: string;
+}
+
 export interface CDMetadata {
   id: string; // unique ID or hash
   catalogNumber: string; // 型番 (e.g. SRCL-1234, VICL-60001)
@@ -43,6 +60,7 @@ export interface CDMetadata {
   }>>;
   confidenceScore?: number; // 0 - 100 match confidence
   tags?: string[];
+  aiTagAnalysis?: AITagAnalysisMetadata; // Persisted basis/reasoning & evidence from AI auto-tagging
   notes?: string;
   verifiedByAI?: boolean;
   aiVerificationSummary?: string;

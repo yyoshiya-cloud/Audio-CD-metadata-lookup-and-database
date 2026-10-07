@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
 import { CDMetadata } from '../types/cd';
 import { getJSTISOString } from '../lib/dateUtils';
-import { X, Sparkles, RefreshCw, CheckCircle2, Tag, Calendar, Music, Disc, AlertCircle, Check, Plus } from 'lucide-react';
+import { X, Sparkles, RefreshCw, CheckCircle2, Tag, Disc, AlertCircle, Check, Plus, Info, ChevronDown, ChevronUp } from 'lucide-react';
+
+interface TagEvidenceItem {
+  tag: string;
+  category: 'genre' | 'mood' | 'era' | 'style';
+  evidence: string;
+  sourceFields: string[];
+}
 
 interface CDTagAnalysisResult {
   id: string;
@@ -11,6 +18,7 @@ interface CDTagAnalysisResult {
   era: string;
   suggestedTags: string[];
   reasoning?: string;
+  tagEvidence?: TagEvidenceItem[];
 }
 
 interface AITaggingModalProps {
@@ -42,10 +50,13 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
   const [analysisResults, setAnalysisResults] = useState<Map<string, {
     tags: string[];
     genre: string;
+    subGenre?: string;
     mood: string;
     era: string;
     reasoning?: string;
+    tagEvidence?: TagEvidenceItem[];
   }>>(new Map());
+  const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<Set<string>>(new Set());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newTagInputs, setNewTagInputs] = useState<Record<string, string>>({});
@@ -75,9 +86,11 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
     const resultMap = new Map<string, {
       tags: string[];
       genre: string;
+      subGenre?: string;
       mood: string;
       era: string;
       reasoning?: string;
+      tagEvidence?: TagEvidenceItem[];
     }>();
 
     // Batch in chunks of 6 to avoid server request timeouts
@@ -137,9 +150,11 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
             resultMap.set(item.id, {
               tags: finalTags,
               genre: item.genre,
+              subGenre: item.subGenre,
               mood: item.mood,
               era: item.era,
               reasoning: item.reasoning,
+              tagEvidence: item.tagEvidence,
             });
           });
         }
@@ -147,12 +162,28 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
         console.error('Error analyzing batch chunk:', err);
         // Fallback for this chunk so workflow continues
         chunk.forEach((c) => {
+          const yearStr = c.releaseDate?.slice(0, 4);
+          const eraStr = yearStr ? `${yearStr.slice(0, 3)}0年代` : '邦楽';
           resultMap.set(c.id, {
-            tags: c.tags && c.tags.length > 0 ? c.tags : ['J-POP', '邦楽'],
-            genre: 'J-POP',
+            tags: c.tags && c.tags.length > 0 ? c.tags : ['J-POP', '邦楽', eraStr],
+            genre: c.genre || 'J-POP',
             mood: 'メロディアス',
-            era: c.releaseDate?.slice(0, 4) ? `${c.releaseDate.slice(0, 3)}0年代` : '邦楽',
-            reasoning: '簡易フォールバック判定',
+            era: eraStr,
+            reasoning: `アーティスト「${c.artist}」・タイトル「${c.title}」${c.releaseDate ? `・発売日(${c.releaseDate})` : ''}のメタデータに基づく判定`,
+            tagEvidence: [
+              {
+                tag: eraStr,
+                category: 'era',
+                evidence: c.releaseDate ? `発売年月日 (${c.releaseDate}) から年代を算出` : '国内盤メタデータより算出',
+                sourceFields: ['発売年月日'],
+              },
+              {
+                tag: c.genre || 'J-POP',
+                category: 'genre',
+                evidence: `アーティスト「${c.artist}」および収録曲リストの特徴から判定`,
+                sourceFields: ['アーティスト名', '収録曲リスト'],
+              },
+            ],
           });
         });
       }
@@ -200,10 +231,23 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
       targets.forEach((cd) => {
         const res = analysisResults.get(cd.id);
         if (res) {
+          // Filter tagEvidence to keep evidence for tags that are still present, or keep all analyzed evidence
+          const activeTagEvidence = (res.tagEvidence || []).filter((ev) =>
+            res.tags.includes(ev.tag)
+          );
           updatedList.push({
             ...cd,
             tags: res.tags,
             genre: res.genre || cd.genre,
+            aiTagAnalysis: {
+              genre: res.genre || cd.genre,
+              subGenre: res.subGenre,
+              mood: res.mood,
+              era: res.era,
+              reasoning: res.reasoning,
+              tagEvidence: activeTagEvidence.length > 0 ? activeTagEvidence : res.tagEvidence,
+              analyzedAt: getJSTISOString(),
+            },
             updatedAt: getJSTISOString(),
           });
         }
@@ -425,6 +469,36 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                 </div>
               </div>
 
+              {/* AI Tagging Basis & Evidence Explanation Card */}
+              <div className="bg-slate-950/80 border border-indigo-500/30 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-extrabold text-indigo-300">
+                  <Info className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                  <span>AIが自動でタグを判定・付与する5つの根拠（判断基準）</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-[11px]">
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                    <span className="font-bold text-purple-300 block mb-0.5">① アーティスト名・活動文脈</span>
+                    <span className="text-slate-400">歌手・バンド・作曲家の音楽的バックグラウンドから主要ジャンル（J-POP、ロック、シティポップ、ジャズ等）を特定します。</span>
+                  </div>
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                    <span className="font-bold text-indigo-300 block mb-0.5">② 収録曲リスト（最大10曲の曲名・語彙）</span>
+                    <span className="text-slate-400">曲名に含まれる英語/日本語の語彙やサブタイトル（Remix、バラード、主題歌、Live等）から曲調・雰囲気（ムード）を推論します。</span>
+                  </div>
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                    <span className="font-bold text-amber-300 block mb-0.5">③ 発売年月日（Release Date）</span>
+                    <span className="text-slate-400">発売日の西暦から「70年代」「80年代」「90年代」「昭和歌謡」「平成初期」などの時代区分タグを客観的に算出します。</span>
+                  </div>
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                    <span className="font-bold text-emerald-300 block mb-0.5">④ 規格品番（型番）・レーベル名</span>
+                    <span className="text-slate-400">レコード会社固有の品番プレフィックス（例: LACA=Lantis/アニソン、TOCT=東芝EMI、SRCL=Sony等）やレーベル特徴を参照します。</span>
+                  </div>
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 sm:col-span-2 lg:col-span-2">
+                    <span className="font-bold text-rose-300 block mb-0.5">⑤ アルバムタイトル・既存ジャンル・備考メモ</span>
+                    <span className="text-slate-400">「BEST」「ORIGINAL SOUNDTRACK」「SINGLE COLLECTION」等のタイトル構造や備考欄のタイアップ記述を総合し、各タグごとの判定根拠（Evidence）を明示して出力します。</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Summary Banner */}
               <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-xl p-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -510,107 +584,166 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                   return (
                     <div
                       key={cd.id}
-                      className="bg-slate-800/40 border border-slate-700/80 rounded-xl p-4 flex flex-col sm:flex-row gap-4 items-start justify-between transition-colors hover:border-slate-600"
+                      className="bg-slate-800/40 border border-slate-700/80 rounded-xl p-4 flex flex-col gap-3 transition-colors hover:border-slate-600"
                     >
-                      {/* Album Summary */}
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                          {cd.coverUrl ? (
-                            <img src={cd.coverUrl} alt={cd.title} className="w-full h-full object-cover" />
-                          ) : (
-                            <Disc className="w-6 h-6 text-slate-600" />
-                          )}
+                      <div className="flex flex-col sm:flex-row gap-4 items-start justify-between">
+                        {/* Album Summary */}
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                            {cd.coverUrl ? (
+                              <img src={cd.coverUrl} alt={cd.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <Disc className="w-6 h-6 text-slate-600" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {cd.catalogNumber && (
+                                <span className="text-[10px] font-mono text-indigo-300 font-bold bg-slate-900 px-1.5 py-0.2 rounded border border-slate-700">
+                                  {cd.catalogNumber}
+                                </span>
+                              )}
+                              <h4 className="text-xs font-bold text-white truncate" title={cd.title}>
+                                {cd.title}
+                              </h4>
+                            </div>
+                            <p className="text-[11px] text-slate-300 truncate" title={cd.artist}>
+                              {cd.artist} {cd.releaseDate ? `(${cd.releaseDate})` : ''} {cd.label ? `• ${cd.label}` : ''}
+                            </p>
+                            {res?.reasoning && (
+                              <div className="mt-1.5 bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1.5 text-[11px] text-indigo-200 leading-relaxed">
+                                <span className="font-bold text-indigo-300 mr-1">💡 AI総合判定理由:</span>
+                                <span>{res.reasoning}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            {cd.catalogNumber && (
-                              <span className="text-[10px] font-mono text-indigo-300 font-bold bg-slate-900 px-1.5 py-0.2 rounded border border-slate-700">
-                                {cd.catalogNumber}
+                        {/* Analyzed Tag Badges & Edit */}
+                        <div className="w-full sm:w-auto flex flex-col items-start sm:items-end gap-2 flex-shrink-0">
+                          {/* Meta hints */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {res?.genre && (
+                              <span className="text-[10px] bg-blue-950/80 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-medium">
+                                ジャンル: {res.genre}{res.subGenre ? ` / ${res.subGenre}` : ''}
                               </span>
                             )}
-                            <h4 className="text-xs font-bold text-white truncate" title={cd.title}>
-                              {cd.title}
-                            </h4>
+                            {res?.mood && (
+                              <span className="text-[10px] bg-purple-950/80 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">
+                                ムード: {res.mood}
+                              </span>
+                            )}
+                            {res?.era && (
+                              <span className="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">
+                                年代: {res.era}
+                              </span>
+                            )}
                           </div>
-                          <p className="text-[11px] text-slate-300 truncate" title={cd.artist}>
-                            {cd.artist} {cd.releaseDate ? `(${cd.releaseDate.slice(0, 4)})` : ''}
-                          </p>
-                          {res?.reasoning && (
-                            <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1 italic">
-                              💡 {res.reasoning}
-                            </p>
-                          )}
-                        </div>
-                      </div>
 
-                      {/* Analyzed Tag Badges & Edit */}
-                      <div className="w-full sm:w-auto flex flex-col items-start sm:items-end gap-2 flex-shrink-0">
-                        {/* Meta hints */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {res?.genre && (
-                            <span className="text-[10px] bg-blue-950/80 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-medium">
-                              {res.genre}
-                            </span>
-                          )}
-                          {res?.mood && (
-                            <span className="text-[10px] bg-purple-950/80 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">
-                              {res.mood}
-                            </span>
-                          )}
-                          {res?.era && (
-                            <span className="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">
-                              {res.era}
-                            </span>
-                          )}
-                        </div>
+                          {/* Interactive Tag Badges */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {tags.map((t, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 bg-slate-700/80 hover:bg-slate-700 text-slate-200 text-xs px-2.5 py-1 rounded-lg border border-slate-600 transition-colors group"
+                              >
+                                <span>#{t}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveTag(cd.id, t)}
+                                  className="text-slate-400 hover:text-rose-400 ml-0.5 text-xs font-bold"
+                                  title="タグを削除"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
 
-                        {/* Interactive Tag Badges */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {tags.map((t, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1 bg-slate-700/80 hover:bg-slate-700 text-slate-200 text-xs px-2.5 py-1 rounded-lg border border-slate-600 transition-colors group"
-                            >
-                              <span>#{t}</span>
+                            {/* Inline Add Tag */}
+                            <div className="inline-flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={newTagInputs[cd.id] || ''}
+                                onChange={(e) => setNewTagInputs({ ...newTagInputs, [cd.id]: e.target.value })}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleAddCustomTag(cd.id);
+                                  }
+                                }}
+                                placeholder="+ タグ追加"
+                                className="bg-slate-900 border border-slate-700 focus:border-purple-500 rounded px-2 py-0.5 text-[11px] text-white w-20"
+                              />
                               <button
                                 type="button"
-                                onClick={() => handleRemoveTag(cd.id, t)}
-                                className="text-slate-400 hover:text-rose-400 ml-0.5 text-xs font-bold"
-                                title="タグを削除"
+                                onClick={() => handleAddCustomTag(cd.id)}
+                                className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px]"
+                                title="追加"
                               >
-                                ×
+                                <Plus className="w-3 h-3" />
                               </button>
-                            </span>
-                          ))}
-
-                          {/* Inline Add Tag */}
-                          <div className="inline-flex items-center gap-1">
-                            <input
-                              type="text"
-                              value={newTagInputs[cd.id] || ''}
-                              onChange={(e) => setNewTagInputs({ ...newTagInputs, [cd.id]: e.target.value })}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleAddCustomTag(cd.id);
-                                }
-                              }}
-                              placeholder="+ タグ追加"
-                              className="bg-slate-900 border border-slate-700 focus:border-purple-500 rounded px-2 py-0.5 text-[11px] text-white w-20"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleAddCustomTag(cd.id)}
-                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px]"
-                              title="追加"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
+                            </div>
                           </div>
                         </div>
                       </div>
 
+                      {/* Tag-by-Tag Evidence Breakdown (根拠の内訳) */}
+                      {res?.tagEvidence && res.tagEvidence.length > 0 && (
+                        <div className="pt-2 border-t border-slate-700/60">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedEvidenceIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(cd.id)) next.delete(cd.id);
+                                else next.add(cd.id);
+                                return next;
+                              });
+                            }}
+                            className="flex items-center gap-1.5 text-[11px] font-bold text-purple-300 hover:text-purple-200 cursor-pointer"
+                          >
+                            {expandedEvidenceIds.has(cd.id) ? (
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            )}
+                            <span>
+                              各タグの選出根拠・参照メタデータを確認 ({res.tagEvidence.length}件の根拠)
+                            </span>
+                          </button>
+
+                          {expandedEvidenceIds.has(cd.id) && (
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {res.tagEvidence.map((ev, evIdx) => (
+                                <div
+                                  key={evIdx}
+                                  className="bg-slate-900/90 border border-slate-700/80 rounded-lg p-2.5 text-[11px] space-y-1"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-extrabold text-white bg-purple-950/90 border border-purple-500/40 px-2 py-0.5 rounded text-[10px]">
+                                      #{ev.tag}
+                                    </span>
+                                    {ev.sourceFields && ev.sourceFields.length > 0 && (
+                                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                                        {ev.sourceFields.map((sf, sfIdx) => (
+                                          <span
+                                            key={sfIdx}
+                                            className="text-[9px] font-mono bg-slate-800 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded"
+                                          >
+                                            参照: {sf}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <p className="text-slate-300 leading-relaxed">{ev.evidence}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

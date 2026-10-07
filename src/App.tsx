@@ -18,6 +18,7 @@ import { AppInfoModal } from './components/AppInfoModal';
 import { DashboardView } from './components/DashboardView';
 import { DuplicateCheckView } from './components/DuplicateCheckView';
 import { JacketGalleryView } from './components/JacketGalleryView';
+import { PDFCatalogModal } from './components/PDFCatalogModal';
 import { CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -72,6 +73,8 @@ export default function App() {
   const [isAITaggingOpen, setIsAITaggingOpen] = useState(false);
   const [isAppInfoOpen, setIsAppInfoOpen] = useState(false);
   const [aiTaggingSelectedCDs, setAiTaggingSelectedCDs] = useState<CDMetadata[]>([]);
+  const [isPDFCatalogOpen, setIsPDFCatalogOpen] = useState(false);
+  const [pdfCatalogSelectedCDs, setPdfCatalogSelectedCDs] = useState<CDMetadata[]>([]);
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -249,6 +252,12 @@ export default function App() {
   const handleOpenAITagging = (selected: CDMetadata[]) => {
     setAiTaggingSelectedCDs(selected);
     setIsAITaggingOpen(true);
+  };
+
+  // Open PDF Catalog / Analog Sleeve Export Modal
+  const handleOpenPDFCatalog = (selected: CDMetadata[]) => {
+    setPdfCatalogSelectedCDs(selected);
+    setIsPDFCatalogOpen(true);
   };
 
   // Apply Batch CD Updates / AI Tags to Library
@@ -470,6 +479,7 @@ export default function App() {
             onOpenManualAdd={handleOpenManualAdd}
             onOpenBatchModal={() => setIsBatchModalOpen(true)}
             onOpenAITagging={handleOpenAITagging}
+            onOpenPDFCatalog={handleOpenPDFCatalog}
             onBatchUpdateCDs={handleApplyBatchAITags}
             initialSearchKeyword={librarySearchFilter}
           />
@@ -486,6 +496,7 @@ export default function App() {
             onSaveCD={handleSaveCDToDB}
             onBatchUpdateCDs={handleApplyBatchAITags}
             onNavigateToSpreadsheet={() => setActiveTab('database')}
+            onOpenPDFCatalog={handleOpenPDFCatalog}
           />
         )}
 
@@ -537,11 +548,23 @@ export default function App() {
             setModalCDList((prev) => prev.map((c) => (c.id === updatedCD.id ? updatedCD : c)));
             setSelectedCDForModal(updatedCD);
           }}
+          onOpenPDFCatalog={(singleCD) => {
+            handleOpenPDFCatalog([singleCD]);
+          }}
           isSaved={savedCDIds.includes(selectedCDForModal.id)}
           currentIndex={currentModalIndex >= 0 ? currentModalIndex : undefined}
           totalCount={modalCDList.length > 0 ? modalCDList.length : undefined}
           onNavigatePrev={hasPrevCD ? handleNavigatePrevCD : undefined}
           onNavigateNext={hasNextCD ? handleNavigateNextCD : undefined}
+        />
+      )}
+
+      {/* Printable CD Catalog / Analog Jacket PDF Studio Modal */}
+      {isPDFCatalogOpen && (
+        <PDFCatalogModal
+          allCDs={savedCDs.length > 0 ? savedCDs : pdfCatalogSelectedCDs}
+          initialSelectedCDs={pdfCatalogSelectedCDs}
+          onClose={() => setIsPDFCatalogOpen(false)}
         />
       )}
 

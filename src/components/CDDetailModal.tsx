@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CDMetadata, TrackInfo, APISource } from '../types/cd';
+import { CDMetadata, TrackInfo, APISource, AITagAnalysisMetadata } from '../types/cd';
 import { getJSTISOString, normalizeCatalogNumber, normalizeReleaseDate } from '../lib/dateUtils';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
 import { enhanceImageWithCanvas, convertImageUrlToBase64 } from '../utils/imageEnhancer';
-import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2 } from 'lucide-react';
+import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2, BookOpen, Tag, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface CDDetailModalProps {
   cd: CDMetadata | null;
   onClose: () => void;
   onSaveCD: (updatedCD: CDMetadata) => void;
+  onOpenPDFCatalog?: (cd: CDMetadata) => void;
   isSaved?: boolean;
   currentIndex?: number;
   totalCount?: number;
@@ -20,6 +21,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   cd,
   onClose,
   onSaveCD,
+  onOpenPDFCatalog,
   isSaved,
   currentIndex,
   totalCount,
@@ -37,6 +39,10 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [notes, setNotes] = useState(cd.notes || '');
   const [coverUrl, setCoverUrl] = useState(cd.coverUrl || '');
   const [tagsInput, setTagsInput] = useState((cd.tags || []).join(', '));
+  const [genre, setGenre] = useState(cd.genre || '');
+  const [aiTagAnalysis, setAiTagAnalysis] = useState<AITagAnalysisMetadata | undefined>(cd.aiTagAnalysis);
+  const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
+  const [showTagEvidenceDetails, setShowTagEvidenceDetails] = useState(true);
   const [tracks, setTracks] = useState<TrackInfo[]>(cd.tracks || []);
   const [bulkTrackText, setBulkTrackText] = useState('');
   const [showBulkPasteInput, setShowBulkPasteInput] = useState(false);
@@ -60,6 +66,8 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       setNotes(cd.notes || '');
       setCoverUrl(cd.coverUrl || '');
       setTagsInput((cd.tags || []).join(', '));
+      setGenre(cd.genre || '');
+      setAiTagAnalysis(cd.aiTagAnalysis);
       setTracks(cd.tracks || []);
       setBulkTrackText('');
       setShowBulkPasteInput(false);
@@ -155,6 +163,72 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
     }
   };
 
+  const handleAnalyzeSingleCDTags = async () => {
+    if (isAnalyzingTags) return;
+    setIsAnalyzingTags(true);
+    try {
+      const existingTags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean);
+      const res = await fetch('/api/ai-analyze-tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cds: [
+            {
+              id: cd.id,
+              title,
+              artist,
+              catalogNumber,
+              label,
+              releaseDate,
+              tracks: tracks.slice(0, 10),
+              genre,
+              existingTags,
+              notes,
+            },
+          ],
+          options: {
+            includeGenre: true,
+            includeMood: true,
+            includeEra: true,
+            mergeMode: 'append',
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('AIタグ分析に失敗しました');
+      }
+
+      const data = await res.json();
+      const item = data.results?.[0];
+      if (item) {
+        const mergedTags = Array.from(new Set([...existingTags, ...(item.suggestedTags || [])]));
+        setTagsInput(mergedTags.join(', '));
+        if (item.genre) setGenre(item.genre);
+
+        const newAnalysis: AITagAnalysisMetadata = {
+          genre: item.genre || genre,
+          subGenre: item.subGenre,
+          mood: item.mood,
+          era: item.era,
+          reasoning: item.reasoning,
+          tagEvidence: item.tagEvidence,
+          analyzedAt: getJSTISOString(),
+        };
+        setAiTagAnalysis(newAnalysis);
+        setShowTagEvidenceDetails(true);
+        setSaveSuccessMessage('AIによる自動タグ付けと分類根拠の生成が完了しました！「保存」を押すとDBに永続保存されます。');
+        setTimeout(() => setSaveSuccessMessage(null), 4500);
+      }
+    } catch (err) {
+      console.error('Single CD AI tag analysis error:', err);
+      setSaveSuccessMessage('AIタグ分析中にエラーが発生しました');
+      setTimeout(() => setSaveSuccessMessage(null), 3500);
+    } finally {
+      setIsAnalyzingTags(false);
+    }
+  };
+
   const handleSaveSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     let finalCoverUrl = coverUrl.trim();
@@ -180,17 +254,19 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       releaseDate: releaseDate ? normalizeToYYYYMMDD(releaseDate) : undefined,
       barcode,
       notes,
+      genre: genre || cd.genre,
       tracks: tracks.map((tr) => ({
         ...tr,
         duration: formatTrackDuration(tr.duration || ''),
       })),
       coverUrl: finalCoverUrl,
       tags: tagsInput.split(',').map((t) => t.trim()).filter(Boolean),
+      aiTagAnalysis,
       updatedAt: getJSTISOString(),
     };
     onSaveCD(updatedCD);
     setIsSavedState(true);
-    setSaveSuccessMessage('保存が完了しました！（ジャケット画像BASE64保存済）');
+    setSaveSuccessMessage('保存が完了しました！（ジャケット画像・タグ分類根拠を保存済）');
     setTimeout(() => {
       setIsSavedState(false);
       setSaveSuccessMessage(null);
@@ -699,6 +775,16 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     <span>{cd.aiVerificationSummary}</span>
                   </div>
                 )}
+
+                {aiTagAnalysis?.reasoning && (
+                  <div className="bg-indigo-950/40 border border-indigo-500/40 rounded-lg p-2 text-[11px] text-indigo-200 mt-2 flex items-start gap-1.5 leading-snug">
+                    <Tag className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-indigo-300 mr-1">AIタグ分類根拠・音楽的特徴:</span>
+                      <span>{aiTagAnalysis.reasoning}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
@@ -941,10 +1027,34 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  タグ (カンマ区切り)
-                </label>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-purple-400" />
+                    <span>タグ (カンマ区切り) ＆ AI自動分類根拠</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeSingleCDTags}
+                    disabled={isAnalyzingTags}
+                    className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white border border-purple-400/40 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                    title="このCDのタイトル・歌手・収録曲・発売日・規格品番からAIがタグと分類根拠（ジャンル選定理由・音楽的特徴）を自動生成します"
+                  >
+                    {isAnalyzingTags ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-200" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-purple-200" />
+                    )}
+                    <span>
+                      {isAnalyzingTags
+                        ? 'AIがタグと根拠を分析中...'
+                        : aiTagAnalysis
+                        ? '✨ AIタグ＆分類根拠を再分析'
+                        : '✨ AIでタグ＆分類根拠を自動生成'}
+                    </span>
+                  </button>
+                </div>
+
                 <input
                   type="text"
                   value={tagsInput}
@@ -952,6 +1062,137 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                   placeholder="J-POP, 80年代, 初回盤"
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
                 />
+
+                {/* Interactive Tag Pills */}
+                {tagsInput.trim() && (
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    {tagsInput
+                      .split(',')
+                      .map((t) => t.trim())
+                      .filter(Boolean)
+                      .map((tagItem, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold bg-slate-800 text-indigo-200 border border-slate-700 px-2.5 py-0.5 rounded-full"
+                        >
+                          <span>#{tagItem}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextTags = tagsInput
+                                .split(',')
+                                .map((t) => t.trim())
+                                .filter((t) => t && t !== tagItem);
+                              setTagsInput(nextTags.join(', '));
+                            }}
+                            className="text-slate-400 hover:text-rose-400 ml-0.5 font-bold cursor-pointer"
+                            title="このタグを削除"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                )}
+
+                {/* Persisted AI Tag Classification Basis & Musical Characteristics Panel */}
+                {aiTagAnalysis && (
+                  <div className="bg-slate-950/90 border border-purple-500/40 rounded-xl p-3.5 space-y-3 shadow-inner">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                        <span className="text-xs font-extrabold text-purple-200">
+                          AIタグ分類根拠（ジャンル選定理由・音楽的特徴の要約）
+                        </span>
+                      </div>
+                      {aiTagAnalysis.analyzedAt && (
+                        <span className="text-[10px] font-mono text-slate-400">
+                          分析日時: {aiTagAnalysis.analyzedAt.slice(0, 16).replace('T', ' ')}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Genre / Mood / Era Summary Pills */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {(aiTagAnalysis.genre || genre) && (
+                        <span className="text-[11px] bg-blue-950/90 text-blue-300 border border-blue-500/40 px-2.5 py-0.5 rounded-full font-bold">
+                          主要ジャンル: {aiTagAnalysis.genre || genre}
+                          {aiTagAnalysis.subGenre ? ` / ${aiTagAnalysis.subGenre}` : ''}
+                        </span>
+                      )}
+                      {aiTagAnalysis.mood && (
+                        <span className="text-[11px] bg-purple-950/90 text-purple-300 border border-purple-500/40 px-2.5 py-0.5 rounded-full font-bold">
+                          雰囲気・ムード: {aiTagAnalysis.mood}
+                        </span>
+                      )}
+                      {aiTagAnalysis.era && (
+                        <span className="text-[11px] bg-amber-950/90 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded-full font-bold">
+                          時代区分: {aiTagAnalysis.era}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Musical Characteristics Summary (Reasoning) */}
+                    {aiTagAnalysis.reasoning && (
+                      <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-lg p-2.5 text-xs text-indigo-100 leading-relaxed">
+                        <span className="font-bold text-indigo-300 block mb-0.5 text-[11px]">
+                          💡 ジャンル選定理由・音楽的特徴の要約:
+                        </span>
+                        <p>{aiTagAnalysis.reasoning}</p>
+                      </div>
+                    )}
+
+                    {/* Per-Tag Evidence Breakdown */}
+                    {aiTagAnalysis.tagEvidence && aiTagAnalysis.tagEvidence.length > 0 && (
+                      <div className="space-y-2 pt-1 border-t border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setShowTagEvidenceDetails((prev) => !prev)}
+                          className="flex items-center gap-1.5 text-[11px] font-bold text-purple-300 hover:text-purple-200 cursor-pointer"
+                        >
+                          {showTagEvidenceDetails ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                          <span>
+                            個別タグごとの判定根拠・参照メタデータ ({aiTagAnalysis.tagEvidence.length}件)
+                          </span>
+                        </button>
+
+                        {showTagEvidenceDetails && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {aiTagAnalysis.tagEvidence.map((ev, idx) => (
+                              <div
+                                key={idx}
+                                className="bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 text-[11px] space-y-1"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-extrabold text-white bg-purple-950/90 border border-purple-500/40 px-2 py-0.5 rounded text-[10px]">
+                                    #{ev.tag}
+                                  </span>
+                                  {ev.sourceFields && ev.sourceFields.length > 0 && (
+                                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                                      {ev.sourceFields.map((sf, sIdx) => (
+                                        <span
+                                          key={sIdx}
+                                          className="text-[9px] font-mono bg-slate-800 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded"
+                                        >
+                                          参照: {sf}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <p className="text-slate-300 leading-relaxed">{ev.evidence}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1249,13 +1490,41 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
 
         {/* Modal Footer Actions (Fixed) */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3.5 border-t border-slate-800 bg-slate-800/70 flex-shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer"
-          >
-            閉じる
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer"
+            >
+              閉じる
+            </button>
+
+            {onOpenPDFCatalog && (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenPDFCatalog({
+                    ...cd,
+                    title,
+                    artist,
+                    catalogNumber: normalizeCatalogNumber(catalogNumber),
+                    label,
+                    releaseDate: releaseDate ? normalizeToYYYYMMDD(releaseDate) : undefined,
+                    barcode,
+                    notes,
+                    tracks,
+                    coverUrl,
+                    tags: tagsInput.split(',').map((t) => t.trim()).filter(Boolean),
+                  })
+                }
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white border border-amber-400/40 shadow-md transition-all cursor-pointer"
+                title="このCDのアナログジャケット風ライナーノーツやCDケース差し込みカードをPDF出力"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-amber-100" />
+                <span>アナログジャケット風PDF出力</span>
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center justify-end gap-3 w-full sm:w-auto">
             {saveSuccessMessage && (
