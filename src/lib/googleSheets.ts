@@ -7,6 +7,9 @@ export const DEFAULT_COLUMN_CONFIG: ExportColumnConfig[] = [
   { key: 'artist', label: '歌手/アーティスト', enabled: true },
   { key: 'label', label: 'レーベル/発売元', enabled: true },
   { key: 'releaseDate', label: '発売年月日', enabled: true },
+  { key: 'vinylRecordReleaseDate', label: '同タイトルLP/EP発売年月日', enabled: true },
+  { key: 'vinylRecordFormat', label: 'アナログ盤種別(LP/EP)', enabled: true },
+  { key: 'vinylRecordCatalogNumber', label: 'LP/EP規格品番', enabled: true },
   { key: 'barcode', label: 'JAN/EANバーコード', enabled: true },
   { key: 'country', label: '発売国/仕様', enabled: true },
   { key: 'format', label: 'フォーマット', enabled: true },
@@ -413,6 +416,10 @@ export function formatCDToRowValues(cd: CDMetadata, columns: ExportColumnConfig[
       cellValue = normalizeCatalogNumber(cd.catalogNumber);
     } else if (col.key === 'releaseDate') {
       cellValue = normalizeReleaseDate(cd.releaseDate);
+    } else if (col.key === 'vinylRecordReleaseDate') {
+      cellValue = normalizeReleaseDate(cd.vinylRecordReleaseDate);
+    } else if (col.key === 'vinylRecordCatalogNumber') {
+      cellValue = normalizeCatalogNumber(cd.vinylRecordCatalogNumber);
     } else {
       const val = cd[col.key as keyof CDMetadata];
       if (Array.isArray(val)) {
@@ -967,7 +974,10 @@ export function parseSpreadsheetRowsToCDs(
   const titleIdx = findColIndex('アルバム/cdタイトル', 'cdタイトル', 'アルバムタイトル', 'アルバム名', 'アルバム', 'タイトル', 'title', 'album');
   const artistIdx = findColIndex('歌手/アーティスト', '歌手・アーティスト名', 'アーティスト名', '歌手', 'アーティスト', 'artist', 'creator');
   const labelIdx = findColIndex('レーベル/発売元', 'レーベル・発売元', 'レーベル', '発売元', 'label', 'publisher');
-  const releaseIdx = findColIndex('発売年月日', '発売日', 'releasedate', 'release');
+  const releaseIdx = findColIndex('cd発売年月日', '発売年月日', '発売日', 'releasedate', 'release');
+  const vinylReleaseIdx = findColIndex('同タイトルlp/ep発売年月日', 'lp/ep発売年月日', 'lp/ep発売日', 'レコード発売年月日', 'レコード発売日', 'vinylrecordreleasedate');
+  const vinylFormatIdx = findColIndex('アナログ盤種別(lp/ep)', 'アナログ盤種別', 'lp/ep種別', 'vinylrecordformat');
+  const vinylCatIdx = findColIndex('lp/ep規格品番', 'レコード規格品番', 'vinylrecordcatalognumber');
   const barcodeIdx = findColIndex('jan/eanバーコード', 'バーコード(jan)', 'バーコード', 'jan', 'ean', 'barcode');
   const countryIdx = findColIndex('発売国/仕様', '発売国', '仕様', 'country');
   const formatIdx = findColIndex('フォーマット', 'format');
@@ -1076,6 +1086,10 @@ export function parseSpreadsheetRowsToCDs(
     const artist = getVal(artistIdx);
     const rawReleaseDate = getVal(releaseIdx);
     const releaseDate = normalizeReleaseDate(rawReleaseDate);
+    const rawVinylReleaseDate = getVal(vinylReleaseIdx);
+    const vinylRecordReleaseDate = normalizeReleaseDate(rawVinylReleaseDate);
+    const vinylRecordFormat = getVal(vinylFormatIdx);
+    const vinylRecordCatalogNumber = normalizeCatalogNumber(getVal(vinylCatIdx));
 
     // Skip row if it doesn't have title and doesn't have catalogNumber
     if (!title && !catalogNumber) return;
@@ -1143,6 +1157,9 @@ export function parseSpreadsheetRowsToCDs(
         catalogNumber: catalogNumber || '',
         label: getVal(labelIdx) || undefined,
         releaseDate: releaseDate || undefined,
+        vinylRecordReleaseDate: vinylRecordReleaseDate || undefined,
+        vinylRecordFormat: vinylRecordFormat || undefined,
+        vinylRecordCatalogNumber: vinylRecordCatalogNumber || undefined,
         barcode: getVal(barcodeIdx) || undefined,
         country: getVal(countryIdx) || undefined,
         format: getVal(formatIdx) || undefined,
@@ -1194,6 +1211,9 @@ export function parseSpreadsheetRowsToCDs(
       catalogNumber: catalogNumber || '',
       label: getVal(labelIdx) || undefined,
       releaseDate: releaseDate || undefined,
+      vinylRecordReleaseDate: vinylRecordReleaseDate || undefined,
+      vinylRecordFormat: vinylRecordFormat || undefined,
+      vinylRecordCatalogNumber: vinylRecordCatalogNumber || undefined,
       barcode: getVal(barcodeIdx) || undefined,
       country: getVal(countryIdx) || undefined,
       format: getVal(formatIdx) || undefined,

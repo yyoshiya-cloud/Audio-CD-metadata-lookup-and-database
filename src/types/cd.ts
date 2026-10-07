@@ -31,7 +31,10 @@ export interface CDMetadata {
   title: string; // CD/Album Title
   artist: string; // Singer / Artist / Composer
   label?: string; // Record Label / Publisher (e.g. Sony Music, Victor, Avex)
-  releaseDate?: string; // YYYY-MM-DD or YYYY
+  releaseDate?: string; // YYYY-MM-DD or YYYY (CD release date)
+  vinylRecordReleaseDate?: string; // YYYY-MM-DD or YYYY (Same-title LP / EP vinyl record release date)
+  vinylRecordFormat?: string; // e.g. 'LP', 'EP', 'LP / EP', '12"', '7"'
+  vinylRecordCatalogNumber?: string; // Original LP/EP catalog number if available
   barcode?: string; // JAN/EAN code (e.g. 4988001...)
   coverUrl?: string; // High-res artwork URL
   country?: string; // Release country (e.g. JP)

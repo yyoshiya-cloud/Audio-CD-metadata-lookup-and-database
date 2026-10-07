@@ -84,6 +84,32 @@ app.post('/api/ocr', async (req, res) => {
 import { analyzeCDTagsWithGemini } from './server/aiTagging.js';
 import { backfillCDMetadataWithGemini } from './server/aiBackfill.js';
 import { upscaleJacketImage } from './server/upscaleImage.js';
+import { lookupVinylReleaseDates } from './server/vinylLookup.js';
+
+// Server-side API to lookup same-title LP / EP vinyl record release dates via MusicBrainz, Discogs, NDL, and Gemini
+app.post('/api/lookup-vinyl-release', async (req, res) => {
+  try {
+    const { items, discogsToken } = req.body || {};
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'LP/EP発売日を検索する対象のCD情報(items)が必要です。' });
+    }
+
+    const queries = items.map((item: any) => ({
+      id: item.id,
+      title: item.title || '',
+      artist: item.artist || '',
+      catalogNumber: item.catalogNumber || '',
+      cdReleaseDate: item.releaseDate || '',
+      discogsToken: discogsToken || item.discogsToken,
+    }));
+
+    const results = await lookupVinylReleaseDates(queries);
+    res.json({ results });
+  } catch (err: any) {
+    console.error('Error in /api/lookup-vinyl-release:', err);
+    res.status(500).json({ error: err.message || 'LP/EPレコード発売日の取得中にエラーが発生しました。' });
+  }
+});
 
 // Server-side Gemini AI Cover Art Upscaling & Enhancement
 app.post('/api/upscale-jacket', async (req, res) => {

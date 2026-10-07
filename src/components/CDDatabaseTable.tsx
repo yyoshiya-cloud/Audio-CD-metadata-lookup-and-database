@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CDMetadata } from '../types/cd';
-import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen } from 'lucide-react';
+import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2 } from 'lucide-react';
 import { SpreadsheetEditorView } from './SpreadsheetEditorView';
 
 interface CDDatabaseTableProps {
@@ -43,8 +43,11 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   const [filterSynced, setFilterSynced] = useState<'all' | 'synced' | 'notSynced'>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedTracklistId, setExpandedTracklistId] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<'catalogNumber' | 'title' | 'artist' | 'label' | 'releaseDate' | null>(null);
+  const [sortField, setSortField] = useState<'catalogNumber' | 'title' | 'artist' | 'label' | 'releaseDate' | 'vinylRecordReleaseDate' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [isLookingUpVinylBatch, setIsLookingUpVinylBatch] = useState(false);
+  const [vinylBatchProgress, setVinylBatchProgress] = useState<{ current: number; total: number } | null>(null);
+  const [vinylLookupNotice, setVinylLookupNotice] = useState<string | null>(null);
 
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
     type: 'single' | 'batch' | 'all';
@@ -79,7 +82,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
     return matchesKw && matchesSynced;
   });
 
-  const handleSort = (field: 'catalogNumber' | 'title' | 'artist' | 'label' | 'releaseDate') => {
+  const handleSort = (field: 'catalogNumber' | 'title' | 'artist' | 'label' | 'releaseDate' | 'vinylRecordReleaseDate') => {
     if (sortField === field) {
       if (sortDirection === 'asc') {
         setSortDirection('desc');
@@ -90,6 +93,86 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
     } else {
       setSortField(field);
       setSortDirection('asc');
+    }
+  };
+
+  // Batch lookup LP / EP vinyl record release dates via API for selected or all filtered CDs
+  const handleBatchLookupVinylReleaseDates = async (targetItems: CDMetadata[]) => {
+    if (!onBatchUpdateCDs || targetItems.length === 0 || isLookingUpVinylBatch) return;
+
+    setIsLookingUpVinylBatch(true);
+    setVinylBatchProgress({ current: 0, total: targetItems.length });
+    setVinylLookupNotice(null);
+
+    try {
+      let discogsToken = '';
+      try {
+        const credsRaw = localStorage.getItem('cd_api_credentials');
+        if (credsRaw) {
+          const creds = JSON.parse(credsRaw);
+          discogsToken = creds.discogsToken || '';
+        }
+      } catch {}
+
+      const updatedCDs: CDMetadata[] = [];
+      const CHUNK_SIZE = 5;
+
+      for (let i = 0; i < targetItems.length; i += CHUNK_SIZE) {
+        const chunk = targetItems.slice(i, i + CHUNK_SIZE);
+        const res = await fetch('/api/lookup-vinyl-release', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: chunk.map((c) => ({
+              id: c.id,
+              title: c.title,
+              artist: c.artist,
+              catalogNumber: c.catalogNumber,
+              releaseDate: c.releaseDate,
+            })),
+            discogsToken,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const resultsList = data.results || [];
+          resultsList.forEach((r: any) => {
+            if (r && r.found && r.vinylRecordReleaseDate) {
+              const orig = chunk.find((c) => c.id === r.id);
+              if (orig) {
+                updatedCDs.push({
+                  ...orig,
+                  vinylRecordReleaseDate: r.vinylRecordReleaseDate,
+                  vinylRecordFormat: r.vinylRecordFormat || orig.vinylRecordFormat || 'LP',
+                  vinylRecordCatalogNumber: r.vinylRecordCatalogNumber || orig.vinylRecordCatalogNumber,
+                  updatedAt: new Date().toISOString(),
+                });
+              }
+            }
+          });
+        }
+
+        setVinylBatchProgress({
+          current: Math.min(i + chunk.length, targetItems.length),
+          total: targetItems.length,
+        });
+      }
+
+      if (updatedCDs.length > 0) {
+        await onBatchUpdateCDs(updatedCDs);
+        setVinylLookupNotice(`${updatedCDs.length} 件のCDについて、同タイトルのLP/EPレコード発売日をAPIから取得・記録しました！`);
+      } else {
+        setVinylLookupNotice('対象のCDについて、新たにAPIから取得できる同タイトルのLP/EP発売日は見つかりませんでした。');
+      }
+      setTimeout(() => setVinylLookupNotice(null), 5000);
+    } catch (err) {
+      console.error('Batch vinyl lookup error:', err);
+      setVinylLookupNotice('LP/EPレコード発売日のAPI一括取得中にエラーが発生しました。');
+      setTimeout(() => setVinylLookupNotice(null), 4000);
+    } finally {
+      setIsLookingUpVinylBatch(false);
+      setVinylBatchProgress(null);
     }
   };
 
@@ -274,6 +357,29 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             </button>
           )}
 
+          {onBatchUpdateCDs && (
+            <button
+              type="button"
+              onClick={() => handleBatchLookupVinylReleaseDates(selectedIds.length > 0 ? selectedCDs : filteredCDs)}
+              disabled={isLookingUpVinylBatch || filteredCDs.length === 0}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-200 border border-amber-500/40 hover:border-amber-400 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+              title="登録しているCDに同タイトルのLP・EPレコードがある場合、API（MusicBrainz・Discogs・NDL・Gemini）からLP/EP発売年月日を一括取得します"
+            >
+              {isLookingUpVinylBatch ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
+              ) : (
+                <Disc className="w-3.5 h-3.5 text-amber-400" />
+              )}
+              <span>
+                {isLookingUpVinylBatch
+                  ? `LP/EP発売日取得中 (${vinylBatchProgress?.current || 0}/${vinylBatchProgress?.total || 0})`
+                  : selectedIds.length > 0
+                  ? `LP/EP発売日API取得 (${selectedIds.length}件)`
+                  : 'LP/EP発売日API一括取得'}
+              </span>
+            </button>
+          )}
+
           {onOpenAITagging && (
             <button
               onClick={() => onOpenAITagging(selectedCDs)}
@@ -323,6 +429,23 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
 
       </div>
 
+      {/* LP/EP Vinyl Release Date API Lookup Notification Banner */}
+      {vinylLookupNotice && (
+        <div className="bg-amber-950/90 border border-amber-500/50 p-2.5 px-4 rounded-xl text-amber-200 text-xs flex items-center justify-between gap-2 shadow-lg animate-in fade-in duration-150">
+          <div className="flex items-center gap-2 font-semibold">
+            <Disc className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>{vinylLookupNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setVinylLookupNotice(null)}
+            className="text-amber-300 hover:text-white text-xs px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Contextual Batch Selection Banner (Shows only when items are checked) */}
       {selectedIds.length > 0 && (
         <div className="bg-indigo-950/90 border border-indigo-500/50 p-2.5 px-4 rounded-xl shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
@@ -332,7 +455,23 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             <span className="text-slate-400 font-normal">（全 {filteredCDs.length} 件中）</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {onBatchUpdateCDs && (
+              <button
+                type="button"
+                onClick={() => handleBatchLookupVinylReleaseDates(selectedCDs)}
+                disabled={isLookingUpVinylBatch}
+                className="px-2.5 py-1 rounded-lg bg-amber-700 hover:bg-amber-600 text-white font-semibold transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+              >
+                {isLookingUpVinylBatch ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Disc className="w-3 h-3" />
+                )}
+                選択分のLP/EP発売日をAPI取得
+              </button>
+            )}
+
             {onOpenAITagging && (
               <button
                 type="button"
@@ -466,12 +605,26 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                   <th
                     onClick={() => handleSort('releaseDate')}
                     className="py-3 px-3 w-28 cursor-pointer hover:text-white hover:bg-slate-800 transition-colors whitespace-nowrap bg-slate-900"
-                    title="発売年月日などで並べ替え"
+                    title="CD発売年月日などで並べ替え"
                   >
                     <div className="flex items-center gap-1">
-                      <span>発売年月日</span>
+                      <span>CD発売年月日</span>
                       <span className={`text-[10px] font-bold ${sortField === 'releaseDate' ? 'text-indigo-400' : 'text-slate-600'}`}>
                         {sortField === 'releaseDate' ? (sortDirection === 'asc' ? '▲' : '▼') : '↕'}
+                      </span>
+                    </div>
+                  </th>
+
+                  {/* Sortable Column: Same-Title LP/EP Vinyl Release Date */}
+                  <th
+                    onClick={() => handleSort('vinylRecordReleaseDate')}
+                    className="py-3 px-3 w-36 cursor-pointer hover:text-amber-200 hover:bg-slate-800 transition-colors whitespace-nowrap bg-slate-900 text-amber-300/90"
+                    title="同タイトルのLP・EPレコード発売年月日で並べ替え"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>LP/EP発売年月日</span>
+                      <span className={`text-[10px] font-bold ${sortField === 'vinylRecordReleaseDate' ? 'text-amber-400' : 'text-slate-600'}`}>
+                        {sortField === 'vinylRecordReleaseDate' ? (sortDirection === 'asc' ? '▲' : '▼') : '↕'}
                       </span>
                     </div>
                   </th>
@@ -583,8 +736,25 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                         </td>
 
                         {/* Release Date */}
-                        <td className="py-3 px-3 text-slate-400 font-mono">
+                        <td className="py-3 px-3 text-slate-400 font-mono whitespace-nowrap">
                           {cd.releaseDate || '-'}
+                        </td>
+
+                        {/* Same-Title LP/EP Vinyl Release Date */}
+                        <td className="py-3 px-3 font-mono whitespace-nowrap">
+                          {cd.vinylRecordReleaseDate ? (
+                            <div className="flex flex-col">
+                              <span className="text-amber-300 font-bold text-xs">
+                                {cd.vinylRecordReleaseDate}
+                              </span>
+                              <span className="text-[10px] text-amber-400/80">
+                                {cd.vinylRecordFormat || 'LP'}
+                                {cd.vinylRecordCatalogNumber ? ` (${cd.vinylRecordCatalogNumber})` : ''}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-600 text-[11px]">-</span>
+                          )}
                         </td>
 
                         {/* Track Count & Drawer Toggle */}
@@ -627,7 +797,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                       {/* Expandable Tracklist Drawer */}
                       {isExpanded && cd.tracks && cd.tracks.length > 0 && (
                         <tr className="bg-slate-900/60 border-b border-slate-800">
-                          <td colSpan={10} className="py-3 px-6">
+                          <td colSpan={11} className="py-3 px-6">
                             <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 max-h-48 overflow-y-auto">
                               <p className="text-[11px] font-bold text-slate-400 mb-2">トラックリスト ({cd.tracks.length}曲):</p>
                               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-xs text-slate-300 font-mono">

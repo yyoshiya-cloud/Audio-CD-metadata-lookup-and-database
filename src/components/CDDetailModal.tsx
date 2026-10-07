@@ -35,6 +35,13 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [catalogNumber, setCatalogNumber] = useState(cd.catalogNumber);
   const [label, setLabel] = useState(cd.label || '');
   const [releaseDate, setReleaseDate] = useState(cd.releaseDate || '');
+  const [vinylRecordReleaseDate, setVinylRecordReleaseDate] = useState(cd.vinylRecordReleaseDate || '');
+  const [vinylRecordFormat, setVinylRecordFormat] = useState(cd.vinylRecordFormat || 'LP');
+  const [vinylRecordCatalogNumber, setVinylRecordCatalogNumber] = useState(cd.vinylRecordCatalogNumber || '');
+  const [isLookingUpVinyl, setIsLookingUpVinyl] = useState(false);
+  const [vinylLookupCandidates, setVinylLookupCandidates] = useState<
+    { releaseDate: string; format: string; catalogNumber?: string; label?: string; source: string }[]
+  >([]);
   const [barcode, setBarcode] = useState(cd.barcode || '');
   const [notes, setNotes] = useState(cd.notes || '');
   const [coverUrl, setCoverUrl] = useState(cd.coverUrl || '');
@@ -62,6 +69,10 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       setCatalogNumber(cd.catalogNumber || '');
       setLabel(cd.label || '');
       setReleaseDate(cd.releaseDate || '');
+      setVinylRecordReleaseDate(cd.vinylRecordReleaseDate || '');
+      setVinylRecordFormat(cd.vinylRecordFormat || 'LP');
+      setVinylRecordCatalogNumber(cd.vinylRecordCatalogNumber || '');
+      setVinylLookupCandidates([]);
       setBarcode(cd.barcode || '');
       setNotes(cd.notes || '');
       setCoverUrl(cd.coverUrl || '');
@@ -180,6 +191,9 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
               catalogNumber,
               label,
               releaseDate,
+              vinylRecordReleaseDate,
+              vinylRecordFormat,
+              vinylRecordCatalogNumber,
               tracks: tracks.slice(0, 10),
               genre,
               existingTags,
@@ -202,7 +216,12 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       const data = await res.json();
       const item = data.results?.[0];
       if (item) {
-        const mergedTags = Array.from(new Set([...existingTags, ...(item.suggestedTags || [])]));
+        const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+        const newDecadeTag = (item.suggestedTags || []).find((t: string) => decadeRegex.test(t));
+        const cleanedExisting = newDecadeTag
+          ? existingTags.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
+          : existingTags;
+        const mergedTags = Array.from(new Set([...cleanedExisting, ...(item.suggestedTags || [])]));
         setTagsInput(mergedTags.join(', '));
         if (item.genre) setGenre(item.genre);
 
@@ -229,6 +248,76 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
     }
   };
 
+  const handleLookupVinylReleaseDate = async () => {
+    if (!title.trim()) {
+      setSaveSuccessMessage('LP/EPレコードを検索するにはアルバムタイトルを入力してください');
+      setTimeout(() => setSaveSuccessMessage(null), 3500);
+      return;
+    }
+
+    setIsLookingUpVinyl(true);
+    setVinylLookupCandidates([]);
+    try {
+      let discogsToken = '';
+      try {
+        const credsRaw = localStorage.getItem('cd_api_credentials');
+        if (credsRaw) {
+          const creds = JSON.parse(credsRaw);
+          discogsToken = creds.discogsToken || '';
+        }
+      } catch {}
+
+      const res = await fetch('/api/lookup-vinyl-release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [
+            {
+              id: cd.id,
+              title: title.trim(),
+              artist: artist.trim(),
+              catalogNumber: catalogNumber.trim(),
+              releaseDate: releaseDate.trim(),
+            },
+          ],
+          discogsToken,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('LP/EP発売日のAPI検索に失敗しました');
+      }
+
+      const data = await res.json();
+      const first = data.results?.[0];
+      if (first && first.found && first.vinylRecordReleaseDate) {
+        setVinylRecordReleaseDate(first.vinylRecordReleaseDate);
+        if (first.vinylRecordFormat) {
+          setVinylRecordFormat(first.vinylRecordFormat);
+        }
+        if (first.vinylRecordCatalogNumber) {
+          setVinylRecordCatalogNumber(first.vinylRecordCatalogNumber);
+        }
+        if (Array.isArray(first.candidates) && first.candidates.length > 1) {
+          setVinylLookupCandidates(first.candidates);
+        }
+        setSaveSuccessMessage(
+          `同タイトルのLP/EPレコード発売日「${first.vinylRecordReleaseDate}」(${first.vinylRecordFormat || 'LP'}${first.vinylRecordCatalogNumber ? ` / 品番:${first.vinylRecordCatalogNumber}` : ''}) をAPIから取得しました！`
+        );
+        setTimeout(() => setSaveSuccessMessage(null), 5000);
+      } else {
+        setSaveSuccessMessage('同タイトルのLP・EPレコード発売日はAPI上で見つかりませんでした（直接入力も可能です）');
+        setTimeout(() => setSaveSuccessMessage(null), 4000);
+      }
+    } catch (err) {
+      console.error('Vinyl release date lookup error:', err);
+      setSaveSuccessMessage('LP/EPレコード発売日のAPI取得中にエラーが発生しました');
+      setTimeout(() => setSaveSuccessMessage(null), 3500);
+    } finally {
+      setIsLookingUpVinyl(false);
+    }
+  };
+
   const handleSaveSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     let finalCoverUrl = coverUrl.trim();
@@ -252,6 +341,9 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       catalogNumber: normalizeCatalogNumber(catalogNumber),
       label,
       releaseDate: releaseDate ? normalizeToYYYYMMDD(releaseDate) : undefined,
+      vinylRecordReleaseDate: vinylRecordReleaseDate ? normalizeToYYYYMMDD(vinylRecordReleaseDate) : undefined,
+      vinylRecordFormat: vinylRecordReleaseDate ? vinylRecordFormat : undefined,
+      vinylRecordCatalogNumber: vinylRecordCatalogNumber ? normalizeCatalogNumber(vinylRecordCatalogNumber) : undefined,
       barcode,
       notes,
       genre: genre || cd.genre,
@@ -266,7 +358,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
     };
     onSaveCD(updatedCD);
     setIsSavedState(true);
-    setSaveSuccessMessage('保存が完了しました！（ジャケット画像・タグ分類根拠を保存済）');
+    setSaveSuccessMessage('保存が完了しました！（LP/EPレコード発売日・ジャケット画像・タグ分類根拠を保存済）');
     setTimeout(() => {
       setIsSavedState(false);
       setSaveSuccessMessage(null);
@@ -787,14 +879,22 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
                 <div>
                   <span className="text-slate-400 block text-[10px]">レーベル / 発売元</span>
                   <span className="font-medium text-slate-200 truncate block">{label || '-'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px]">発売年月日</span>
-                  <span className="font-medium text-slate-200 block">{normalizeReleaseDate(releaseDate) || '-'}</span>
+                  <span className="text-slate-400 block text-[10px]">CD発売年月日</span>
+                  <span className="font-medium text-slate-200 font-mono block">{normalizeReleaseDate(releaseDate) || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-amber-300/90 block text-[10px] font-semibold">同タイトルLP/EP発売日</span>
+                  <span className="font-bold text-amber-300 font-mono block">
+                    {vinylRecordReleaseDate
+                      ? `${normalizeReleaseDate(vinylRecordReleaseDate)} (${vinylRecordFormat || 'LP'}${vinylRecordCatalogNumber ? `:${vinylRecordCatalogNumber}` : ''})`
+                      : '未設定'}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px]">バーコード (JAN)</span>
@@ -922,7 +1022,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-semibold text-slate-300">
-                      発売年月日 (YYYY-MM-DD)
+                      CD 発売年月日 (YYYY-MM-DD)
                     </label>
                     <span className="text-[10px] text-amber-300 font-medium">
                       半角数字のみ (自動変換)
@@ -965,6 +1065,119 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     style={{ imeMode: 'disabled' }}
                   />
                 </div>
+              </div>
+
+              {/* Same-Title LP / EP Vinyl Record Release Date & API Lookup Box */}
+              <div className="bg-amber-950/20 border border-amber-500/40 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Disc className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <span className="text-xs font-extrabold text-amber-200">
+                      同タイトルのLP・EPレコード発売年月日 (アナログ盤情報)
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleLookupVinylReleaseDate}
+                    disabled={isLookingUpVinyl}
+                    className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white border border-amber-400/40 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                    title="MusicBrainz・Discogs・国立国会図書館(NDL)・Geminiディスコグラフィ知識から同タイトルのLP/EPレコード発売日と規格品番を自動取得します"
+                  >
+                    {isLookingUpVinyl ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-100" />
+                    ) : (
+                      <Disc className="w-3.5 h-3.5 text-amber-100" />
+                    )}
+                    <span>
+                      {isLookingUpVinyl
+                        ? 'APIでLP/EP発売日を検索中...'
+                        : '🔍 APIで同タイトルのLP/EP発売日を取得'}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-amber-200/90 mb-1">
+                      LP / EP 発売年月日 (YYYY-MM-DD)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={vinylRecordReleaseDate}
+                      onChange={(e) => {
+                        const raw = toHankakuCode(e.target.value);
+                        setVinylRecordReleaseDate(raw);
+                      }}
+                      onBlur={() => {
+                        if (vinylRecordReleaseDate.trim()) {
+                          setVinylRecordReleaseDate(formatToYYYYMMDD(vinylRecordReleaseDate));
+                        }
+                      }}
+                      placeholder="例: 1982-05-21 (8桁数字自動変換)"
+                      className="w-full bg-slate-900 border border-amber-500/40 rounded-lg p-2 text-xs text-amber-200 font-mono focus:border-amber-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-amber-200/90 mb-1">
+                      アナログ盤種別 (LP / EP)
+                    </label>
+                    <select
+                      value={vinylRecordFormat}
+                      onChange={(e) => setVinylRecordFormat(e.target.value)}
+                      className="w-full bg-slate-900 border border-amber-500/40 rounded-lg p-2 text-xs text-white focus:border-amber-400 focus:outline-none"
+                    >
+                      <option value="LP">LPレコード (30cm / 12inch アルバム)</option>
+                      <option value="EP">EPレコード (17cm / 7inch シングル・EP)</option>
+                      <option value="LP / EP">LP / EP 両方あり</option>
+                      <option value="12inch">12インチシングル</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-amber-200/90 mb-1">
+                      LP / EP 規格品番 (任意)
+                    </label>
+                    <input
+                      type="text"
+                      value={vinylRecordCatalogNumber}
+                      onChange={(e) => setVinylRecordCatalogNumber(toHankakuCode(e.target.value))}
+                      placeholder="例: 28AH-1450 / SV-7210"
+                      className="w-full bg-slate-900 border border-amber-500/40 rounded-lg p-2 text-xs text-white font-mono uppercase focus:border-amber-400 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Candidate selection if multiple vinyl editions were returned by API */}
+                {vinylLookupCandidates.length > 1 && (
+                  <div className="pt-1.5 border-t border-amber-500/20 space-y-1">
+                    <span className="block text-[10px] font-bold text-amber-300">
+                      検出されたアナログ盤候補（クリックで選択反映）:
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {vinylLookupCandidates.map((cand, cIdx) => (
+                        <button
+                          key={cIdx}
+                          type="button"
+                          onClick={() => {
+                            setVinylRecordReleaseDate(cand.releaseDate);
+                            setVinylRecordFormat(cand.format.startsWith('EP') ? 'EP' : 'LP');
+                            if (cand.catalogNumber) setVinylRecordCatalogNumber(cand.catalogNumber);
+                          }}
+                          className={`text-[10px] font-mono px-2 py-1 rounded-md border transition-all cursor-pointer ${
+                            vinylRecordReleaseDate === cand.releaseDate
+                              ? 'bg-amber-600 text-white border-amber-300 font-bold'
+                              : 'bg-slate-900 text-amber-200 border-amber-500/30 hover:bg-slate-800'
+                          }`}
+                        >
+                          {cand.releaseDate} [{cand.format}] {cand.catalogNumber ? `(${cand.catalogNumber})` : ''} - {cand.source}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1510,6 +1723,9 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     catalogNumber: normalizeCatalogNumber(catalogNumber),
                     label,
                     releaseDate: releaseDate ? normalizeToYYYYMMDD(releaseDate) : undefined,
+                    vinylRecordReleaseDate: vinylRecordReleaseDate ? normalizeToYYYYMMDD(vinylRecordReleaseDate) : undefined,
+                    vinylRecordFormat: vinylRecordReleaseDate ? vinylRecordFormat : undefined,
+                    vinylRecordCatalogNumber: vinylRecordCatalogNumber ? normalizeCatalogNumber(vinylRecordCatalogNumber) : undefined,
                     barcode,
                     notes,
                     tracks,

@@ -45,6 +45,7 @@ const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
   artist: 220,
   label: 160,
   releaseDate: 130,
+  vinylRecordReleaseDate: 145,
   barcode: 150,
   format: 120,
   genre: 130,
@@ -122,12 +123,110 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
     'artist',
     'label',
     'releaseDate',
+    'vinylRecordReleaseDate',
     'barcode',
     'format',
     'genre',
     'tagsStr',
     'notes',
   ], []);
+
+  // Batch LP/EP Vinyl Release Date API Lookup state
+  const [isLookingUpVinyl, setIsLookingUpVinyl] = useState(false);
+  const [vinylLookupProgress, setVinylLookupProgress] = useState<{ current: number; total: number } | null>(null);
+
+  const handleBatchLookupVinylInGrid = async () => {
+    const targetRows =
+      selectedRowIds.length > 0
+        ? gridRows.filter((r) => selectedRowIds.includes(r.id))
+        : gridRows;
+    if (targetRows.length === 0 || isLookingUpVinyl || isSaving) return;
+
+    setIsLookingUpVinyl(true);
+    setVinylLookupProgress({ current: 0, total: targetRows.length });
+    setErrorMessage(null);
+
+    try {
+      let discogsToken = '';
+      try {
+        const credsRaw = localStorage.getItem('cd_api_credentials');
+        if (credsRaw) {
+          const creds = JSON.parse(credsRaw);
+          discogsToken = creds.discogsToken || '';
+        }
+      } catch {}
+
+      const foundMap = new Map<string, { releaseDate: string; format?: string; catalogNumber?: string }>();
+      const CHUNK_SIZE = 5;
+
+      for (let i = 0; i < targetRows.length; i += CHUNK_SIZE) {
+        const chunk = targetRows.slice(i, i + CHUNK_SIZE);
+        const res = await fetch('/api/lookup-vinyl-release', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: chunk.map((c) => ({
+              id: c.id,
+              title: c.title,
+              artist: c.artist,
+              catalogNumber: c.catalogNumber,
+              releaseDate: c.releaseDate,
+            })),
+            discogsToken,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const list = data.results || [];
+          list.forEach((r: any) => {
+            if (r && r.found && r.vinylRecordReleaseDate) {
+              foundMap.set(r.id, {
+                releaseDate: r.vinylRecordReleaseDate,
+                format: r.vinylRecordFormat,
+                catalogNumber: r.vinylRecordCatalogNumber,
+              });
+            }
+          });
+        }
+
+        setVinylLookupProgress({
+          current: Math.min(i + chunk.length, targetRows.length),
+          total: targetRows.length,
+        });
+      }
+
+      if (foundMap.size > 0) {
+        setGridRows((prev) =>
+          prev.map((row) => {
+            const hit = foundMap.get(row.id);
+            if (!hit) return row;
+            return {
+              ...row,
+              vinylRecordReleaseDate: hit.releaseDate,
+              vinylRecordFormat: hit.format || row.vinylRecordFormat || 'LP',
+              vinylRecordCatalogNumber: hit.catalogNumber || row.vinylRecordCatalogNumber,
+            };
+          })
+        );
+        setEditedRowIds((prev) => {
+          const next = new Set(prev);
+          foundMap.forEach((_, id) => next.add(id));
+          return next;
+        });
+        setSaveSuccessMessage(
+          `${foundMap.size} 件の同タイトルLP/EPレコード発売日をAPIから取得してセルに反映しました。「一括保存」を押すとDBに保存されます。`
+        );
+      } else {
+        setErrorMessage('対象のCDについて、同タイトルのLP/EPレコード発売日は見つかりませんでした。');
+      }
+    } catch {
+      setErrorMessage('LP/EPレコード発売日のAPI取得中にエラーが発生しました。');
+    } finally {
+      setIsLookingUpVinyl(false);
+      setVinylLookupProgress(null);
+    }
+  };
 
   // Image URL Verification State
   const [isCheckingImages, setIsCheckingImages] = useState(false);
@@ -361,7 +460,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
     // Enforce half-width input for catalogNumber and barcode
     if (field === 'catalogNumber' || field === 'barcode') {
       processedValue = toHankakuCode(value);
-    } else if (field === 'releaseDate') {
+    } else if (field === 'releaseDate' || field === 'vinylRecordReleaseDate') {
       const halfWidth = toHankakuCode(value);
       const digits = halfWidth.replace(/\D/g, '');
       if (digits.length === 8 || digits.length === 6) {
@@ -871,6 +970,28 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
             </span>
           )}
 
+          {/* Batch Lookup LP/EP Vinyl Release Date Button */}
+          <button
+            type="button"
+            onClick={handleBatchLookupVinylInGrid}
+            disabled={isLookingUpVinyl || isSaving || gridRows.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-500/40 transition-all cursor-pointer disabled:opacity-50"
+            title="同タイトルのLP・EPレコード発売年月日をAPI（MusicBrainz・Discogs・NDL・Gemini）から一括取得します"
+          >
+            {isLookingUpVinyl ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+            ) : (
+              <Disc className="w-3.5 h-3.5 text-amber-400" />
+            )}
+            <span>
+              {isLookingUpVinyl
+                ? `LP/EP取得中... (${vinylLookupProgress?.current || 0}/${vinylLookupProgress?.total || 0})`
+                : selectedRowIds.length > 0
+                ? `LP/EP発売日API取得 (${selectedRowIds.length}件)`
+                : 'LP/EP発売日API取得'}
+            </span>
+          </button>
+
           {/* Convert External Image Links to Base64 Button */}
           {externalLinkRows.length > 0 && (
             <button
@@ -1172,7 +1293,8 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                 {renderSortableHeader('title', 'CD / アルバムタイトル', 'title', true, 'text-white')}
                 {renderSortableHeader('artist', '歌手 / アーティスト', 'artist', true, 'text-slate-200')}
                 {renderSortableHeader('label', 'レーベル / 発売元', 'label', true)}
-                {renderSortableHeader('releaseDate', '発売年月日', 'releaseDate', true)}
+                {renderSortableHeader('releaseDate', 'CD発売年月日', 'releaseDate', true)}
+                {renderSortableHeader('vinylRecordReleaseDate', 'LP/EP発売年月日', 'vinylRecordReleaseDate', true, 'text-amber-300')}
                 {renderSortableHeader('barcode', 'JANコード', 'barcode', true)}
                 {renderSortableHeader('format', 'フォーマット', 'format', true)}
                 {renderSortableHeader('genre', 'ジャンル', 'genre', true)}
@@ -1356,7 +1478,29 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           placeholder=""
                           className="w-full h-full bg-transparent px-2.5 py-2 text-xs font-mono text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                           style={{ imeMode: 'disabled' }}
-                          title="発売年月日 (半角数字のみ YYYY-MM-DD)"
+                          title="CD発売年月日 (半角数字のみ YYYY-MM-DD)"
+                        />
+                      </td>
+
+                      {/* Same-Title LP/EP Vinyl Release Date Input */}
+                      <td className="p-0" style={{ width: `${columnWidths.vinylRecordReleaseDate || DEFAULT_COLUMN_WIDTHS.vinylRecordReleaseDate}px` }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={getDisplayValue(row.vinylRecordReleaseDate)}
+                          onChange={(e) => handleCellChange(row.id, 'vinylRecordReleaseDate', e.target.value)}
+                          onBlur={(e) => {
+                            if (e.target.value) {
+                              const formatted = formatToYYYYMMDD(e.target.value);
+                              if (formatted !== row.vinylRecordReleaseDate) {
+                                handleCellChange(row.id, 'vinylRecordReleaseDate', formatted);
+                              }
+                            }
+                          }}
+                          placeholder=""
+                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs font-mono text-amber-300 font-bold focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500 rounded transition-colors"
+                          style={{ imeMode: 'disabled' }}
+                          title="同タイトルのLP・EPレコード発売年月日 (半角数字のみ YYYY-MM-DD)"
                         />
                       </td>
 
@@ -1422,7 +1566,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                     {/* Sub Tracklist Spreadsheet Drawer */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan={13} className="p-0 bg-slate-950 border-y-2 border-indigo-500/40">
+                        <td colSpan={14} className="p-0 bg-slate-950 border-y-2 border-indigo-500/40">
                           <div className="p-3.5 space-y-2.5 max-w-4xl">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">

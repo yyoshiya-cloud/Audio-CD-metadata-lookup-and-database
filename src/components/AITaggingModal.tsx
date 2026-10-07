@@ -115,6 +115,9 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
               catalogNumber: c.catalogNumber,
               label: c.label,
               releaseDate: c.releaseDate,
+              vinylRecordReleaseDate: c.vinylRecordReleaseDate,
+              vinylRecordFormat: c.vinylRecordFormat,
+              vinylRecordCatalogNumber: c.vinylRecordCatalogNumber,
               tracks: c.tracks?.slice(0, 10),
               genre: c.genre,
               existingTags: c.tags,
@@ -136,12 +139,18 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
 
         const data: { results: CDTagAnalysisResult[] } = await res.json();
         if (data.results && Array.isArray(data.results)) {
+          const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
           data.results.forEach((item) => {
             const originalCD = targets.find((c) => c.id === item.id);
             let finalTags: string[] = [];
 
             if (mergeMode === 'append' && originalCD?.tags) {
-              const set = new Set([...originalCD.tags, ...(item.suggestedTags || [])]);
+              // If an era tag was generated (especially from LP/EP release date), replace any conflicting decade tag in existing tags
+              const newDecadeTag = (item.suggestedTags || []).find((t) => decadeRegex.test(t));
+              const cleanedExisting = newDecadeTag
+                ? originalCD.tags.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
+                : originalCD.tags;
+              const set = new Set([...cleanedExisting, ...(item.suggestedTags || [])]);
               finalTags = Array.from(set);
             } else {
               finalTags = item.suggestedTags || [];
@@ -160,22 +169,45 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
         }
       } catch (err: any) {
         console.error('Error analyzing batch chunk:', err);
-        // Fallback for this chunk so workflow continues
+        // Fallback for this chunk so workflow continues (prioritizing vinylRecordReleaseDate over releaseDate)
         chunk.forEach((c) => {
-          const yearStr = c.releaseDate?.slice(0, 4);
-          const eraStr = yearStr ? `${yearStr.slice(0, 3)}0年代` : '邦楽';
+          const hasVinyl = Boolean(c.vinylRecordReleaseDate && c.vinylRecordReleaseDate.trim());
+          const hasCd = Boolean(c.releaseDate && c.releaseDate.trim());
+          const effectiveDate = hasVinyl ? c.vinylRecordReleaseDate!.trim() : (c.releaseDate || '').trim();
+          const yearMatch = effectiveDate.match(/(\d{4})/);
+          let eraStr = '邦楽';
+          if (yearMatch) {
+            const y = parseInt(yearMatch[1], 10);
+            if (y >= 1950 && y < 2000) eraStr = `${String(y).slice(2, 3)}0年代`;
+            else if (y >= 2000) eraStr = `${String(y).slice(0, 3)}0年代`;
+          }
+          const eraEvidenceText =
+            hasVinyl && hasCd
+              ? `CD発売年月日(${c.releaseDate})とLP/EP発売年月日(${c.vinylRecordReleaseDate})の両方にデータがあるため、LP/EP発売年月日(${c.vinylRecordReleaseDate})から年代を算出`
+              : hasVinyl
+              ? `LP/EP発売年月日 (${c.vinylRecordReleaseDate}) から年代を算出`
+              : c.releaseDate
+              ? `CD発売年月日 (${c.releaseDate}) から年代を算出`
+              : '国内盤メタデータより算出';
+
           resultMap.set(c.id, {
-            tags: c.tags && c.tags.length > 0 ? c.tags : ['J-POP', '邦楽', eraStr],
+            tags: c.tags && c.tags.length > 0 ? Array.from(new Set([...c.tags, eraStr])) : ['J-POP', '邦楽', eraStr],
             genre: c.genre || 'J-POP',
             mood: 'メロディアス',
             era: eraStr,
-            reasoning: `アーティスト「${c.artist}」・タイトル「${c.title}」${c.releaseDate ? `・発売日(${c.releaseDate})` : ''}のメタデータに基づく判定`,
+            reasoning: `アーティスト「${c.artist}」・タイトル「${c.title}」${
+              hasVinyl
+                ? `・LP/EP発売日(${c.vinylRecordReleaseDate})`
+                : c.releaseDate
+                ? `・CD発売日(${c.releaseDate})`
+                : ''
+            }のメタデータに基づく判定`,
             tagEvidence: [
               {
                 tag: eraStr,
                 category: 'era',
-                evidence: c.releaseDate ? `発売年月日 (${c.releaseDate}) から年代を算出` : '国内盤メタデータより算出',
-                sourceFields: ['発売年月日'],
+                evidence: eraEvidenceText,
+                sourceFields: [hasVinyl ? 'LP/EP発売年月日' : 'CD発売年月日'],
               },
               {
                 tag: c.genre || 'J-POP',
@@ -485,8 +517,8 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                     <span className="text-slate-400">曲名に含まれる英語/日本語の語彙やサブタイトル（Remix、バラード、主題歌、Live等）から曲調・雰囲気（ムード）を推論します。</span>
                   </div>
                   <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
-                    <span className="font-bold text-amber-300 block mb-0.5">③ 発売年月日（Release Date）</span>
-                    <span className="text-slate-400">発売日の西暦から「70年代」「80年代」「90年代」「昭和歌謡」「平成初期」などの時代区分タグを客観的に算出します。</span>
+                    <span className="font-bold text-amber-300 block mb-0.5">③ 発売年月日（LP/EP発売日を最優先）</span>
+                    <span className="text-slate-400">CD発売年月日と同タイトルLP/EP発売年月日の両方がある場合、オリジナルである<strong className="text-amber-200">LP/EP発売年月日</strong>から「70年代」「80年代」等の年代タグを生成します。</span>
                   </div>
                   <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
                     <span className="font-bold text-emerald-300 block mb-0.5">④ 規格品番（型番）・レーベル名</span>
@@ -609,7 +641,14 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                               </h4>
                             </div>
                             <p className="text-[11px] text-slate-300 truncate" title={cd.artist}>
-                              {cd.artist} {cd.releaseDate ? `(${cd.releaseDate})` : ''} {cd.label ? `• ${cd.label}` : ''}
+                              {cd.artist}
+                              {cd.releaseDate ? ` (CD発売: ${cd.releaseDate})` : ''}
+                              {cd.vinylRecordReleaseDate ? (
+                                <span className="text-amber-300 font-bold ml-1.5">
+                                  [LP/EP発売: {cd.vinylRecordReleaseDate} ★年代タグ基準]
+                                </span>
+                              ) : null}
+                              {cd.label ? ` • ${cd.label}` : ''}
                             </p>
                             {res?.reasoning && (
                               <div className="mt-1.5 bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1.5 text-[11px] text-indigo-200 leading-relaxed">

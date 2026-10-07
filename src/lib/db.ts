@@ -22,7 +22,7 @@ export class CDCatalogDexieDB extends Dexie {
 
     this.version(1).stores({
       // Primary key 'id', indexed fields for fast lookup and filtering
-      cds: 'id, catalogNumber, title, artist, label, releaseDate, barcode, updatedAt, createdAt, syncedToSheets, *tags',
+      cds: 'id, catalogNumber, title, artist, label, releaseDate, vinylRecordReleaseDate, barcode, updatedAt, createdAt, syncedToSheets, *tags',
       settings: 'key, updatedAt',
     });
   }
@@ -35,6 +35,9 @@ export function normalizeCDRecord(cd: CDMetadata): CDMetadata {
     ...cd,
     catalogNumber: normalizeCatalogNumber(cd.catalogNumber),
     releaseDate: cd.releaseDate ? normalizeReleaseDate(cd.releaseDate) : undefined,
+    vinylRecordReleaseDate: cd.vinylRecordReleaseDate
+      ? normalizeReleaseDate(cd.vinylRecordReleaseDate)
+      : undefined,
   };
 }
 
