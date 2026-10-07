@@ -17,12 +17,19 @@ export function exportCDsToJSON(
   fileName?: string,
   prettyPrint: boolean = true
 ): { fileName: string; count: number; jsonString: string } {
+  const normalizedCds: CDMetadata[] = items.map((cd) => ({
+    ...cd,
+    vinylRecordReleaseDate: cd.vinylRecordReleaseDate ? normalizeReleaseDate(cd.vinylRecordReleaseDate) : '',
+    vinylRecordFormat: cd.vinylRecordFormat || '',
+    vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber ? normalizeCatalogNumber(cd.vinylRecordCatalogNumber) : '',
+  }));
+
   const exportPayload: JSONExportData = {
     app: 'CDCollectionManager',
     version: '1.0',
     exportedAt: new Date().toISOString(),
-    count: items.length,
-    cds: items,
+    count: normalizedCds.length,
+    cds: normalizedCds,
   };
 
   const jsonString = prettyPrint
@@ -108,6 +115,15 @@ export function parseJSONToCDs(jsonText: string): {
     .map((item, idx) => {
       const cleanCat = normalizeCatalogNumber(item.catalogNumber || item.catNo || item.catalog_number || '');
       const cleanReleaseDate = normalizeReleaseDate(item.releaseDate || item.release_date || '');
+      const cleanVinylReleaseDate = normalizeReleaseDate(
+        item.vinylRecordReleaseDate || item.vinyl_record_release_date || item.lpReleaseDate || item.vinylReleaseDate || ''
+      );
+      const cleanVinylFormat = String(
+        item.vinylRecordFormat || item.vinyl_record_format || item.vinylFormat || ''
+      ).trim();
+      const cleanVinylCatalogNumber = normalizeCatalogNumber(
+        item.vinylRecordCatalogNumber || item.vinyl_record_catalog_number || item.vinylCatalogNumber || ''
+      );
 
       const tracks = Array.isArray(item.tracks)
         ? item.tracks.map((t: any, tIdx: number) => ({
@@ -138,6 +154,9 @@ export function parseJSONToCDs(jsonText: string): {
         catalogNumber: cleanCat,
         label: item.label ? String(item.label).trim() : undefined,
         releaseDate: cleanReleaseDate || undefined,
+        vinylRecordReleaseDate: cleanVinylReleaseDate || undefined,
+        vinylRecordFormat: cleanVinylFormat || undefined,
+        vinylRecordCatalogNumber: cleanVinylCatalogNumber || undefined,
         barcode: item.barcode || item.jan || item.ean ? String(item.barcode || item.jan || item.ean).trim() : undefined,
         country: item.country ? String(item.country).trim() : undefined,
         format: item.format ? String(item.format).trim() : 'CD',
@@ -148,6 +167,7 @@ export function parseJSONToCDs(jsonText: string): {
         rawSources: item.rawSources || undefined,
         confidenceScore: typeof item.confidenceScore === 'number' ? item.confidenceScore : undefined,
         tags,
+        tagBasis: item.tagBasis || undefined,
         notes: item.notes ? String(item.notes) : undefined,
         verifiedByAI: Boolean(item.verifiedByAI),
         aiVerificationSummary: item.aiVerificationSummary || undefined,

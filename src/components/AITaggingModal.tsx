@@ -93,8 +93,8 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
       tagEvidence?: TagEvidenceItem[];
     }>();
 
-    // Batch in chunks of 6 to avoid server request timeouts
-    const CHUNK_SIZE = 6;
+    // Batch in chunks of 4 to avoid gateway request timeouts
+    const CHUNK_SIZE = 4;
     for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
       const chunk = targets.slice(i, i + CHUNK_SIZE);
       setProgress({
@@ -132,12 +132,18 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
           }),
         });
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `HTTP ${res.status}`);
+        const rawText = await res.text();
+        let data: { results?: CDTagAnalysisResult[]; error?: string } = {};
+        try {
+          data = rawText ? JSON.parse(rawText) : {};
+        } catch {
+          throw new Error(`サーバー応答がJSON形式ではありません (HTTP ${res.status})`);
         }
 
-        const data: { results: CDTagAnalysisResult[] } = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
         if (data.results && Array.isArray(data.results)) {
           const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
           data.results.forEach((item) => {
@@ -168,7 +174,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
           });
         }
       } catch (err: any) {
-        console.error('Error analyzing batch chunk:', err);
+        console.warn('Handled batch chunk fallback:', err?.message || err);
         // Fallback for this chunk so workflow continues (prioritizing vinylRecordReleaseDate over releaseDate)
         chunk.forEach((c) => {
           const hasVinyl = Boolean(c.vinylRecordReleaseDate && c.vinylRecordReleaseDate.trim());

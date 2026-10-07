@@ -391,17 +391,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             </button>
           )}
 
-          {onOpenImportSheetsModal && (
-            <button
-              onClick={onOpenImportSheetsModal}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 transition-all cursor-pointer shadow-sm"
-              title="Googleスプレッドシート・Excel・CSV・JSONバックアップからデータをインポート・復元"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-400" />
-              <span>インポート・復元</span>
-            </button>
-          )}
-
           {onOpenPDFCatalog && (
             <button
               type="button"

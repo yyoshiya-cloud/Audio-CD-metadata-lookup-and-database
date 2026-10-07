@@ -302,12 +302,18 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       return;
     }
     try {
+      const normalizedCds = itemsToExport.map((cd) => ({
+        ...cd,
+        vinylRecordReleaseDate: cd.vinylRecordReleaseDate || '',
+        vinylRecordFormat: cd.vinylRecordFormat || '',
+        vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber || '',
+      }));
       const payload = {
         app: 'CDCollectionManager',
         version: '1.0',
         exportedAt: new Date().toISOString(),
-        count: itemsToExport.length,
-        cds: itemsToExport,
+        count: normalizedCds.length,
+        cds: normalizedCds,
       };
       const jsonStr = jsonPrettyPrint ? JSON.stringify(payload, null, 2) : JSON.stringify(payload);
       navigator.clipboard.writeText(jsonStr);
@@ -1162,7 +1168,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       <span>Excel出力の構成（2シート構造）</span>
                     </p>
                     <p className="text-[11px] text-slate-400">
-                      • <strong>シート1「CDアルバム一覧」:</strong> 型番、タイトル、歌手、レーベル、発売日、JANコード、仕様、メモ等<br />
+                      • <strong>シート1「CDアルバム一覧」:</strong> 型番、タイトル、歌手、レーベル、発売年月日、同タイトルLP/EP発売年月日、アナログ盤種別、LP/EP規格品番、JANコード、仕様、メモ等<br />
                       • <strong>シート2「収録曲リスト」:</strong> 型番キー紐付け、曲順、曲名、演奏時間、試聴URL等
                     </p>
                   </div>
@@ -1238,7 +1244,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                         {csvExportOption === 'albums' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
                       </div>
                       <p className="text-[11px] text-slate-400">
-                        型番、タイトル、歌手、レーベル、発売日、JANコード、メモ等をアルバム単位で出力
+                        型番、タイトル、歌手、レーベル、CD発売日、LP/EP発売年月日、アナログ盤種別、LP/EP規格品番、JANコード等を出力
                       </p>
                     </div>
 
@@ -1344,7 +1350,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       <span>JSON構造化バックアップの特徴</span>
                     </p>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      • アルバムメタデータ、全収録曲リスト、JANバーコード、ジャケット画像URL、メモ、登録日時を<strong>100%欠損なく完全保持</strong><br />
+                      • アルバムメタデータ、LP/EP発売年月日・アナログ盤種別・LP/EP規格品番、全収録曲リスト、JANバーコード、ジャケット画像、メモ、登録日時を<strong>100%欠損なく完全保持</strong><br />
                       • 別端末や本アプリの「JSONインポート」から一発で完全復元・データ交換可能
                     </p>
                   </div>
@@ -1400,7 +1406,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       <span>シート1「CDアルバム一覧」</span>
                     </p>
                     <p className="text-slate-400">
-                      型番（主キー）、アルバム名、歌手、発売日、JANコード、ジャケット画像、メモ等
+                      型番（主キー）、アルバム名、歌手、CD発売日、LP/EP発売年月日、アナログ盤種別、LP/EP規格品番、JANコード、ジャケット画像、メモ等
                     </p>
                   </div>
                   <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
@@ -1678,7 +1684,13 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                                   <Disc className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
                                   <div className="min-w-0">
                                     <p className="font-bold text-white truncate">{cd.title}</p>
-                                    <p className="text-slate-400 truncate text-[11px]">{cd.artist} {cd.releaseDate ? `(${cd.releaseDate})` : ''}</p>
+                                    <p className="text-slate-400 truncate text-[11px]">
+                                      {cd.artist}
+                                      {cd.releaseDate ? ` (CD: ${cd.releaseDate})` : ''}
+                                      {cd.vinylRecordReleaseDate
+                                        ? ` • ${cd.vinylRecordFormat || 'LP/EP'}: ${cd.vinylRecordReleaseDate}${cd.vinylRecordCatalogNumber ? ` [${cd.vinylRecordCatalogNumber}]` : ''}`
+                                        : ''}
+                                    </p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -1789,7 +1801,13 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                               <Disc className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
                               <div className="min-w-0">
                                 <p className="font-bold text-white truncate">{cd.title}</p>
-                                <p className="text-slate-400 truncate text-[11px]">{cd.artist} {cd.releaseDate ? `(${cd.releaseDate})` : ''}</p>
+                                <p className="text-slate-400 truncate text-[11px]">
+                                  {cd.artist}
+                                  {cd.releaseDate ? ` (CD: ${cd.releaseDate})` : ''}
+                                  {cd.vinylRecordReleaseDate
+                                    ? ` • ${cd.vinylRecordFormat || 'LP/EP'}: ${cd.vinylRecordReleaseDate}${cd.vinylRecordCatalogNumber ? ` [${cd.vinylRecordCatalogNumber}]` : ''}`
+                                    : ''}
+                                </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
@@ -1990,7 +2008,13 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                               <Disc className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
                               <div className="min-w-0">
                                 <p className="font-bold text-white truncate">{cd.title}</p>
-                                <p className="text-slate-400 truncate text-[11px]">{cd.artist} {cd.releaseDate ? `(${cd.releaseDate})` : ''}</p>
+                                <p className="text-slate-400 truncate text-[11px]">
+                                  {cd.artist}
+                                  {cd.releaseDate ? ` (CD: ${cd.releaseDate})` : ''}
+                                  {cd.vinylRecordReleaseDate
+                                    ? ` • ${cd.vinylRecordFormat || 'LP/EP'}: ${cd.vinylRecordReleaseDate}${cd.vinylRecordCatalogNumber ? ` [${cd.vinylRecordCatalogNumber}]` : ''}`
+                                    : ''}
+                                </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
@@ -2146,7 +2170,13 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                               <Disc className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
                               <div className="min-w-0">
                                 <p className="font-bold text-white truncate">{cd.title}</p>
-                                <p className="text-slate-400 truncate text-[11px]">{cd.artist} {cd.releaseDate ? `(${cd.releaseDate})` : ''}</p>
+                                <p className="text-slate-400 truncate text-[11px]">
+                                  {cd.artist}
+                                  {cd.releaseDate ? ` (CD: ${cd.releaseDate})` : ''}
+                                  {cd.vinylRecordReleaseDate
+                                    ? ` • ${cd.vinylRecordFormat || 'LP/EP'}: ${cd.vinylRecordReleaseDate}${cd.vinylRecordCatalogNumber ? ` [${cd.vinylRecordCatalogNumber}]` : ''}`
+                                    : ''}
+                                </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">

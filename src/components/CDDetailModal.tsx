@@ -209,11 +209,18 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
         }),
       });
 
-      if (!res.ok) {
-        throw new Error('AIタグ分析に失敗しました');
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        throw new Error('AIタグ分析の応答解析に失敗しました');
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'AIタグ分析に失敗しました');
+      }
+
       const item = data.results?.[0];
       if (item) {
         const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;

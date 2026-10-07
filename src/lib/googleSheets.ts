@@ -1129,6 +1129,15 @@ export function parseSpreadsheetRowsToCDs(
 
       const existingAlbum = combinedAlbumMap.get(albumKey);
       if (existingAlbum) {
+        if (!existingAlbum.vinylRecordReleaseDate && vinylRecordReleaseDate) {
+          existingAlbum.vinylRecordReleaseDate = vinylRecordReleaseDate;
+        }
+        if (!existingAlbum.vinylRecordFormat && vinylRecordFormat) {
+          existingAlbum.vinylRecordFormat = vinylRecordFormat;
+        }
+        if (!existingAlbum.vinylRecordCatalogNumber && vinylRecordCatalogNumber) {
+          existingAlbum.vinylRecordCatalogNumber = vinylRecordCatalogNumber;
+        }
         if (trTitle) {
           existingAlbum.tracks.push({
             trackNumber: trNum || existingAlbum.tracks.length + 1,

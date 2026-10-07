@@ -1,5 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
-import { generateContentWithFallback } from './geminiFallback.js';
+import { createGeminiClient, generateContentWithFallback } from './geminiFallback.js';
 
 export interface CDTagAnalysisInput {
   id: string;
@@ -77,11 +76,11 @@ export async function analyzeCDTagsWithGemini(
 ): Promise<CDTagAnalysisResult[]> {
   if (!cds || cds.length === 0) return [];
 
-  // Limit chunk size to 8 CDs per Gemini call to ensure reliable and prompt responses
-  const CHUNK_SIZE = 8;
+  // Limit chunk size to 4 CDs per Gemini call to ensure fast responses well within proxy timeout limits
+  const CHUNK_SIZE = 4;
   const allResults: CDTagAnalysisResult[] = [];
 
-  const ai = new GoogleGenAI(); // Reads GEMINI_API_KEY from process.env
+  const ai = createGeminiClient();
 
   for (let i = 0; i < cds.length; i += CHUNK_SIZE) {
     const chunk = cds.slice(i, i + CHUNK_SIZE);
@@ -177,14 +176,20 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
         config: {
           responseMimeType: 'application/json',
         },
-        preferredModel: 'gemini-flash-latest',
+        preferredModel: 'gemini-3.8-flash',
+        timeoutMs: 13000,
       });
 
       const text = response.text || '';
-      const cleanJson = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      let cleanJson = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      const firstBrace = cleanJson.indexOf('{');
+      const lastBrace = cleanJson.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        cleanJson = cleanJson.slice(firstBrace, lastBrace + 1);
+      }
       const parsed = JSON.parse(cleanJson);
 
-      if (parsed && Array.isArray(parsed.results)) {
+      if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
         // Post-process each result to deterministically enforce the LP/EP release date era rule
         for (const item of parsed.results as CDTagAnalysisResult[]) {
           const origCd = chunk.find((c) => c.id === item.id);
@@ -230,7 +235,7 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
           allResults.push(item);
         }
       } else {
-        console.warn('Gemini returned unexpected structure for AI tagging:', text);
+        throw new Error('Unexpected JSON structure from Gemini');
       }
     } catch (err: any) {
       console.error(`Error in Gemini AI tagging chunk ${i}:`, err);

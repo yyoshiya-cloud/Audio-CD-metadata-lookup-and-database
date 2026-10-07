@@ -239,6 +239,11 @@ app.post('/api/image-base64', async (req, res) => {
   }
 });
 
+// Catch-all for any unmatched /api/* routes so they always return valid JSON instead of HTML
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.originalUrl}` });
+});
+
 // Setup Vite Dev Middleware or Static Production server
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
