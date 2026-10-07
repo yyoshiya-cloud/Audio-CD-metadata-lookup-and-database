@@ -394,24 +394,24 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
           {onOpenPDFCatalog && (
             <button
               type="button"
-              onClick={() => onOpenPDFCatalog(selectedIds.length > 0 ? selectedCDs : filteredCDs)}
+              onClick={() => onOpenPDFCatalog(selectedIds.length > 0 ? selectedCDs : cds)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-md shadow-amber-900/30 border border-amber-400/40 transition-all cursor-pointer"
               title="印刷用CDカタログ・LPアナログジャケット風ライナーノーツ・CDケース差し込みカードのPDF出力"
             >
               <BookOpen className="w-3.5 h-3.5 text-amber-100" />
-              <span>{selectedIds.length > 0 ? `PDFカタログ出力 (${selectedIds.length}件)` : 'PDFカタログ出力'}</span>
+              <span>{selectedIds.length > 0 ? `PDFカタログ出力 (${selectedIds.length}件)` : `PDFカタログ出力 (${cds.length}件)`}</span>
             </button>
           )}
 
           <button
-            onClick={() => onOpenExportSheetsModal(selectedIds.length > 0 ? selectedCDs : filteredCDs)}
+            onClick={() => onOpenExportSheetsModal(selectedIds.length > 0 ? selectedCDs : cds)}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/30 transition-all cursor-pointer border border-emerald-500/40"
             title="Googleスプレッドシート・Excel・CSV・JSONの双方向連携・書き出し"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
-            <span>データ連携・書き出し</span>
+            <span>{selectedIds.length > 0 ? `データ連携・書き出し (${selectedIds.length}件)` : 'データ連携・書き出し'}</span>
             <span className="text-[10px] bg-emerald-950/80 text-emerald-200 px-1.5 py-0.5 rounded-full border border-emerald-400/40 font-mono font-bold">
-              {syncedCount}
+              {selectedIds.length > 0 ? selectedIds.length : cds.length}
             </span>
           </button>
         </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CDMetadata } from '../types/cd';
 import { getJSTISOString } from '../lib/dateUtils';
+import { normalizeSingleTag, normalizeTagList } from '../lib/tagNormalizer';
 import { X, Sparkles, RefreshCw, CheckCircle2, Tag, Disc, AlertCircle, Check, Plus, Info, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface TagEvidenceItem {
@@ -151,21 +152,22 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
             let finalTags: string[] = [];
 
             if (mergeMode === 'append' && originalCD?.tags) {
+              const normalizedSuggested = normalizeTagList(item.suggestedTags || []);
+              const normalizedExisting = normalizeTagList(originalCD.tags);
               // If an era tag was generated (especially from LP/EP release date), replace any conflicting decade tag in existing tags
-              const newDecadeTag = (item.suggestedTags || []).find((t) => decadeRegex.test(t));
+              const newDecadeTag = normalizedSuggested.find((t) => decadeRegex.test(t));
               const cleanedExisting = newDecadeTag
-                ? originalCD.tags.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
-                : originalCD.tags;
-              const set = new Set([...cleanedExisting, ...(item.suggestedTags || [])]);
-              finalTags = Array.from(set);
+                ? normalizedExisting.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
+                : normalizedExisting;
+              finalTags = normalizeTagList([...cleanedExisting, ...normalizedSuggested]);
             } else {
-              finalTags = item.suggestedTags || [];
+              finalTags = normalizeTagList(item.suggestedTags || []);
             }
 
             resultMap.set(item.id, {
               tags: finalTags,
-              genre: item.genre,
-              subGenre: item.subGenre,
+              genre: normalizeSingleTag(item.genre) || 'J-POP',
+              subGenre: item.subGenre ? normalizeSingleTag(item.subGenre) : undefined,
               mood: item.mood,
               era: item.era,
               reasoning: item.reasoning,

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { CDMetadata } from '../types/cd';
 import { enhanceImageWithCanvas, convertImageUrlToBase64 } from '../utils/imageEnhancer';
+import { normalizeSingleTag, normalizeTagList } from '../lib/tagNormalizer';
 import {
   Search,
   Disc,
@@ -49,14 +50,22 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Collect unique genres
+  // Collect unique normalized genres & tags
   const genresList = useMemo(() => {
     const set = new Set<string>();
     cds.forEach((c) => {
-      if (c.genre) set.add(c.genre);
-      if (c.tags) c.tags.forEach((t) => set.add(t));
+      if (c.genre) {
+        for (const g of normalizeTagList([c.genre])) {
+          set.add(g);
+        }
+      }
+      if (c.tags) {
+        for (const t of normalizeTagList(c.tags)) {
+          set.add(t);
+        }
+      }
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'ja'));
   }, [cds]);
 
   // Filter & Sort CDs
@@ -72,8 +81,8 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
           c.artist.toLowerCase().includes(q) ||
           (c.catalogNumber && c.catalogNumber.toLowerCase().includes(q)) ||
           (c.label && c.label.toLowerCase().includes(q)) ||
-          (c.genre && c.genre.toLowerCase().includes(q)) ||
-          (c.tags && c.tags.some((t) => t.toLowerCase().includes(q)))
+          (c.genre && normalizeSingleTag(c.genre).toLowerCase().includes(q)) ||
+          (c.tags && normalizeTagList(c.tags).some((t) => t.toLowerCase().includes(q)))
       );
     }
 
@@ -81,8 +90,8 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
     if (selectedGenre !== 'all') {
       list = list.filter(
         (c) =>
-          c.genre === selectedGenre ||
-          (c.tags && c.tags.includes(selectedGenre))
+          normalizeTagList(c.genre ? [c.genre] : []).includes(selectedGenre) ||
+          normalizeTagList(c.tags).includes(selectedGenre)
       );
     }
 

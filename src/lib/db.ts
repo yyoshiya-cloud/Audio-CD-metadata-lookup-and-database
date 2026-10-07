@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import { CDMetadata, APICredentials } from '../types/cd';
 import { normalizeCatalogNumber, normalizeReleaseDate } from './dateUtils';
 import { ensureCDCoverBase64 } from '../utils/imageEnhancer';
+import { normalizeCDTagsAndGenre } from './tagNormalizer';
 
 export interface SettingRecord {
   key: string;
@@ -31,12 +32,13 @@ export class CDCatalogDexieDB extends Dexie {
 export const db = new CDCatalogDexieDB();
 
 export function normalizeCDRecord(cd: CDMetadata): CDMetadata {
+  const withUnifiedTags = normalizeCDTagsAndGenre(cd);
   return {
-    ...cd,
-    catalogNumber: normalizeCatalogNumber(cd.catalogNumber),
-    releaseDate: cd.releaseDate ? normalizeReleaseDate(cd.releaseDate) : undefined,
-    vinylRecordReleaseDate: cd.vinylRecordReleaseDate
-      ? normalizeReleaseDate(cd.vinylRecordReleaseDate)
+    ...withUnifiedTags,
+    catalogNumber: normalizeCatalogNumber(withUnifiedTags.catalogNumber),
+    releaseDate: withUnifiedTags.releaseDate ? normalizeReleaseDate(withUnifiedTags.releaseDate) : undefined,
+    vinylRecordReleaseDate: withUnifiedTags.vinylRecordReleaseDate
+      ? normalizeReleaseDate(withUnifiedTags.vinylRecordReleaseDate)
       : undefined,
   };
 }
@@ -162,7 +164,20 @@ export async function getAllCDs(): Promise<CDMetadata[]> {
   await ensureLegacyDataMigrated();
   try {
     const items = await db.cds.toArray();
-    const normalized = items.map(normalizeCDRecord);
+    const toUpdateInDB: CDMetadata[] = [];
+    const normalized = items.map((item) => {
+      const norm = normalizeCDRecord(item);
+      if (
+        norm.genre !== item.genre ||
+        JSON.stringify(norm.tags || []) !== JSON.stringify(item.tags || [])
+      ) {
+        toUpdateInDB.push(norm);
+      }
+      return norm;
+    });
+    if (toUpdateInDB.length > 0) {
+      await db.cds.bulkPut(toUpdateInDB).catch(() => {});
+    }
     normalized.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
     return normalized;
   } catch (err) {

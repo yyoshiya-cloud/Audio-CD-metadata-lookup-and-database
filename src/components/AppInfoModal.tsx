@@ -22,11 +22,11 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({ onClose }) => {
                   CDメタデータ検索＆データベース
                 </h2>
                 <span className="text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                  Version 1.0.1
+                  Version 1.1.0
                 </span>
                 <span className="text-[11px] font-medium text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  最終更新日: 2026年10月5日
+                  最終更新日: 2026年10月7日
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">

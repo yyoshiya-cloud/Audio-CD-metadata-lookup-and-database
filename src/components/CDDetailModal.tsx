@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CDMetadata, TrackInfo, APISource, AITagAnalysisMetadata } from '../types/cd';
 import { getJSTISOString, normalizeCatalogNumber, normalizeReleaseDate } from '../lib/dateUtils';
+import { normalizeSingleTag, normalizeTagList } from '../lib/tagNormalizer';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
 import { enhanceImageWithCanvas, convertImageUrlToBase64 } from '../utils/imageEnhancer';
 import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2, BookOpen, Tag, ChevronDown, ChevronUp } from 'lucide-react';
@@ -224,17 +225,20 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       const item = data.results?.[0];
       if (item) {
         const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
-        const newDecadeTag = (item.suggestedTags || []).find((t: string) => decadeRegex.test(t));
+        const normalizedSuggested = normalizeTagList(item.suggestedTags || []);
+        const normalizedExisting = normalizeTagList(existingTags);
+        const newDecadeTag = normalizedSuggested.find((t: string) => decadeRegex.test(t));
         const cleanedExisting = newDecadeTag
-          ? existingTags.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
-          : existingTags;
-        const mergedTags = Array.from(new Set([...cleanedExisting, ...(item.suggestedTags || [])]));
+          ? normalizedExisting.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
+          : normalizedExisting;
+        const mergedTags = normalizeTagList([...cleanedExisting, ...normalizedSuggested]);
         setTagsInput(mergedTags.join(', '));
-        if (item.genre) setGenre(item.genre);
+        const unifiedGenre = normalizeSingleTag(item.genre || genre);
+        if (unifiedGenre) setGenre(unifiedGenre);
 
         const newAnalysis: AITagAnalysisMetadata = {
-          genre: item.genre || genre,
-          subGenre: item.subGenre,
+          genre: unifiedGenre,
+          subGenre: item.subGenre ? normalizeSingleTag(item.subGenre) : undefined,
           mood: item.mood,
           era: item.era,
           reasoning: item.reasoning,

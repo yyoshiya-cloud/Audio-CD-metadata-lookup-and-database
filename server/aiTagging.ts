@@ -65,6 +65,117 @@ function deriveEraTagFromDate(dateStr?: string): string {
 
 const DECADE_TAG_REGEX = /^(19\d0|20\d0|[56789]0)年代$/;
 
+const SERVER_TAG_CANONICAL_MAP: Record<string, string> = {
+  'j-pop': 'J-POP',
+  'jpop': 'J-POP',
+  'j pop': 'J-POP',
+  'j-pop / 邦楽': 'J-POP',
+  'j-pop/邦楽': 'J-POP',
+  '邦楽 / j-pop': 'J-POP',
+  'ポップス': 'J-POP',
+  'ポップ': 'J-POP',
+  'pop': 'J-POP',
+  'pops': 'J-POP',
+  'aidol': 'アイドル',
+  'idol': 'アイドル',
+  'idol pop': 'アイドル',
+  'アイドル歌謡': 'アイドル',
+  '女性アイドル': 'アイドル',
+  'anime': 'アニソン',
+  'anison': 'アニソン',
+  'anime song': 'アニソン',
+  'アニメ': 'アニソン',
+  'アニメソング': 'アニソン',
+  'cm-song': 'CMソング',
+  'cm song': 'CMソング',
+  'cmsong': 'CMソング',
+  'cm曲': 'CMソング',
+  'new music': 'ニューミュージック',
+  'ニュー・ミュージック': 'ニューミュージック',
+  'folk': 'フォーク',
+  'フォークソング': 'フォーク',
+  'city pop': 'シティポップ',
+  'citypop': 'シティポップ',
+  'シティ・ポップ': 'シティポップ',
+  'kayokyoku': '昭和歌謡',
+  '歌謡曲': '昭和歌謡',
+  'ssw': 'シンガーソングライター',
+  'singer-songwriter': 'シンガーソングライター',
+  'シンガー・ソングライター': 'シンガーソングライター',
+  'rock': 'ロック',
+  'j-rock': 'ロック',
+  'hard rock': 'ハードロック',
+  'jazz': 'ジャズ',
+  'classical': 'クラシック',
+  'classic': 'クラシック',
+  'r&b': 'R&B',
+  'hip-hop': 'ヒップホップ',
+  'hip hop': 'ヒップホップ',
+  'techno': 'テクノポップ',
+  'techno pop': 'テクノポップ',
+  'synth-pop': 'テクノポップ',
+  'ballad': 'バラード',
+  'acoustic': 'アコースティック',
+  'best': 'ベスト盤',
+  'ベスト': 'ベスト盤',
+  'ベスト・アルバム': 'ベスト盤',
+  'ベストアルバム': 'ベスト盤',
+  'live': 'ライブ盤',
+  'ライブ': 'ライブ盤',
+  'ライブ・アルバム': 'ライブ盤',
+  'ライブアルバム': 'ライブ盤',
+  'comedy': 'お笑い・バラエティ',
+  'お笑い': 'お笑い・バラエティ',
+};
+
+function normalizeServerTag(raw?: string): string {
+  if (!raw) return '';
+  let t = String(raw).trim().replace(/^#+/, '').trim();
+  if (!t) return '';
+  t = t.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
+  const decade19xx = t.match(/^19([56789]0)年代$/);
+  if (decade19xx) return `${decade19xx[1]}年代`;
+  const lower = t.toLowerCase().replace(/\s+/g, ' ');
+  if (SERVER_TAG_CANONICAL_MAP[lower]) return SERVER_TAG_CANONICAL_MAP[lower];
+  return t;
+}
+
+function normalizeServerTagList(tags?: string[]): string[] {
+  if (!tags || !Array.isArray(tags)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of tags) {
+    if (!raw) continue;
+    const trimmed = String(raw).trim();
+    const lower = trimmed.toLowerCase().replace(/\s+/g, ' ');
+    if (lower.includes('j-pop') && lower.includes('邦楽')) {
+      for (const sub of ['J-POP', '邦楽']) {
+        if (!seen.has(sub)) {
+          seen.add(sub);
+          out.push(sub);
+        }
+      }
+      continue;
+    }
+    if (trimmed.includes(' / ') || trimmed.includes('／')) {
+      for (const part of trimmed.split(/\s*[/／]\s*/)) {
+        const norm = normalizeServerTag(part);
+        if (norm && !seen.has(norm)) {
+          seen.add(norm);
+          out.push(norm);
+        }
+      }
+      continue;
+    }
+    const norm = normalizeServerTag(trimmed);
+    if (norm && !seen.has(norm)) {
+      seen.add(norm);
+      out.push(norm);
+    }
+  }
+  return out;
+}
+
 /**
  * Process a batch of CDs using Gemini 3.8 Flash to analyze genre, mood, era, and generate curated tags.
  * Rule: When both CD releaseDate and LP/EP vinylRecordReleaseDate exist (or when vinylRecordReleaseDate is present),
@@ -133,17 +244,25 @@ Options requested:
 CDs to analyze:
 ${JSON.stringify(simplifiedChunk, null, 2)}
 
-Instructions:
-1. "genre": The primary music genre in Japanese (e.g., "J-POP", "シティポップ", "ロック", "アニメソング", "ジャズ", "昭和歌謡", "フォーク", "R&B", "ヒップホップ", "アイドル", "クラシック", "ハードロック", "ニューミュージック", "エレクトロニック").
-2. "subGenre": Sub-genre or musical style if applicable (e.g., "ガールズポップ", "青春パンク", "AOR", "メロコア", "渋谷系", "テクノポップ").
-3. "mood": Atmosphere & emotional feel keywords in Japanese (e.g., "爽快・疾走感", "切ない・哀愁", "メロウ・チル", "エモーショナル", "リラックス・夜", "ダンサブル", "重厚・ダーク").
-4. "era": Era/decade classification derived strictly from "effectiveReleaseDateForEraTag" ("vinylRecordReleaseDate" when present, otherwise "cdReleaseDate") (e.g., "60年代", "70年代", "80年代", "90年代", "2000年代", "2010年代", "2020年代").
-5. "suggestedTags": Array of 3 to 5 concise Japanese tags. When Include Era/Decade is Yes and "requiredEraTag" is non-empty, "suggestedTags" MUST include that exact "requiredEraTag" (derived from LP/EP release date when present) and MUST NOT include a conflicting decade tag from the CD reissue date.
-6. "reasoning": A clear 1-2 sentence Japanese explanation summarizing the overall musical characteristics and why these tags fit this album (mentioning the LP/EP original release date when present).
-7. "tagEvidence": An array corresponding to each tag in "suggestedTags", explaining the concrete basis (根拠):
-   - "tag": The exact tag string.
+Instructions & STRICT TAG UNIFICATION RULES (表記ゆれ防止・タグ統一ルール):
+1. NEVER use English/Romaji spelling variants or slash-combined tags. Always use these unified Japanese canonical tags:
+   - Use "J-POP" (NEVER "J-Pop", "Jpop", or "J-POP / 邦楽")
+   - Use "邦楽" or "洋楽" as separate single tags (NEVER combine with "/" like "J-POP / 邦楽")
+   - Use "アイドル" (NEVER "Aidol" or "Idol")
+   - Use "アニソン" (NEVER "Anime", "アニメ", or "アニメソング")
+   - Use "CMソング" (NEVER "CM-Song" or "CM曲")
+   - Use "シンガーソングライター", "ニューミュージック", "フォーク", "シティポップ", "昭和歌謡", "ロック", "ハードロック", "パンク", "ジャズ", "フュージョン", "クラシック", "R&B", "ヒップホップ", "テクノポップ", "AOR", "バラード", "アコースティック", "サウンドトラック", "ベスト盤", "ライブ盤", "お笑い・バラエティ"
+   - Era tags MUST be strictly one of: "50年代", "60年代", "70年代", "80年代", "90年代", "2000年代", "2010年代", "2020年代" (NEVER "1980年代" or "80s").
+2. "genre": The primary music genre using ONLY a single unified canonical name from rule 1 (e.g., "J-POP", "ニューミュージック", "シティポップ", "ロック", "アニソン", "ジャズ", "昭和歌謡", "フォーク", "R&B", "ヒップホップ", "アイドル", "クラシック").
+3. "subGenre": Sub-genre or musical style using unified Japanese terms (e.g., "シンガーソングライター", "バラード", "アコースティック", "AOR", "テクノポップ", "ベスト盤", "ライブ盤").
+4. "mood": Atmosphere & emotional feel keywords in Japanese (e.g., "爽快・疾走感", "切ない・哀愁", "メロウ・チル", "エモーショナル", "叙情的・優しさ", "ダンサブル").
+5. "era": Era/decade classification derived strictly from "effectiveReleaseDateForEraTag" ("vinylRecordReleaseDate" when present, otherwise "cdReleaseDate").
+6. "suggestedTags": Array of 3 to 5 concise, unified Japanese tags following Rule 1. When Include Era/Decade is Yes and "requiredEraTag" is non-empty, "suggestedTags" MUST include that exact "requiredEraTag" and MUST NOT include a conflicting decade tag.
+7. "reasoning": A clear 1-2 sentence Japanese explanation summarizing the overall musical characteristics and why these tags fit this album (mentioning the LP/EP original release date when present).
+8. "tagEvidence": An array corresponding to each tag in "suggestedTags", explaining the concrete basis (根拠):
+   - "tag": The exact unified tag string matching "suggestedTags".
    - "category": One of "genre" | "mood" | "era" | "style".
-   - "evidence": Specific Japanese explanation of why this tag was chosen (e.g., if both CD and LP/EP dates exist: "CD発売日(2005-09-21)とLP/EP発売日(1982-05-21)の両方があるため、LP/EP発売年月日(1982-05-21)を優先して80年代と判定").
+   - "evidence": Specific Japanese explanation of why this tag was chosen.
    - "sourceFields": Array of input fields used as evidence in Japanese (e.g., ["LP/EP発売年月日"], ["アーティスト名", "収録曲リスト"], ["CD発売年月日"], ["規格品番・レーベル", "タイトル"]).
 
 Return ONLY a valid JSON object matching this schema with no markdown backticks:
@@ -190,8 +309,27 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
       const parsed = JSON.parse(cleanJson);
 
       if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
-        // Post-process each result to deterministically enforce the LP/EP release date era rule
+        // Post-process each result to deterministically enforce unified tags and the LP/EP release date era rule
         for (const item of parsed.results as CDTagAnalysisResult[]) {
+          item.genre = normalizeServerTag(item.genre) || 'J-POP';
+          if (item.subGenre) {
+            item.subGenre = normalizeServerTag(item.subGenre);
+          }
+          item.suggestedTags = normalizeServerTagList(item.suggestedTags);
+          if (Array.isArray(item.tagEvidence)) {
+            const seenEv = new Set<string>();
+            item.tagEvidence = item.tagEvidence
+              .map((ev) => ({
+                ...ev,
+                tag: normalizeServerTag(ev.tag),
+              }))
+              .filter((ev) => {
+                if (!ev.tag || seenEv.has(ev.tag)) return false;
+                seenEv.add(ev.tag);
+                return true;
+              });
+          }
+
           const origCd = chunk.find((c) => c.id === item.id);
           if (origCd && options.includeEra !== false) {
             const hasVinyl = Boolean(origCd.vinylRecordReleaseDate && origCd.vinylRecordReleaseDate.trim());
@@ -253,10 +391,11 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
             ? `同タイトルのLP/EP発売年月日(${cd.vinylRecordReleaseDate})から「${era}」タグを生成`
             : `CD発売年月日(${cd.releaseDate})から「${era}」タグを生成`;
 
-        const suggested = [era, cd.genre || 'J-POP', '邦楽'].filter(Boolean);
+        const canonicalGenre = normalizeServerTag(cd.genre) || 'J-POP';
+        const suggested = normalizeServerTagList([era, canonicalGenre, '邦楽'].filter(Boolean));
         allResults.push({
           id: cd.id,
-          genre: cd.genre || 'J-POP / 邦楽',
+          genre: canonicalGenre,
           mood: 'ポップ・メロディアス',
           era: era || '邦楽',
           suggestedTags: suggested,

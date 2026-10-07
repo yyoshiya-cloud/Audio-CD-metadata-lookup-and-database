@@ -61,6 +61,7 @@ interface GoogleSheetsModalProps {
   user: User | null;
   accessToken: string | null;
   itemsToExport: CDMetadata[];
+  allCDs?: CDMetadata[];
   initialMode?: 'export' | 'import';
   onClose: () => void;
   onLogin: () => Promise<{ user: User; accessToken: string } | null>;
@@ -71,7 +72,8 @@ interface GoogleSheetsModalProps {
 export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   user,
   accessToken,
-  itemsToExport,
+  itemsToExport: initialItemsToExport,
+  allCDs,
   initialMode = 'export',
   onClose,
   onLogin,
@@ -81,6 +83,16 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'export' | 'import'>(initialMode);
   const [exportTargetType, setExportTargetType] = useState<'sheets' | 'excel' | 'csv' | 'json'>('sheets');
   const [importSourceType, setImportSourceType] = useState<'sheets' | 'excel' | 'csv' | 'json'>('sheets');
+  const [exportScope, setExportScope] = useState<'all' | 'subset'>(() =>
+    allCDs && initialItemsToExport.length > 0 && initialItemsToExport.length < allCDs.length ? 'subset' : 'all'
+  );
+
+  const itemsToExport = useMemo(() => {
+    if (exportScope === 'all' && allCDs && allCDs.length > 0) {
+      return allCDs;
+    }
+    return initialItemsToExport.length > 0 ? initialItemsToExport : (allCDs || []);
+  }, [exportScope, allCDs, initialItemsToExport]);
 
   // JSON Export & Import State
   const [jsonFileName, setJsonFileName] = useState(() => `CDコレクション_backup_${formatJSTTimestampCompact()}`);
@@ -796,7 +808,36 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           {/* TAB 1: EXPORT MODE */}
           {activeTab === 'export' && (
             <div className="space-y-4">
-              
+              {allCDs && initialItemsToExport.length > 0 && initialItemsToExport.length < allCDs.length && (
+                <div className="flex items-center justify-between gap-2 p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs">
+                  <span className="text-slate-300 font-bold">書き出し対象:</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setExportScope('all')}
+                      className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        exportScope === 'all'
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      ライブラリ全件 ({allCDs.length}件)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExportScope('subset')}
+                      className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        exportScope === 'subset'
+                          ? 'bg-indigo-600 text-white shadow'
+                          : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      選択中のみ ({initialItemsToExport.length}件)
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Export Target Type Selector (Google Sheets vs Excel File vs CSV) */}
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-2">

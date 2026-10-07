@@ -577,6 +577,7 @@ export default function App() {
           user={user}
           accessToken={accessToken}
           itemsToExport={itemsToExport}
+          allCDs={savedCDs}
           initialMode={sheetsModalMode}
           onClose={() => setIsSheetsModalOpen(false)}
           onLogin={handleLogin}
