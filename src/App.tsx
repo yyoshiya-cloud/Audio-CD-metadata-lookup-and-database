@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { initAuth, googleSignIn, logout, getAccessToken } from './lib/firebase';
-import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, markCDsAsSynced, exportToCSV, clearLocalDB, importCDs, getCloudSyncEnabled, setCloudSyncEnabled, loadApiCredentialsDB, saveApiCredentialsDB, clearApiCredentialsLocal, initPersistentStorage } from './lib/db';
+import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, markCDsAsSynced, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage } from './lib/db';
 import { CDMetadata, SearchQuery, SearchResponse, APICredentials } from './types/cd';
 import { getJSTISOString } from './lib/dateUtils';
 import { Header } from './components/Header';
@@ -18,7 +18,7 @@ import { AppInfoModal } from './components/AppInfoModal';
 import { DashboardView } from './components/DashboardView';
 import { DuplicateCheckView } from './components/DuplicateCheckView';
 import { JacketGalleryView } from './components/JacketGalleryView';
-import { Disc, Sparkles, Database, CheckCircle2, AlertCircle } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -72,15 +72,6 @@ export default function App() {
   const [isAITaggingOpen, setIsAITaggingOpen] = useState(false);
   const [isAppInfoOpen, setIsAppInfoOpen] = useState(false);
   const [aiTaggingSelectedCDs, setAiTaggingSelectedCDs] = useState<CDMetadata[]>([]);
-  const [cloudSyncEnabled, setCloudSyncEnabledState] = useState(() => getCloudSyncEnabled());
-
-  const handleToggleCloudSync = () => {
-    const next = !cloudSyncEnabled;
-    setCloudSyncEnabled(next);
-    setCloudSyncEnabledState(next);
-    loadLocalLibrary();
-    showToast(next ? 'クラウド同期を有効にしました' : 'クラウド同期を無効にしました（ローカルのみ）');
-  };
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -374,7 +365,6 @@ export default function App() {
   };
 
   const savedCDIds = savedCDs.map((c) => c.id);
-  const syncedCount = savedCDs.filter((c) => c.syncedToSheets).length;
 
   const configuredApiKeysCount = React.useMemo(() => {
     let count = 0;
@@ -412,17 +402,10 @@ export default function App() {
       {/* Top Header Navigation */}
       <Header
         user={user}
-        accessToken={accessToken}
         totalCDsCount={savedCDs.length}
-        syncedCount={syncedCount}
         configuredApiKeysCount={configuredApiKeysCount}
         duplicateCount={duplicateGroupsCount}
-        cloudSyncEnabled={cloudSyncEnabled}
-        onToggleCloudSync={handleToggleCloudSync}
-        onOpenSheetsModal={() => handleOpenSheetsModalForItems(savedCDs)}
-        onOpenBatchModal={() => setIsBatchModalOpen(true)}
         onOpenAPISettings={() => setIsAPISettingsOpen(true)}
-        onOpenManualAdd={handleOpenManualAdd}
         onOpenAppInfo={() => setIsAppInfoOpen(true)}
         onLogin={handleLogin}
         onLogout={handleLogout}
@@ -501,7 +484,7 @@ export default function App() {
               setModalCDList(list || savedCDs);
             }}
             onSaveCD={handleSaveCDToDB}
-            onDeleteCD={handleDeleteCD}
+            onBatchUpdateCDs={handleApplyBatchAITags}
             onNavigateToSpreadsheet={() => setActiveTab('database')}
           />
         )}
@@ -554,10 +537,6 @@ export default function App() {
             setModalCDList((prev) => prev.map((c) => (c.id === updatedCD.id ? updatedCD : c)));
             setSelectedCDForModal(updatedCD);
           }}
-          onExportSingleToSheets={(singleCD) => {
-            handleOpenSheetsModalForItems([singleCD]);
-            setSelectedCDForModal(null);
-          }}
           isSaved={savedCDIds.includes(selectedCDForModal.id)}
           currentIndex={currentModalIndex >= 0 ? currentModalIndex : undefined}
           totalCount={modalCDList.length > 0 ? modalCDList.length : undefined}
@@ -602,7 +581,6 @@ export default function App() {
       {/* API Key Registration Settings Modal */}
       {isAPISettingsOpen && (
         <APISettingsModal
-          user={user}
           credentials={apiCredentials}
           onSaveCredentials={handleSaveApiCredentials}
           onClose={() => setIsAPISettingsOpen(false)}

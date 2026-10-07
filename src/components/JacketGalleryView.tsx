@@ -1,30 +1,24 @@
 import React, { useState, useMemo } from 'react';
 import { CDMetadata } from '../types/cd';
-import { enhanceImageWithCanvas } from '../utils/imageEnhancer';
+import { enhanceImageWithCanvas, convertImageUrlToBase64 } from '../utils/imageEnhancer';
 import {
   Search,
   Disc,
   Sparkles,
   Music,
-  Calendar,
-  Tag,
-  ExternalLink,
-  Trash2,
-  Filter,
-  ArrowUpDown,
   ArrowUp,
   ArrowDown,
   Loader2,
   CheckCircle2,
-  AlertCircle,
   FileSpreadsheet,
+  Link2,
 } from 'lucide-react';
 
 interface JacketGalleryViewProps {
   cds: CDMetadata[];
   onSelectCD: (cd: CDMetadata, currentList?: CDMetadata[]) => void;
   onSaveCD: (updatedCD: CDMetadata) => Promise<void>;
-  onDeleteCD: (id: string) => void;
+  onBatchUpdateCDs?: (updatedCDs: CDMetadata[], onProgress?: (completed: number, total: number) => void) => Promise<void>;
   onNavigateToSpreadsheet?: () => void;
 }
 
@@ -34,7 +28,7 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
   cds,
   onSelectCD,
   onSaveCD,
-  onDeleteCD,
+  onBatchUpdateCDs,
   onNavigateToSpreadsheet,
 }) => {
   const [searchQuery, setSearchKeyword] = useState('');
@@ -42,6 +36,9 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
   const [sortField, setSortField] = useState<SortOption>('updatedAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [upscalingCDId, setUpscalingCDId] = useState<string | null>(null);
+  const [convertingCDId, setConvertingCDId] = useState<string | null>(null);
+  const [isBatchConverting, setIsBatchConverting] = useState(false);
+  const [batchConvertProgress, setBatchConvertProgress] = useState<{ current: number; total: number } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -181,6 +178,100 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
     }
   };
 
+  // Count how many CDs still use external http/https cover links instead of Base64
+  const externalLinkCDs = useMemo(() => {
+    return cds.filter(
+      (c) =>
+        c.coverUrl &&
+        c.coverUrl.trim() !== '' &&
+        !c.coverUrl.trim().startsWith('data:image/') &&
+        (c.coverUrl.trim().startsWith('http://') || c.coverUrl.trim().startsWith('https://'))
+    );
+  }, [cds]);
+
+  // Convert single CD cover link to Base64
+  const handleConvertSingleToBase64 = async (e: React.MouseEvent, cd: CDMetadata) => {
+    e.stopPropagation();
+    if (!cd.coverUrl || cd.coverUrl.startsWith('data:image/')) return;
+
+    setConvertingCDId(cd.id);
+    try {
+      const base64Url = await convertImageUrlToBase64(cd.coverUrl);
+      if (base64Url && base64Url.startsWith('data:image/')) {
+        const updatedCD: CDMetadata = {
+          ...cd,
+          coverUrl: base64Url,
+          updatedAt: new Date().toISOString(),
+        };
+        await onSaveCD(updatedCD);
+        showToast(`「${cd.title}」のジャケット画像をBASE64形式に変換・保存しました！`);
+      } else {
+        showToast('画像のBASE64変換に失敗しました（リンク切れの可能性があります）');
+      }
+    } catch {
+      showToast('画像のBASE64変換中にエラーが発生しました');
+    } finally {
+      setConvertingCDId(null);
+    }
+  };
+
+  // Batch convert all external cover links to Base64
+  const handleBatchConvertAllToBase64 = async () => {
+    if (externalLinkCDs.length === 0 || isBatchConverting) return;
+
+    setIsBatchConverting(true);
+    setBatchConvertProgress({ current: 0, total: externalLinkCDs.length });
+
+    try {
+      const updatedList: CDMetadata[] = [];
+      let completed = 0;
+      const CONCURRENCY = 4;
+
+      for (let i = 0; i < externalLinkCDs.length; i += CONCURRENCY) {
+        const chunk = externalLinkCDs.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(
+          chunk.map(async (cd) => {
+            if (!cd.coverUrl) return null;
+            const base64 = await convertImageUrlToBase64(cd.coverUrl);
+            if (base64 && base64.startsWith('data:image/')) {
+              return {
+                ...cd,
+                coverUrl: base64,
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return null;
+          })
+        );
+
+        for (const item of results) {
+          if (item) updatedList.push(item);
+        }
+        completed += chunk.length;
+        setBatchConvertProgress({ current: Math.min(completed, externalLinkCDs.length), total: externalLinkCDs.length });
+      }
+
+      if (updatedList.length > 0) {
+        if (onBatchUpdateCDs) {
+          await onBatchUpdateCDs(updatedList);
+        } else {
+          for (const item of updatedList) {
+            await onSaveCD(item);
+          }
+        }
+        showToast(`${updatedList.length} 件の外部リンク画像をBASE64形式に変換してIndexedDBに保存しました！`);
+      } else {
+        showToast('変換可能な外部画像リンクがありませんでした');
+      }
+    } catch (err) {
+      console.error('Batch Base64 conversion error:', err);
+      showToast('一括BASE64変換中にエラーが発生しました');
+    } finally {
+      setIsBatchConverting(false);
+      setBatchConvertProgress(null);
+    }
+  };
+
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
       
@@ -282,6 +373,28 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
             </button>
           </div>
 
+          {/* Batch Convert External Image Links to Base64 Button */}
+          {externalLinkCDs.length > 0 && (
+            <button
+              type="button"
+              onClick={handleBatchConvertAllToBase64}
+              disabled={isBatchConverting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/40 shadow-md transition-all cursor-pointer disabled:opacity-50"
+              title="外部URLリンクのままになっているジャケット画像をすべて取得し、BASE64形式に変換してローカルDBに永続保存します"
+            >
+              {isBatchConverting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-200" />
+              ) : (
+                <Link2 className="w-3.5 h-3.5 text-emerald-100" />
+              )}
+              <span>
+                {isBatchConverting
+                  ? `BASE64変換中 (${batchConvertProgress?.current || 0}/${batchConvertProgress?.total || 0})`
+                  : `外部リンク画像をBASE64保存 (${externalLinkCDs.length}件)`}
+              </span>
+            </button>
+          )}
+
           {/* Spreadsheet View Navigation Button */}
           {onNavigateToSpreadsheet && (
             <button
@@ -302,6 +415,8 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
           {filteredCDs.map((cd) => {
             const isUpscaling = upscalingCDId === cd.id;
+            const isConverting = convertingCDId === cd.id;
+            const isBase64 = Boolean(cd.coverUrl && cd.coverUrl.startsWith('data:image/'));
             const trackCount = cd.tracks ? cd.tracks.length : 0;
 
             return (
@@ -327,6 +442,13 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
                       alt={cd.title}
                       className="w-full h-full object-cover relative z-10 transition-transform duration-500 group-hover:scale-105"
                       referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedProxy && cd.coverUrl && !cd.coverUrl.startsWith('data:')) {
+                          target.dataset.triedProxy = 'true';
+                          target.src = `/api/image-proxy?url=${encodeURIComponent(cd.coverUrl)}`;
+                        }
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 p-2 text-center relative z-10">
@@ -335,22 +457,54 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
                     </div>
                   )}
 
-                  {/* AI High-Res Upscale Overlay Button */}
+                  {/* Top-Right Action Overlay Buttons */}
                   {cd.coverUrl && (
-                    <button
-                      type="button"
-                      onClick={(e) => handleUpscaleJacket(e, cd)}
-                      disabled={isUpscaling}
-                      className="absolute top-2 right-2 z-20 px-2 py-1 rounded-lg bg-indigo-950/90 hover:bg-indigo-900 text-indigo-200 border border-indigo-500/50 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-all shadow-lg flex items-center gap-1 cursor-pointer"
-                      title="Gemini AIでこのジャケットを高画質化・超解像化"
-                    >
-                      {isUpscaling ? (
-                        <Loader2 className="w-3 h-3 animate-spin text-indigo-300" />
-                      ) : (
-                        <Sparkles className="w-3 h-3 text-indigo-300" />
+                    <div className="absolute top-2 right-2 z-20 flex flex-col items-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <button
+                        type="button"
+                        onClick={(e) => handleUpscaleJacket(e, cd)}
+                        disabled={isUpscaling}
+                        className="px-2 py-1 rounded-lg bg-indigo-950/90 hover:bg-indigo-900 text-indigo-200 border border-indigo-500/50 text-[10px] font-bold shadow-lg flex items-center gap-1 cursor-pointer"
+                        title="Gemini AIでこのジャケットを高画質化・超解像化"
+                      >
+                        {isUpscaling ? (
+                          <Loader2 className="w-3 h-3 animate-spin text-indigo-300" />
+                        ) : (
+                          <Sparkles className="w-3 h-3 text-indigo-300" />
+                        )}
+                        <span>{isUpscaling ? 'AI高画質化中...' : '✨ AI高画質化'}</span>
+                      </button>
+
+                      {!isBase64 && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleConvertSingleToBase64(e, cd)}
+                          disabled={isConverting}
+                          className="px-2 py-1 rounded-lg bg-emerald-950/90 hover:bg-emerald-900 text-emerald-200 border border-emerald-500/50 text-[10px] font-bold shadow-lg flex items-center gap-1 cursor-pointer"
+                          title="リンク先の画像をBASE64形式に変換してローカルDBに保存"
+                        >
+                          {isConverting ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-emerald-300" />
+                          ) : (
+                            <Link2 className="w-3 h-3 text-emerald-300" />
+                          )}
+                          <span>{isConverting ? '変換中...' : 'BASE64保存'}</span>
+                        </button>
                       )}
-                      <span>{isUpscaling ? 'AI高画質化中...' : '✨ AI高画質化'}</span>
-                    </button>
+                    </div>
+                  )}
+
+                  {/* Base64 Status Badge (Top-Left) */}
+                  {isBase64 && (
+                    <div className="absolute top-2 left-2 z-20">
+                      <span
+                        className="text-[9px] font-mono font-bold bg-emerald-950/85 backdrop-blur-md text-emerald-300 border border-emerald-500/40 px-1.5 py-0.5 rounded shadow flex items-center gap-0.5"
+                        title="BASE64形式でローカルIndexedDBに永続保存済み"
+                      >
+                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                        <span>BASE64</span>
+                      </span>
+                    </div>
                   )}
 
                   {/* Catalog Number Tag Overlay */}

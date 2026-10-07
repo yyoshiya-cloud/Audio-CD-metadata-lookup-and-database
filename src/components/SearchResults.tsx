@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CDMetadata, SearchResponse, APISource } from '../types/cd';
-import { Music, Calendar, Disc, Check, Plus, ExternalLink, ShieldCheck, Layers, Layers2, Sparkles, Trash2, XCircle, ChevronDown, ChevronUp, ListMusic } from 'lucide-react';
+import { Music, Calendar, Disc, Check, Plus, ShieldCheck, Layers, Layers2, Sparkles, Trash2, ChevronDown, ChevronUp, ListMusic } from 'lucide-react';
 
 interface SearchResultsProps {
   searchResponse: SearchResponse | null;

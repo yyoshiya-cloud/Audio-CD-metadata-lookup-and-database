@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Disc, Sparkles, Database, ShieldCheck, ExternalLink, Calendar, Code2, FileSpreadsheet } from 'lucide-react';
+import { X, Disc, Sparkles, Database, ShieldCheck, ExternalLink, Code2, FileSpreadsheet } from 'lucide-react';
 
 interface AppInfoModalProps {
   onClose: () => void;

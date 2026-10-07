@@ -1,20 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { CDMetadata } from '../types/cd';
 import {
-  Layers,
   Sparkles,
   CheckCircle2,
-  Trash2,
   Disc,
-  Music,
-  Calendar,
-  Building,
-  Check,
   ArrowRight,
-  AlertTriangle,
   RefreshCw,
   Copy,
-  Info,
 } from 'lucide-react';
 
 interface DuplicateCheckViewProps {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CDMetadata, TrackInfo } from '../types/cd';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
+import { convertImageUrlToBase64 } from '../utils/imageEnhancer';
 import {
   Save,
   RotateCcw,
@@ -23,7 +24,7 @@ import {
   ImageOff,
   AlertTriangle,
   ShieldAlert,
-  Image as ImageIcon,
+  Link2,
 } from 'lucide-react';
 
 interface SpreadsheetEditorViewProps {
@@ -130,11 +131,76 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
 
   // Image URL Verification State
   const [isCheckingImages, setIsCheckingImages] = useState(false);
+  const [isConvertingBase64, setIsConvertingBase64] = useState(false);
   const [imageVerificationProgress, setImageVerificationProgress] = useState<{ current: number; total: number } | null>(null);
   const [brokenImageRowIds, setBrokenImageRowIds] = useState<Set<string>>(new Set());
   const [brokenImageReasons, setBrokenImageReasons] = useState<Map<string, string>>(new Map());
   const [imageCheckResult, setImageCheckResult] = useState<{ total: number; validCount: number; brokenCount: number; emptyCount: number } | null>(null);
   const [filterOnlyBrokenImages, setFilterOnlyBrokenImages] = useState(false);
+
+  // Count rows with external http/https image links
+  const externalLinkRows = useMemo(() => {
+    return gridRows.filter(
+      (r) =>
+        r.coverUrl &&
+        r.coverUrl.trim() !== '' &&
+        !r.coverUrl.trim().startsWith('data:image/') &&
+        (r.coverUrl.trim().startsWith('http://') || r.coverUrl.trim().startsWith('https://'))
+    );
+  }, [gridRows]);
+
+  // Convert all external image links in gridRows to Base64 and mark them edited
+  const handleConvertAllLinksToBase64 = async () => {
+    if (externalLinkRows.length === 0 || isConvertingBase64) return;
+
+    setIsConvertingBase64(true);
+    setImageVerificationProgress({ current: 0, total: externalLinkRows.length });
+
+    try {
+      const convertedMap = new Map<string, string>();
+      const newlyEditedIds: string[] = [];
+      let completed = 0;
+      const CONCURRENCY = 4;
+
+      for (let i = 0; i < externalLinkRows.length; i += CONCURRENCY) {
+        const chunk = externalLinkRows.slice(i, i + CONCURRENCY);
+        await Promise.all(
+          chunk.map(async (row) => {
+            if (!row.coverUrl) return;
+            const base64 = await convertImageUrlToBase64(row.coverUrl);
+            if (base64 && base64.startsWith('data:image/')) {
+              convertedMap.set(row.id, base64);
+              newlyEditedIds.push(row.id);
+            }
+            completed++;
+            setImageVerificationProgress({ current: completed, total: externalLinkRows.length });
+          })
+        );
+      }
+
+      if (convertedMap.size > 0) {
+        setGridRows((prev) =>
+          prev.map((row) => {
+            const newCover = convertedMap.get(row.id);
+            return newCover ? { ...row, coverUrl: newCover } : row;
+          })
+        );
+        setEditedRowIds((prev) => {
+          const next = new Set(prev);
+          newlyEditedIds.forEach((id) => next.add(id));
+          return next;
+        });
+        setSaveSuccessMessage(`${convertedMap.size} 件のジャケット画像リンクをBASE64形式に変換しました。「一括保存」を押すとDBに保存されます。`);
+      } else {
+        setErrorMessage('BASE64に変換できる有効な外部画像リンクが見つかりませんでした。');
+      }
+    } catch {
+      setErrorMessage('画像のBASE64一括変換中にエラーが発生しました。');
+    } finally {
+      setIsConvertingBase64(false);
+      setImageVerificationProgress(null);
+    }
+  };
 
   // Helper to test if image URL is accessible
   const checkImageAccessibility = (url: string, timeoutMs = 3500): Promise<boolean> => {
@@ -451,7 +517,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
       });
       
       setEditedRowIds(new Set());
-      setSaveSuccessMessage(`${modifiedCDs.length} 件のCDデータを正常に一括保存・クラウド同期しました`);
+      setSaveSuccessMessage(`${modifiedCDs.length} 件のCDデータを正常にローカルDB (IndexedDB) へ一括保存しました`);
       setTimeout(() => setSaveSuccessMessage(null), 4000);
     } catch (err: any) {
       console.error('Batch update error:', err);
@@ -805,6 +871,28 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
             </span>
           )}
 
+          {/* Convert External Image Links to Base64 Button */}
+          {externalLinkRows.length > 0 && (
+            <button
+              type="button"
+              onClick={handleConvertAllLinksToBase64}
+              disabled={isConvertingBase64 || isSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/40 transition-all cursor-pointer disabled:opacity-50"
+              title="外部URLリンクのジャケット画像をすべて取得してBASE64形式に変換します"
+            >
+              {isConvertingBase64 ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+              ) : (
+                <Link2 className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span>
+                {isConvertingBase64
+                  ? `BASE64化中... (${imageVerificationProgress?.current || 0}/${imageVerificationProgress?.total || 0})`
+                  : `画像BASE64化 (${externalLinkRows.length}件)`}
+              </span>
+            </button>
+          )}
+
           {/* Image Link Verification Button */}
           <button
             type="button"
@@ -963,10 +1051,10 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
             </div>
             <div>
               <p className="text-xs font-bold text-white flex items-center gap-2">
-                <span>データベースへ一括同期保存中...</span>
+                <span>ローカルデータベース (Dexie.js / IndexedDB) へ一括保存中...</span>
               </p>
               <p className="text-[11px] text-indigo-300">
-                ローカルDB (IndexedDB) およびクラウド (Firestore) へ順次同期保存しています。画面を閉じずにお待ちください。
+                外部リンクのジャケット画像のBASE64変換およびIndexedDBへの高速書き込みを実行しています。画面を閉じずにお待ちください。
               </p>
             </div>
           </div>

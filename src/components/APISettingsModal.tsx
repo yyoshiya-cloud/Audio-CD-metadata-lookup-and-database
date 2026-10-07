@@ -1,19 +1,17 @@
 import React, { useState } from 'react';
 import { APICredentials } from '../types/cd';
-import { X, Key, ExternalLink, Check, RefreshCw, ShieldCheck, AlertCircle, Info, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { X, Key, ExternalLink, Check, ShieldCheck, Info, Eye, EyeOff } from 'lucide-react';
 
 interface APISettingsModalProps {
   credentials: APICredentials;
   onSaveCredentials: (updated: APICredentials) => void;
   onClose: () => void;
-  user?: any;
 }
 
 export const APISettingsModal: React.FC<APISettingsModalProps> = ({
   credentials,
   onSaveCredentials,
   onClose,
-  user,
 }) => {
   const [spotifyClientId, setSpotifyClientId] = useState(credentials.spotifyClientId || '');
   const [showSpotifyClientId, setShowSpotifyClientId] = useState(false);

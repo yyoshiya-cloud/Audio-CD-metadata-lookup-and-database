@@ -170,6 +170,49 @@ app.get('/api/image-proxy', async (req, res) => {
   }
 });
 
+// Server-side Image to Base64 Data URL converter for external image links
+app.post('/api/image-base64', async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: '有効な画像URLを指定してください。' });
+    }
+    const trimmedUrl = url.trim();
+    if (trimmedUrl.startsWith('data:image/')) {
+      return res.json({ dataUrl: trimmedUrl });
+    }
+    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+      return res.status(400).json({ error: 'http:// または https:// で始まる有効な画像URLを指定してください。' });
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(trimmedUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Referer': new URL(trimmedUrl).origin,
+      },
+    }).finally(() => clearTimeout(timeout));
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `画像取得エラー: HTTP ${response.status}` });
+    }
+
+    const rawContentType = response.headers.get('content-type') || 'image/jpeg';
+    const mimeType = rawContentType.split(';')[0].trim() || 'image/jpeg';
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    res.json({ dataUrl, mimeType });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || '画像のBASE64変換中にエラーが発生しました。' });
+  }
+});
+
 // Setup Vite Dev Middleware or Static Production server
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

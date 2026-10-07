@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Upload, X, Sparkles, RefreshCw, Disc, Check, AlertCircle } from 'lucide-react';
+import { Camera, X, Sparkles, RefreshCw, Check, AlertCircle } from 'lucide-react';
 import { SearchQuery } from '../types/cd';
 
 interface CDSpineScannerProps {

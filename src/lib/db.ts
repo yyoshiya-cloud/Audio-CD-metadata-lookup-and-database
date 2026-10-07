@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import { CDMetadata, APICredentials } from '../types/cd';
 import { normalizeCatalogNumber, normalizeReleaseDate } from './dateUtils';
+import { ensureCDCoverBase64 } from '../utils/imageEnhancer';
 
 export interface SettingRecord {
   key: string;
@@ -168,11 +169,29 @@ export async function getAllCDs(): Promise<CDMetadata[]> {
 }
 
 /**
- * Save single CD to Dexie IndexedDB
+ * Save single CD to Dexie IndexedDB (automatically converts external image URL to Base64)
  */
 export async function saveCD(cd: CDMetadata): Promise<void> {
-  const normalized = normalizeCDRecord(cd);
+  const withBase64 = await ensureCDCoverBase64(cd);
+  const normalized = normalizeCDRecord(withBase64);
   await db.cds.put(normalized);
+}
+
+/**
+ * Helper to convert external coverUrl links to Base64 in parallel batches
+ */
+async function convertCDListCoversToBase64(cds: CDMetadata[]): Promise<CDMetadata[]> {
+  if (cds.length === 0) return [];
+  const CONCURRENCY = 5;
+  const result: CDMetadata[] = new Array(cds.length);
+  for (let i = 0; i < cds.length; i += CONCURRENCY) {
+    const chunk = cds.slice(i, i + CONCURRENCY);
+    const convertedChunk = await Promise.all(chunk.map((item) => ensureCDCoverBase64(item)));
+    for (let j = 0; j < convertedChunk.length; j++) {
+      result[i + j] = convertedChunk[j];
+    }
+  }
+  return result;
 }
 
 /**
@@ -183,7 +202,8 @@ export async function saveMultipleCDs(
   onProgress?: (completed: number, total: number) => void
 ): Promise<void> {
   if (cds.length === 0) return;
-  const normalizedList = cds.map(normalizeCDRecord);
+  const convertedList = await convertCDListCoversToBase64(cds);
+  const normalizedList = convertedList.map(normalizeCDRecord);
 
   // Process in chunks of 200 for responsive progress reporting on huge collections
   const CHUNK_SIZE = 200;
@@ -206,7 +226,8 @@ export async function saveMultipleCDs(
  */
 export async function importCDs(cds: CDMetadata[]): Promise<void> {
   if (cds.length === 0) return;
-  const normalizedList = cds.map(normalizeCDRecord);
+  const convertedList = await convertCDListCoversToBase64(cds);
+  const normalizedList = convertedList.map(normalizeCDRecord);
   await db.transaction('rw', db.cds, async () => {
     await db.cds.bulkPut(normalizedList);
   });
@@ -225,20 +246,6 @@ export async function deleteCD(id: string): Promise<void> {
 export async function deleteMultipleCDs(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await db.cds.bulkDelete(ids);
-}
-
-/**
- * Clear all CDs from Dexie IndexedDB
- */
-export async function clearLocalDB(): Promise<void> {
-  try {
-    await db.cds.clear();
-  } catch (e) {
-    console.warn('Failed to clear Dexie DB:', e);
-  }
-  try {
-    localStorage.removeItem(LEGACY_STORE_NAME);
-  } catch {}
 }
 
 /**
@@ -301,44 +308,3 @@ export async function loadApiCredentialsDB(): Promise<APICredentials> {
   return {};
 }
 
-export function clearApiCredentialsLocal(): void {
-  try {
-    db.settings.delete('apiCredentials').catch(() => {});
-    localStorage.removeItem('cd_api_credentials');
-  } catch {}
-}
-
-export function getCloudSyncEnabled(): boolean {
-  return false;
-}
-
-export function setCloudSyncEnabled(_enabled: boolean): void {
-  // Deprecated: Storage is now 100% local IndexedDB via Dexie.js
-}
-
-export function exportToCSV(cds: CDMetadata[]): void {
-  if (cds.length === 0) return;
-
-  const headers = ['型番', 'タイトル', 'アーティスト', 'レーベル', '発売日', 'バーコード(JAN)', 'ジャケット画像URL', '取得元', 'トラック数'];
-  const rows = cds.map((cd) => [
-    `"${(cd.catalogNumber || '').replace(/"/g, '""')}"`,
-    `"${(cd.title || '').replace(/"/g, '""')}"`,
-    `"${(cd.artist || '').replace(/"/g, '""')}"`,
-    `"${(cd.label || '').replace(/"/g, '""')}"`,
-    `"${(cd.releaseDate || '').replace(/"/g, '""')}"`,
-    `"${(cd.barcode || '').replace(/"/g, '""')}"`,
-    `"${(cd.coverUrl || '').replace(/"/g, '""')}"`,
-    `"${cd.source}"`,
-    cd.tracks ? cd.tracks.length : 0,
-  ]);
-
-  const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `cd_catalog_${new Date().toISOString().slice(0, 10)}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}

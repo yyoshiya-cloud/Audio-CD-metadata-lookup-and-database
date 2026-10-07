@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Camera, Disc, HelpCircle, RefreshCw, Barcode, Check, RotateCcw, Trash2, Sparkles } from 'lucide-react';
+import { Search, Camera, Disc, RefreshCw, Barcode, Check, RotateCcw, Sparkles } from 'lucide-react';
 import { APISource, SearchQuery } from '../types/cd';
 
 interface SearchPanelProps {

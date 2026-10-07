@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CDMetadata } from '../types/cd';
-import { Search, FileSpreadsheet, Download, Upload, Trash2, CheckCircle2, Music, ExternalLink, Disc, Filter, Plus, PlusCircle, Sparkles, AlertCircle, Clock, ArrowRight, Files, Table } from 'lucide-react';
+import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table } from 'lucide-react';
 import { SpreadsheetEditorView } from './SpreadsheetEditorView';
 
 interface CDDatabaseTableProps {
@@ -131,20 +131,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
       type: 'batch',
       count: selectedIds.length,
     });
-  };
-
-  const handleOpenBulkDeleteModal = () => {
-    if (selectedIds.length > 0) {
-      setDeleteConfirmTarget({
-        type: 'batch',
-        count: selectedIds.length,
-      });
-    } else {
-      setDeleteConfirmTarget({
-        type: 'all',
-        count: filteredCDs.length > 0 ? filteredCDs.length : cds.length,
-      });
-    }
   };
 
   const executeDelete = () => {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, PlusCircle, RefreshCw, Check, Disc, AlertCircle } from 'lucide-react';
-import { CDMetadata, SearchQuery } from '../types/cd';
+import { X, PlusCircle, RefreshCw, Check, Disc } from 'lucide-react';
+import { CDMetadata } from '../types/cd';
 
 interface BatchImportModalProps {
   onClose: () => void;

@@ -2,14 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { CDMetadata, TrackInfo, APISource } from '../types/cd';
 import { getJSTISOString, normalizeCatalogNumber, normalizeReleaseDate } from '../lib/dateUtils';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
-import { enhanceImageWithCanvas } from '../utils/imageEnhancer';
-import { X, Save, FileSpreadsheet, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2 } from 'lucide-react';
+import { enhanceImageWithCanvas, convertImageUrlToBase64 } from '../utils/imageEnhancer';
+import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2 } from 'lucide-react';
 
 interface CDDetailModalProps {
   cd: CDMetadata | null;
   onClose: () => void;
   onSaveCD: (updatedCD: CDMetadata) => void;
-  onExportSingleToSheets?: (cd: CDMetadata) => void;
   isSaved?: boolean;
   currentIndex?: number;
   totalCount?: number;
@@ -21,7 +20,6 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   cd,
   onClose,
   onSaveCD,
-  onExportSingleToSheets,
   isSaved,
   currentIndex,
   totalCount,
@@ -46,6 +44,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [isSavedState, setIsSavedState] = useState(false);
   const [isUpscaling, setIsUpscaling] = useState(false);
+  const [isConvertingBase64, setIsConvertingBase64] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -124,8 +123,54 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
     );
   };
 
-  const handleSaveSubmit = (e?: React.FormEvent) => {
+  const handleConvertLinkToBase64 = async () => {
+    const trimmed = coverUrl.trim();
+    if (!trimmed) {
+      setSaveSuccessMessage('変換対象の画像URLを入力してください');
+      return;
+    }
+    if (trimmed.startsWith('data:image/')) {
+      setSaveSuccessMessage('すでにBASE64形式（Data URL）に変換済みです');
+      setTimeout(() => setSaveSuccessMessage(null), 3000);
+      return;
+    }
+
+    setIsConvertingBase64(true);
+    try {
+      const base64DataUrl = await convertImageUrlToBase64(trimmed);
+      if (base64DataUrl && base64DataUrl.startsWith('data:image/')) {
+        setCoverUrl(base64DataUrl);
+        setSaveSuccessMessage('画像リンクからBASE64形式への変換が完了しました！「保存」を押すとDBに永続保存されます。');
+        setTimeout(() => setSaveSuccessMessage(null), 4500);
+      } else {
+        setSaveSuccessMessage('画像の取得・BASE64変換に失敗しました。URLを確認するか直接画像をアップロードしてください。');
+        setTimeout(() => setSaveSuccessMessage(null), 4500);
+      }
+    } catch (err) {
+      console.error('Base64 conversion error:', err);
+      setSaveSuccessMessage('画像のBASE64変換中にエラーが発生しました');
+      setTimeout(() => setSaveSuccessMessage(null), 3500);
+    } finally {
+      setIsConvertingBase64(false);
+    }
+  };
+
+  const handleSaveSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    let finalCoverUrl = coverUrl.trim();
+    if (finalCoverUrl && (finalCoverUrl.startsWith('http://') || finalCoverUrl.startsWith('https://'))) {
+      setIsConvertingBase64(true);
+      try {
+        const converted = await convertImageUrlToBase64(finalCoverUrl);
+        if (converted && converted.startsWith('data:image/')) {
+          finalCoverUrl = converted;
+          setCoverUrl(converted);
+        }
+      } catch {} finally {
+        setIsConvertingBase64(false);
+      }
+    }
+
     const updatedCD: CDMetadata = {
       ...cd,
       title,
@@ -139,13 +184,13 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
         ...tr,
         duration: formatTrackDuration(tr.duration || ''),
       })),
-      coverUrl,
+      coverUrl: finalCoverUrl,
       tags: tagsInput.split(',').map((t) => t.trim()).filter(Boolean),
       updatedAt: getJSTISOString(),
     };
     onSaveCD(updatedCD);
     setIsSavedState(true);
-    setSaveSuccessMessage('保存が完了しました！');
+    setSaveSuccessMessage('保存が完了しました！（ジャケット画像BASE64保存済）');
     setTimeout(() => {
       setIsSavedState(false);
       setSaveSuccessMessage(null);
@@ -565,6 +610,30 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                   <span>画像を変更・登録</span>
                 </button>
 
+                {coverUrl && !coverUrl.startsWith('data:image/') && (
+                  <button
+                    type="button"
+                    onClick={handleConvertLinkToBase64}
+                    disabled={isConvertingBase64}
+                    className="text-[11px] text-emerald-300 hover:text-emerald-200 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 rounded-lg py-1 text-center flex items-center justify-center gap-1 transition-all cursor-pointer font-semibold shadow-sm"
+                    title="外部リンクのジャケット画像を取得してBASE64形式に変換し、オフラインでも消えないように保存します"
+                  >
+                    {isConvertingBase64 ? (
+                      <Loader2 className="w-3 h-3 animate-spin text-emerald-300" />
+                    ) : (
+                      <Link2 className="w-3 h-3 text-emerald-300" />
+                    )}
+                    <span>{isConvertingBase64 ? 'BASE64変換中...' : '🔗 リンクをBASE64化'}</span>
+                  </button>
+                )}
+
+                {coverUrl && coverUrl.startsWith('data:image/') && (
+                  <div className="text-[10px] text-emerald-300 bg-emerald-950/60 border border-emerald-500/30 rounded-lg py-0.5 px-2 text-center flex items-center justify-center gap-1 font-semibold">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>BASE64変換済</span>
+                  </div>
+                )}
+
                 {coverUrl && (
                   <button
                     type="button"
@@ -813,30 +882,57 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
-                  <span>ジャケット画像 (coverUrl / 画像URL・アップロード)</span>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between flex-wrap gap-1">
+                  <span className="flex items-center gap-2">
+                    <span>ジャケット画像 (URLリンク / BASE64データ)</span>
+                    {coverUrl.startsWith('data:image/') ? (
+                      <span className="text-[10px] font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.2 rounded-full">
+                        ✓ BASE64変換済 ({Math.round(coverUrl.length / 1024)} KB)
+                      </span>
+                    ) : coverUrl.trim() ? (
+                      <span className="text-[10px] font-medium text-amber-300 bg-amber-950/80 border border-amber-500/40 px-2 py-0.2 rounded-full">
+                        外部URLリンク (保存時に自動BASE64化)
+                      </span>
+                    ) : null}
+                  </span>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                    className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
                   >
                     <Upload className="w-3 h-3" />
-                    <span>PC/スマホから画像をアップロード</span>
+                    <span>PC/スマホから画像をアップロード (BASE64化)</span>
                   </button>
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                   <input
                     type="text"
                     value={coverUrl}
                     onChange={(e) => setCoverUrl(e.target.value)}
-                    placeholder="https://... などの画像URL、またはファイル参照"
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
+                    placeholder="https://... などの画像URLを入力するとBASE64形式に変換して保存できます"
+                    className="flex-1 min-w-[200px] bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
                   />
+                  {coverUrl && !coverUrl.startsWith('data:image/') && (
+                    <button
+                      type="button"
+                      onClick={handleConvertLinkToBase64}
+                      disabled={isConvertingBase64}
+                      className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow-sm disabled:opacity-50"
+                      title="入力された画像リンクから画像を取得し、即座にBASE64形式へ変換します"
+                    >
+                      {isConvertingBase64 ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Link2 className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isConvertingBase64 ? '変換中...' : 'BASE64に変換'}</span>
+                    </button>
+                  )}
                   {coverUrl && (
                     <button
                       type="button"
                       onClick={() => setCoverUrl('')}
-                      className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 border border-slate-700 text-xs transition-colors"
+                      className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 border border-slate-700 text-xs transition-colors cursor-pointer whitespace-nowrap"
                       title="クリア"
                     >
                       クリア

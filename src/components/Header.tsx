@@ -1,20 +1,13 @@
 import React from 'react';
-import { Disc, LogIn, LogOut, Database, Sparkles, Key, BarChart3, Plus, Copy, Info, Cloud, CloudOff, LayoutGrid } from 'lucide-react';
+import { LogIn, LogOut, Database, Sparkles, Key, BarChart3, Copy, Info, LayoutGrid } from 'lucide-react';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
   user: User | null;
-  accessToken: string | null;
   totalCDsCount: number;
-  syncedCount: number;
   configuredApiKeysCount: number;
   duplicateCount?: number;
-  cloudSyncEnabled: boolean;
-  onToggleCloudSync: () => void;
-  onOpenSheetsModal: () => void;
-  onOpenBatchModal: () => void;
   onOpenAPISettings: () => void;
-  onOpenManualAdd: () => void;
   onOpenAppInfo: () => void;
   onLogin: () => void;
   onLogout: () => void;
@@ -24,17 +17,10 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   user,
-  accessToken,
   totalCDsCount,
-  syncedCount,
   configuredApiKeysCount,
   duplicateCount,
-  cloudSyncEnabled,
-  onToggleCloudSync,
-  onOpenSheetsModal,
-  onOpenBatchModal,
   onOpenAPISettings,
-  onOpenManualAdd,
   onOpenAppInfo,
   onLogin,
   onLogout,

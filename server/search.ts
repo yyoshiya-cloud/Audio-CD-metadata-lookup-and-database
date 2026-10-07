@@ -5,8 +5,6 @@ import { searchDiscogs } from './discogs.js';
 import { searchITunes } from './itunes.js';
 import { searchSpotify } from './spotify.js';
 import { searchRakutenBooks } from './rakuten.js';
-import { searchVGMdb } from './vgmdb.js';
-import { searchYahooShopping } from './yahoo.js';
 import { verifyAndConsolidateWithGemini } from './geminiSearchIntegrator.js';
 
 /**
