@@ -12,9 +12,12 @@ import {
   extractSpreadsheetId,
   getKnownSpreadsheets,
   saveKnownSpreadsheet,
+  getPrimarySpreadsheet,
+  savePrimarySpreadsheet,
   deleteSpreadsheetFromDrive
 } from '../lib/googleSheets';
 import { exportCDsToExcel, parseExcelFileToCDs } from '../lib/excelExportImport';
+import { exportCDsToJSON, parseJSONToCDs } from '../lib/jsonExportImport';
 import { 
   exportCDAlbumsCSV, 
   exportCDTracksCSV, 
@@ -47,7 +50,10 @@ import {
   Database,
   Files,
   FolderDown,
-  Music
+  Music,
+  Code,
+  Copy,
+  FileJson
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 
@@ -73,8 +79,24 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   onImportCDs,
 }) => {
   const [activeTab, setActiveTab] = useState<'export' | 'import'>(initialMode);
-  const [exportTargetType, setExportTargetType] = useState<'sheets' | 'excel' | 'csv'>('sheets');
-  const [importSourceType, setImportSourceType] = useState<'sheets' | 'excel' | 'csv'>('sheets');
+  const [exportTargetType, setExportTargetType] = useState<'sheets' | 'excel' | 'csv' | 'json'>('sheets');
+  const [importSourceType, setImportSourceType] = useState<'sheets' | 'excel' | 'csv' | 'json'>('sheets');
+
+  // JSON Export & Import State
+  const [jsonFileName, setJsonFileName] = useState(`CDコレクション_backup_${new Date().toISOString().slice(0, 10)}`);
+  const [jsonPrettyPrint, setJsonPrettyPrint] = useState(true);
+  const [jsonExportSuccess, setJsonExportSuccess] = useState(false);
+  const [jsonCopySuccess, setJsonCopySuccess] = useState(false);
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
+  const [jsonTextInput, setJsonTextInput] = useState('');
+  const [jsonImportFile, setJsonImportFile] = useState<File | null>(null);
+  const [isParsingJSON, setIsParsingJSON] = useState(false);
+  const [jsonParsedInfo, setJsonParsedInfo] = useState<{
+    cds: CDMetadata[];
+    totalAlbums: number;
+    totalTracks: number;
+    exportedAt?: string;
+  } | null>(null);
 
   // CSV Export & Import State
   const [csvExportOption, setCsvExportOption] = useState<'both' | 'albums' | 'tracks' | 'combined'>('both');
@@ -108,8 +130,14 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     fileName: string;
   } | null>(null);
 
+  // Primary linked spreadsheet state (1回目に作成したシート)
+  const [primarySpreadsheet, setPrimarySpreadsheet] = useState<SpreadsheetInfo | null>(() => getPrimarySpreadsheet());
+
   // Google Sheets Export State
-  const [exportDestinationMode, setExportDestinationMode] = useState<'new' | 'existing'>('new');
+  const [exportDestinationMode, setExportDestinationMode] = useState<'update' | 'append' | 'new' | 'existing'>(() => {
+    const primary = getPrimarySpreadsheet();
+    return primary ? 'update' : 'new';
+  });
   const [newSheetTitle, setNewSheetTitle] = useState(`CDカタログ_${new Date().toISOString().slice(0, 10)}`);
   const [selectedExportSheetId, setSelectedExportSheetId] = useState<string>('');
   const [customExportSheetUrl, setCustomExportSheetUrl] = useState<string>('');
@@ -247,6 +275,104 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       setErrorMessage(err.message || '重複ファイルの削除中にエラーが発生しました。');
     } finally {
       setIsCleaningDuplicates(false);
+    }
+  };
+
+  // Execute JSON Export
+  const handleExecuteJSONExport = () => {
+    if (itemsToExport.length === 0) {
+      setErrorMessage('書き出すCDレコードがありません。');
+      return;
+    }
+    setErrorMessage(null);
+    try {
+      exportCDsToJSON(itemsToExport, jsonFileName, jsonPrettyPrint);
+      setJsonExportSuccess(true);
+      onMarkSynced(itemsToExport.map((i) => i.id));
+      setTimeout(() => setJsonExportSuccess(false), 4500);
+    } catch (err: any) {
+      console.error('JSON Export error:', err);
+      setErrorMessage(err.message || 'JSONファイルの書き出しに失敗しました。');
+    }
+  };
+
+  const handleCopyJSONToClipboard = () => {
+    if (itemsToExport.length === 0) {
+      setErrorMessage('書き出すCDレコードがありません。');
+      return;
+    }
+    try {
+      const payload = {
+        app: 'CDCollectionManager',
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        count: itemsToExport.length,
+        cds: itemsToExport,
+      };
+      const jsonStr = jsonPrettyPrint ? JSON.stringify(payload, null, 2) : JSON.stringify(payload);
+      navigator.clipboard.writeText(jsonStr);
+      setJsonCopySuccess(true);
+      setTimeout(() => setJsonCopySuccess(false), 3000);
+    } catch (err: any) {
+      console.error('Clipboard copy error:', err);
+      setErrorMessage('クリップボードへのコピーに失敗しました。');
+    }
+  };
+
+  // Process JSON File or Text for Import
+  const handleProcessJSONInput = async (sourceText?: string, file?: File) => {
+    setIsParsingJSON(true);
+    setErrorMessage(null);
+    setJsonParsedInfo(null);
+    setImportResult(null);
+
+    try {
+      let textToParse = sourceText || '';
+      if (file) {
+        textToParse = await file.text();
+        setJsonImportFile(file);
+      }
+      if (!textToParse.trim()) {
+        throw new Error('解析するJSONテキストまたはファイルを選択してください。');
+      }
+
+      const res = parseJSONToCDs(textToParse);
+      setJsonParsedInfo({
+        cds: res.cds,
+        totalAlbums: res.totalAlbums,
+        totalTracks: res.totalTracks,
+        exportedAt: res.exportedAt,
+      });
+    } catch (err: any) {
+      console.error('JSON parse error:', err);
+      setErrorMessage(err.message || 'JSONデータの解析に失敗しました。');
+    } finally {
+      setIsParsingJSON(false);
+    }
+  };
+
+  const handleExecuteJSONSyncToLibrary = async () => {
+    if (!jsonParsedInfo || jsonParsedInfo.cds.length === 0) return;
+
+    setIsSyncingToLibrary(true);
+    setErrorMessage(null);
+
+    try {
+      if (onImportCDs) {
+        await onImportCDs(jsonParsedInfo.cds);
+      }
+      setImportResult({
+        count: jsonParsedInfo.totalAlbums,
+        title: `JSONデータ (全${jsonParsedInfo.totalAlbums}件)`,
+      });
+      setJsonParsedInfo(null);
+      setJsonTextInput('');
+      setJsonImportFile(null);
+    } catch (err: any) {
+      console.error('JSON Sync error:', err);
+      setErrorMessage(err.message || 'ライブラリへの反映中にエラーが発生しました。');
+    } finally {
+      setIsSyncingToLibrary(false);
     }
   };
 
@@ -442,12 +568,23 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     try {
       let targetSpreadsheetId = '';
       let targetSheetName = ALBUM_SHEET_NAME;
+      let targetTitle = '';
+      const isAppendMode = exportDestinationMode === 'append';
 
-      if (exportDestinationMode === 'new') {
+      if (exportDestinationMode === 'update' || exportDestinationMode === 'append') {
+        const primary = primarySpreadsheet || getPrimarySpreadsheet();
+        if (!primary) {
+          throw new Error('1回目に作成した連携スプレッドシートが見つかりません。新規作成を選択してください。');
+        }
+        targetSpreadsheetId = primary.spreadsheetId;
+        targetSheetName = primary.sheets?.[0]?.title || ALBUM_SHEET_NAME;
+        targetTitle = primary.title;
+      } else if (exportDestinationMode === 'new') {
         const titleToUse = newSheetTitle.trim() || `CDカタログ_${new Date().toISOString().slice(0, 10)}`;
         const newSheet = await createNewSpreadsheet(activeToken, titleToUse);
         targetSpreadsheetId = newSheet.spreadsheetId;
         targetSheetName = newSheet.sheets[0].title;
+        targetTitle = newSheet.title;
       } else {
         const targetIdOrUrl = customExportSheetUrl.trim() || selectedExportSheetId;
         if (!targetIdOrUrl) {
@@ -455,6 +592,8 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         }
         targetSpreadsheetId = extractSpreadsheetId(targetIdOrUrl);
         targetSheetName = customExportSheetName.trim() || ALBUM_SHEET_NAME;
+        const matched = userSheetsList.find((s) => s.spreadsheetId === targetSpreadsheetId);
+        targetTitle = matched?.title || 'Googleスプレッドシート';
       }
 
       const result = await exportCDsToSpreadsheet(
@@ -462,19 +601,25 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         targetSpreadsheetId,
         targetSheetName,
         itemsToExport,
-        DEFAULT_COLUMN_CONFIG
+        DEFAULT_COLUMN_CONFIG,
+        isAppendMode ? 'append' : 'overwrite'
       );
 
-      saveKnownSpreadsheet({
+      const sheetInfo: SpreadsheetInfo = {
         spreadsheetId: targetSpreadsheetId,
-        title: newSheetTitle.trim() || 'CDカタログ',
+        title: targetTitle || newSheetTitle.trim() || 'CDカタログ',
         spreadsheetUrl: result.spreadsheetUrl,
         sheets: [
           { sheetId: 0, title: targetSheetName },
           { sheetId: 1, title: TRACKLIST_SHEET_NAME },
         ],
         modifiedTime: new Date().toISOString(),
-      });
+      };
+
+      savePrimarySpreadsheet(sheetInfo);
+      setPrimarySpreadsheet(sheetInfo);
+      setExportDestinationMode('update');
+
       await loadDriveSpreadsheets(activeToken);
 
       setExportResult({
@@ -651,58 +796,76 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 <label className="block text-xs font-bold text-slate-300 mb-2">
                   書き出し先を選択:
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   <button
                     type="button"
                     onClick={() => setExportTargetType('sheets')}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       exportTargetType === 'sheets'
                         ? 'bg-emerald-950/50 border-emerald-500 text-white ring-1 ring-emerald-500/50 shadow-md'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center flex-shrink-0">
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                    <div className="w-7 h-7 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center flex-shrink-0">
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-white">Google スプレッドシート</p>
-                      <p className="text-[10px] text-slate-400">Driveに直接作成・追記</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">Google シート</p>
+                      <p className="text-[10px] text-slate-400 truncate">Drive直接作成・追記</p>
                     </div>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setExportTargetType('excel')}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       exportTargetType === 'excel'
                         ? 'bg-teal-950/50 border-teal-500 text-white ring-1 ring-teal-500/50 shadow-md'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-teal-600/20 border border-teal-500/40 flex items-center justify-center flex-shrink-0">
-                      <FileDown className="w-4 h-4 text-teal-400" />
+                    <div className="w-7 h-7 rounded-lg bg-teal-600/20 border border-teal-500/40 flex items-center justify-center flex-shrink-0">
+                      <FileDown className="w-3.5 h-3.5 text-teal-400" />
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-white">Excel ファイル (.xlsx)</p>
-                      <p className="text-[10px] text-slate-400">2シート構成で直接書き出し</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">Excel (.xlsx)</p>
+                      <p className="text-[10px] text-slate-400 truncate">2シート直接出力</p>
                     </div>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setExportTargetType('csv')}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       exportTargetType === 'csv'
                         ? 'bg-indigo-950/50 border-indigo-500 text-white ring-1 ring-indigo-500/50 shadow-md'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center flex-shrink-0">
-                      <Download className="w-4 h-4 text-indigo-400" />
+                    <div className="w-7 h-7 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center flex-shrink-0">
+                      <Download className="w-3.5 h-3.5 text-indigo-400" />
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-white">CSV ファイル (.csv)</p>
-                      <p className="text-[10px] text-slate-400">2ファイル出力/全曲統合対応</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">CSV (.csv)</p>
+                      <p className="text-[10px] text-slate-400 truncate">2ファイル一括/統合</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setExportTargetType('json')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      exportTargetType === 'json'
+                        ? 'bg-amber-950/50 border-amber-500 text-white ring-1 ring-amber-500/50 shadow-md'
+                        : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-amber-600/20 border border-amber-500/40 flex items-center justify-center flex-shrink-0">
+                      <Code className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">JSON バックアップ</p>
+                      <p className="text-[10px] text-slate-400 truncate">完全復元・データ交換</p>
                     </div>
                   </button>
                 </div>
@@ -727,39 +890,158 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                     </div>
                   ) : (
                     <>
-                      {/* Destination Mode Selector (New vs Existing) */}
-                      <div className="flex items-center gap-2 p-1 bg-slate-950/60 rounded-xl border border-slate-800 text-xs font-bold">
+                      {/* Destination Mode Selector (Update Primary Sheet vs Append vs New vs Existing) */}
+                      <div className="flex flex-col sm:flex-row items-stretch gap-1.5 p-1 bg-slate-950/60 rounded-xl border border-slate-800 text-xs font-bold">
+                        {primarySpreadsheet && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setExportDestinationMode('update')}
+                              className={`flex-1 py-2 px-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                exportDestinationMode === 'update'
+                                  ? 'bg-emerald-600 text-white shadow-md'
+                                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                              }`}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-amber-300" />
+                              <span>1回目に作成したシートを同期・更新</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExportDestinationMode('append')}
+                              className={`py-2 px-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                exportDestinationMode === 'append'
+                                  ? 'bg-emerald-600 text-white shadow-md'
+                                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                              }`}
+                            >
+                              <Plus className="w-3.5 h-3.5 text-emerald-300" />
+                              <span>末尾追記</span>
+                            </button>
+                          </>
+                        )}
                         <button
                           type="button"
                           onClick={() => setExportDestinationMode('new')}
-                          className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          className={`flex-1 py-2 px-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                             exportDestinationMode === 'new'
-                              ? 'bg-emerald-600 text-white shadow'
-                              : 'text-slate-400 hover:text-white'
+                              ? 'bg-emerald-600 text-white shadow-md'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                           }`}
                         >
-                          Google Driveに新規作成して書き出し
+                          <Plus className="w-3.5 h-3.5 text-emerald-300" />
+                          <span>{primarySpreadsheet ? '新規シート作成' : '新規スプレッドシート作成 (初回)'}</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setExportDestinationMode('existing')}
-                          className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          className={`flex-1 py-2 px-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                             exportDestinationMode === 'existing'
-                              ? 'bg-emerald-600 text-white shadow'
-                              : 'text-slate-400 hover:text-white'
+                              ? 'bg-emerald-600 text-white shadow-md'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                           }`}
                         >
-                          既存スプレッドシートに追記
+                          <Files className="w-3.5 h-3.5 text-slate-300" />
+                          <span>別の既存シート</span>
                         </button>
                       </div>
 
-                      {/* Mode: New Spreadsheet */}
+                      {/* Mode A: Update Primary Spreadsheet (1回目に作成したシートを同期・更新) */}
+                      {exportDestinationMode === 'update' && primarySpreadsheet && (
+                        <div className="space-y-3 p-4 bg-emerald-950/30 rounded-xl border border-emerald-500/30 text-xs shadow-inner">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1">
+                                <RefreshCw className="w-3 h-3 text-emerald-400" />
+                                1回目に作成した連携シート（自動全同期）
+                              </span>
+                              <span className="text-[10px] text-slate-400">更新モード</span>
+                            </div>
+                            <a
+                              href={primarySpreadsheet.spreadsheetUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] font-medium text-emerald-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              スプレッドシートを開く
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+
+                          <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl p-3 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <FileSpreadsheet className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <p className="font-bold text-white text-xs truncate">{primarySpreadsheet.title}</p>
+                                <p className="text-[10px] text-slate-400 truncate">
+                                  ID: {primarySpreadsheet.spreadsheetId}
+                                  {primarySpreadsheet.modifiedTime && ` • 最終更新: ${formatJSTShort(primarySpreadsheet.modifiedTime)}`}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-slate-300 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 flex items-start gap-2">
+                            <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                            <span>
+                              1回目に作成されたこのシートの内容をクリアし、選択されている <strong>{itemsToExport.length}件</strong> の最新CDデータと全収録曲リストで**完全上書き・同期更新**します。
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Mode A-2: Append to Primary Spreadsheet (末尾追記) */}
+                      {exportDestinationMode === 'append' && primarySpreadsheet && (
+                        <div className="space-y-3 p-4 bg-slate-900/80 rounded-xl border border-slate-700/80 text-xs shadow-inner">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold flex items-center gap-1">
+                                <Plus className="w-3 h-3 text-emerald-400" />
+                                1回目に作成した連携シート (追記モード)
+                              </span>
+                            </div>
+                            <a
+                              href={primarySpreadsheet.spreadsheetUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] font-medium text-emerald-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              スプレッドシートを開く
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <FileSpreadsheet className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <p className="font-bold text-white text-xs truncate">{primarySpreadsheet.title}</p>
+                                <p className="text-[10px] text-slate-400 truncate">ID: {primarySpreadsheet.spreadsheetId}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-slate-300 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 flex items-start gap-2">
+                            <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                            <span>
+                              既存のデータを削除せず、シートの末尾に今回選んだ <strong>{itemsToExport.length}件</strong> のCDを新規行として追加書き込みします。
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Mode B: New Spreadsheet */}
                       {exportDestinationMode === 'new' && (
                         <div className="space-y-3 p-3.5 bg-slate-950/60 rounded-xl border border-slate-800">
                           <div>
-                            <label className="block text-xs font-bold text-slate-200 mb-1">
-                              新規スプレッドシートのタイトル:
-                            </label>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="block text-xs font-bold text-slate-200">
+                                新規スプレッドシートのタイトル:
+                              </label>
+                              <span className="text-[10px] text-emerald-400 font-medium">
+                                💡 作成後は2回目以降の自動追記先になります
+                              </span>
+                            </div>
                             <input
                               type="text"
                               value={newSheetTitle}
@@ -1024,6 +1306,87 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 </div>
               )}
 
+              {/* D. JSON EXPORT */}
+              {exportTargetType === 'json' && (
+                <div className="space-y-3.5 p-4 bg-slate-950/60 rounded-xl border border-amber-500/40 animate-in fade-in duration-150">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-200 mb-1">
+                      JSON バックアップファイル名:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={jsonFileName}
+                        onChange={(e) => setJsonFileName(e.target.value)}
+                        placeholder="CDコレクション_backup_YYYY-MM-DD"
+                        className="flex-1 bg-slate-800/90 border border-slate-700 focus:border-amber-500 rounded-xl py-2 px-3 text-xs text-white font-medium"
+                      />
+                      <span className="text-xs font-mono text-slate-400 font-bold">.json</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-slate-900 rounded-xl border border-slate-800 text-xs">
+                    <label className="flex items-center gap-2 text-slate-300 font-bold cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={jsonPrettyPrint}
+                        onChange={(e) => setJsonPrettyPrint(e.target.checked)}
+                        className="rounded bg-slate-800 border-slate-700 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                      />
+                      <span>インデント整形（読みやすい改行入りJSON）</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400">OFFにすると改行なし軽量データ</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 space-y-1.5 text-xs text-slate-300">
+                    <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                      <Code className="w-3.5 h-3.5" />
+                      <span>JSON構造化バックアップの特徴</span>
+                    </p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      • アルバムメタデータ、全収録曲リスト、JANバーコード、ジャケット画像URL、メモ、登録日時を<strong>100%欠損なく完全保持</strong><br />
+                      • 別端末や本アプリの「JSONインポート」から一発で完全復元・データ交換可能
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExecuteJSONExport}
+                      disabled={itemsToExport.length === 0}
+                      className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 active:scale-98 text-white shadow-lg shadow-amber-900/40 disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>JSONファイルを保存 ({itemsToExport.length}件)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCopyJSONToClipboard}
+                      disabled={itemsToExport.length === 0}
+                      className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-200 border border-slate-700 disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      <Copy className="w-4 h-4 text-amber-400" />
+                      <span>クリップボードにコピー</span>
+                    </button>
+                  </div>
+
+                  {jsonExportSuccess && (
+                    <div className="bg-emerald-950/80 border border-emerald-500/50 p-3 rounded-xl flex items-center gap-2 text-emerald-200 text-xs">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <span>JSONファイルのダウンロードを開始しました！</span>
+                    </div>
+                  )}
+
+                  {jsonCopySuccess && (
+                    <div className="bg-emerald-950/80 border border-emerald-500/50 p-3 rounded-xl flex items-center gap-2 text-emerald-200 text-xs">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <span>JSONテキストをクリップボードにコピーしました！</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 2-Sheet Structure Details */}
               <div className="p-3 bg-slate-950/70 rounded-xl border border-slate-800 space-y-2 text-xs">
                 <div className="flex items-center gap-2 text-emerald-400 font-bold">
@@ -1058,63 +1421,81 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           {activeTab === 'import' && (
             <div className="space-y-4">
               
-              {/* Import Source Type Selector (Google Sheets vs Excel File vs CSV) */}
+              {/* Import Source Type Selector (Google Sheets vs Excel File vs CSV vs JSON) */}
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-2">
                   読み込み元を選択:
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   <button
                     type="button"
                     onClick={() => setImportSourceType('sheets')}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       importSourceType === 'sheets'
                         ? 'bg-emerald-950/50 border-emerald-500 text-white ring-1 ring-emerald-500/50 shadow-md'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center flex-shrink-0">
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                    <div className="w-7 h-7 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center flex-shrink-0">
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-white">Google スプレッドシート</p>
-                      <p className="text-[10px] text-slate-400">Driveから直接選択またはURL読込</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">Google シート</p>
+                      <p className="text-[10px] text-slate-400 truncate">Drive/URL直接読込</p>
                     </div>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setImportSourceType('excel')}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       importSourceType === 'excel'
                         ? 'bg-teal-950/50 border-teal-500 text-white ring-1 ring-teal-500/50 shadow-md'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-teal-600/20 border border-teal-500/40 flex items-center justify-center flex-shrink-0">
-                      <FileUp className="w-4 h-4 text-teal-400" />
+                    <div className="w-7 h-7 rounded-lg bg-teal-600/20 border border-teal-500/40 flex items-center justify-center flex-shrink-0">
+                      <FileUp className="w-3.5 h-3.5 text-teal-400" />
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-white">Excel ファイル (.xlsx)</p>
-                      <p className="text-[10px] text-slate-400">ファイルをドロップして直接読込</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">Excel (.xlsx)</p>
+                      <p className="text-[10px] text-slate-400 truncate">ファイルドロップ</p>
                     </div>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setImportSourceType('csv')}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       importSourceType === 'csv'
                         ? 'bg-indigo-950/50 border-indigo-500 text-white ring-1 ring-indigo-500/50 shadow-md'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center flex-shrink-0">
-                      <Upload className="w-4 h-4 text-indigo-400" />
+                    <div className="w-7 h-7 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center flex-shrink-0">
+                      <Upload className="w-3.5 h-3.5 text-indigo-400" />
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-white">CSV ファイル (.csv)</p>
-                      <p className="text-[10px] text-slate-400">2つのCSV同時取込・突合</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">CSV (.csv)</p>
+                      <p className="text-[10px] text-slate-400 truncate">2ファイル同時突合</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setImportSourceType('json')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      importSourceType === 'json'
+                        ? 'bg-amber-950/50 border-amber-500 text-white ring-1 ring-amber-500/50 shadow-md'
+                        : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-amber-600/20 border border-amber-500/40 flex items-center justify-center flex-shrink-0">
+                      <Code className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">JSON 復元</p>
+                      <p className="text-[10px] text-slate-400 truncate">ファイル/直貼り読込</p>
                     </div>
                   </button>
                 </div>
@@ -1638,6 +2019,161 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                           <>
                             <Check className="w-4 h-4" />
                             <span>CSVから読み込んだ {csvParsedInfo.totalAlbums} 件（全 {csvParsedInfo.totalTracks} 曲）をライブラリに登録・反映する</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* D. JSON IMPORT */}
+              {importSourceType === 'json' && (
+                <div className="space-y-4 pt-1 animate-in fade-in duration-150">
+                  <div className="bg-slate-900/80 p-3 rounded-xl border border-amber-500/30 text-xs text-slate-300 space-y-1">
+                    <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                      <Code className="w-3.5 h-3.5 text-amber-400" />
+                      <span>JSONデータのファイル選択またはテキスト直貼り復元</span>
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      バックアップされた `.json` ファイルをドロップするか、JSON文字列を直接テキストエリアに貼り付けて一元取り込み・復元できます。
+                    </p>
+                  </div>
+
+                  {/* Dropzone for JSON file */}
+                  <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) handleProcessJSONInput(undefined, file);
+                    }}
+                    onClick={() => jsonFileInputRef.current?.click()}
+                    className="border-2 border-dashed border-amber-600/50 hover:border-amber-400 bg-slate-950/60 hover:bg-slate-900/80 p-5 rounded-2xl text-center space-y-2 cursor-pointer transition-all"
+                  >
+                    <input
+                      ref={jsonFileInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleProcessJSONInput(undefined, file);
+                      }}
+                      className="hidden"
+                    />
+                    <div className="w-10 h-10 rounded-xl bg-amber-600/20 border border-amber-500/40 flex items-center justify-center mx-auto text-amber-400">
+                      <FileJson className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">
+                        {jsonImportFile ? `選択中: ${jsonImportFile.name}` : 'JSONバックアップファイルをここにドロップ'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        または クリックしてファイルを選択 (.json)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* OR Textarea for Raw JSON */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-300">
+                        または JSONテキストを直接貼り付け:
+                      </label>
+                      {jsonTextInput && (
+                        <button
+                          type="button"
+                          onClick={() => setJsonTextInput('')}
+                          className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 bg-slate-800 rounded cursor-pointer"
+                        >
+                          クリア
+                        </button>
+                      )}
+                    </div>
+                    <textarea
+                      value={jsonTextInput}
+                      onChange={(e) => setJsonTextInput(e.target.value)}
+                      placeholder='{\n  "cds": [\n    { "title": "...", "artist": "...", "tracks": [...] }\n  ]\n}'
+                      rows={4}
+                      className="w-full bg-slate-800/90 border border-slate-700 focus:border-amber-500 rounded-xl py-2 px-3 text-xs text-white font-mono placeholder:text-slate-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleProcessJSONInput(jsonTextInput)}
+                      disabled={!jsonTextInput.trim() || isParsingJSON}
+                      className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 active:scale-98 text-white shadow-md disabled:opacity-50 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Code className="w-3.5 h-3.5" />
+                      <span>貼り付けたJSONテキストを解析</span>
+                    </button>
+                  </div>
+
+                  {isParsingJSON && (
+                    <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center text-xs text-amber-300 flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                      <span>JSON構文を解析・検証しています...</span>
+                    </div>
+                  )}
+
+                  {/* JSON Parsed Preview */}
+                  {jsonParsedInfo && (
+                    <div className="bg-slate-950 border border-amber-500/50 rounded-xl p-4 space-y-3 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span className="text-xs font-bold text-amber-300">
+                            {jsonParsedInfo.totalAlbums} 枚のCDアルバム（計 {jsonParsedInfo.totalTracks} 曲の収録曲）を検出
+                          </span>
+                        </div>
+                        {jsonParsedInfo.exportedAt && (
+                          <span className="text-[10px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                            バックアップ日時: {formatJSTShort(jsonParsedInfo.exportedAt)}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="max-h-44 overflow-y-auto divide-y divide-slate-800 border border-slate-800 rounded-lg text-xs">
+                        {jsonParsedInfo.cds.slice(0, 8).map((cd, idx) => (
+                          <div key={idx} className="p-2 flex items-center justify-between gap-2 hover:bg-slate-900">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Disc className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <p className="font-bold text-white truncate">{cd.title}</p>
+                                <p className="text-slate-400 truncate text-[11px]">{cd.artist} {cd.releaseDate ? `(${cd.releaseDate})` : ''}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-[10px] text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800 font-mono font-bold">
+                                {cd.tracks?.length || 0} 曲
+                              </span>
+                              <span className="text-[10px] font-mono text-amber-300 bg-amber-950 px-1.5 py-0.5 rounded border border-amber-800">
+                                {cd.catalogNumber || '型番なし'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {jsonParsedInfo.cds.length > 8 && (
+                          <div className="p-2 text-center text-[11px] text-slate-500 bg-slate-900/50">
+                            ...他 {jsonParsedInfo.cds.length - 8} 件
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleExecuteJSONSyncToLibrary}
+                        disabled={isSyncingToLibrary}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 active:scale-98 text-white shadow-lg shadow-amber-900/40 disabled:opacity-50 transition-all cursor-pointer"
+                      >
+                        {isSyncingToLibrary ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>ライブラリデータベースに同期中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>JSONから解析した {jsonParsedInfo.totalAlbums} 件をライブラリに一括登録・復元する</span>
                           </>
                         )}
                       </button>

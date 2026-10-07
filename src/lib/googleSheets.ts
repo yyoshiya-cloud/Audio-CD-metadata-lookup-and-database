@@ -31,6 +31,35 @@ export const TRACKLIST_HEADERS = [
 ];
 
 const KNOWN_SPREADSHEETS_KEY = 'cd_catalog_known_spreadsheets_v1';
+const PRIMARY_SPREADSHEET_KEY = 'cd_catalog_primary_spreadsheet_v1';
+
+export function getPrimarySpreadsheet(): SpreadsheetInfo | null {
+  try {
+    const raw = localStorage.getItem(PRIMARY_SPREADSHEET_KEY);
+    if (raw) return JSON.parse(raw);
+    const known = getKnownSpreadsheets();
+    return known.length > 0 ? known[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePrimarySpreadsheet(sheet: SpreadsheetInfo): void {
+  try {
+    localStorage.setItem(PRIMARY_SPREADSHEET_KEY, JSON.stringify(sheet));
+    saveKnownSpreadsheet(sheet);
+  } catch (e) {
+    console.warn('Failed to save primary spreadsheet:', e);
+  }
+}
+
+export function clearPrimarySpreadsheet(): void {
+  try {
+    localStorage.removeItem(PRIMARY_SPREADSHEET_KEY);
+  } catch (e) {
+    console.warn('Failed to clear primary spreadsheet:', e);
+  }
+}
 
 export function getKnownSpreadsheets(): SpreadsheetInfo[] {
   try {
@@ -523,7 +552,7 @@ export async function ensureSheetExists(
 }
 
 /**
- * Append or Sync CD records to a Google Spreadsheet with 2 Relational Sheets:
+ * Export, Update or Append CD records to a Google Spreadsheet with 2 Relational Sheets:
  * - Sheet 1: CDアルバム一覧 (Albums Master)
  * - Sheet 2: 収録曲リスト (Tracks linked by Catalog Number)
  */
@@ -532,7 +561,8 @@ export async function exportCDsToSpreadsheet(
   spreadsheetId: string,
   sheetName: string = ALBUM_SHEET_NAME,
   items: CDMetadata[],
-  columns: ExportColumnConfig[] = DEFAULT_COLUMN_CONFIG
+  columns: ExportColumnConfig[] = DEFAULT_COLUMN_CONFIG,
+  writeMode: 'overwrite' | 'append' = 'overwrite'
 ): Promise<{ addedCount: number; totalTracksAdded: number; spreadsheetUrl: string }> {
   if (items.length === 0) {
     return { addedCount: 0, totalTracksAdded: 0, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit` };
@@ -562,106 +592,170 @@ export async function exportCDsToSpreadsheet(
   }
 
   // 1. EXPORT SHEET 1: ALBUM MASTER
-  // Ensure the target album master sheet exists (resolves actual sheet name or creates it)
   const resolvedAlbumSheet = await ensureSheetExists(accessToken, spreadsheetId, sheetName, true);
 
-  const checkAlbumRangeStr = formatA1Range(resolvedAlbumSheet, 'A1:Z1');
-  const checkRangeResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(checkAlbumRangeStr)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+  if (writeMode === 'overwrite') {
+    // Clear existing values in Album Sheet
+    try {
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(resolvedAlbumSheet)}:clear`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+    } catch (clearErr) {
+      console.warn('Could not clear album sheet:', clearErr);
     }
-  );
 
-  let needAlbumHeader = true;
-  if (checkRangeResponse.ok) {
-    const checkData = await checkRangeResponse.json();
-    if (checkData.values && checkData.values.length > 0 && checkData.values[0].length > 0) {
-      needAlbumHeader = false;
+    const albumRows: any[][] = [headerRow];
+    processedItems.forEach((cd) => {
+      albumRows.push(formatCDToRowValues(cd, columns));
+    });
+
+    const albumTargetRange = formatA1Range(resolvedAlbumSheet, 'A1');
+    const updateAlbumRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(albumTargetRange)}?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          values: albumRows,
+        }),
+      }
+    );
+
+    if (!updateAlbumRes.ok) {
+      const errText = await updateAlbumRes.text();
+      throw new Error(`アルバムシート更新エラー (${updateAlbumRes.status}): ${errText}`);
     }
-  }
-
-  const albumRowsToAppend: any[][] = [];
-  if (needAlbumHeader) {
-    albumRowsToAppend.push(headerRow);
-  }
-
-  processedItems.forEach((cd) => {
-    albumRowsToAppend.push(formatCDToRowValues(cd, columns));
-  });
-
-  const albumTargetRange = formatA1Range(resolvedAlbumSheet, 'A1');
-  const appendAlbumRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(albumTargetRange)}:append?valueInputOption=USER_ENTERED`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        values: albumRowsToAppend,
-      }),
-    }
-  );
-
-  if (!appendAlbumRes.ok) {
-    const errText = await appendAlbumRes.text();
-    throw new Error(`アルバムシート書き込みエラー (${appendAlbumRes.status}): ${errText}`);
-  }
-
-  // 2. EXPORT SHEET 2: TRACKLIST (収録曲リスト keyed by Catalog Number)
-  let totalTracksAdded = 0;
-  try {
-    // Ensure "収録曲リスト" sheet exists
-    const resolvedTrackSheet = await ensureSheetExists(accessToken, spreadsheetId, TRACKLIST_SHEET_NAME, false);
-
-    // Check if "収録曲リスト" already has header row
-    const checkTrackRangeStr = formatA1Range(resolvedTrackSheet, 'A1:Z1');
-    const checkTrackRangeRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(checkTrackRangeStr)}`,
+  } else {
+    // Append Mode
+    const checkAlbumRangeStr = formatA1Range(resolvedAlbumSheet, 'A1:Z1');
+    const checkRangeResponse = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(checkAlbumRangeStr)}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    let needTrackHeader = true;
-    if (checkTrackRangeRes.ok) {
-      const trackData = await checkTrackRangeRes.json();
-      if (trackData.values && trackData.values.length > 0 && trackData.values[0].length > 0) {
-        needTrackHeader = false;
+    let needAlbumHeader = true;
+    if (checkRangeResponse.ok) {
+      const checkData = await checkRangeResponse.json();
+      if (checkData.values && checkData.values.length > 0 && checkData.values[0].length > 0) {
+        needAlbumHeader = false;
       }
     }
 
-    const trackRowsToAppend: any[][] = [];
-    if (needTrackHeader) {
-      trackRowsToAppend.push(TRACKLIST_HEADERS);
-    }
+    const albumRowsToAppend: any[][] = [];
+    if (needAlbumHeader) albumRowsToAppend.push(headerRow);
+    processedItems.forEach((cd) => {
+      albumRowsToAppend.push(formatCDToRowValues(cd, columns));
+    });
 
-    for (const cd of processedItems) {
-      if (cd.tracks && cd.tracks.length > 0) {
-        for (const tr of cd.tracks) {
-          trackRowsToAppend.push(formatTrackToRowValues(cd, tr));
-          totalTracksAdded++;
+    const albumTargetRange = formatA1Range(resolvedAlbumSheet, 'A1');
+    const appendAlbumRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(albumTargetRange)}:append?valueInputOption=USER_ENTERED`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ values: albumRowsToAppend }),
+      }
+    );
+
+    if (!appendAlbumRes.ok) {
+      const errText = await appendAlbumRes.text();
+      throw new Error(`アルバムシート追記エラー (${appendAlbumRes.status}): ${errText}`);
+    }
+  }
+
+  // 2. EXPORT SHEET 2: TRACKLIST (収録曲リスト)
+  let totalTracksAdded = 0;
+  try {
+    const resolvedTrackSheet = await ensureSheetExists(accessToken, spreadsheetId, TRACKLIST_SHEET_NAME, false);
+
+    if (writeMode === 'overwrite') {
+      // Clear existing values in Tracklist Sheet
+      try {
+        await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(resolvedTrackSheet)}:clear`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+      } catch (clearErr) {
+        console.warn('Could not clear tracklist sheet:', clearErr);
+      }
+
+      const trackRows: any[][] = [TRACKLIST_HEADERS];
+      for (const cd of processedItems) {
+        if (cd.tracks && cd.tracks.length > 0) {
+          for (const tr of cd.tracks) {
+            trackRows.push(formatTrackToRowValues(cd, tr));
+            totalTracksAdded++;
+          }
         }
       }
-    }
 
-    if (trackRowsToAppend.length > 0) {
       const trackTargetRange = formatA1Range(resolvedTrackSheet, 'A1');
       await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(trackTargetRange)}:append?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(trackTargetRange)}?valueInputOption=USER_ENTERED`,
         {
-          method: 'POST',
+          method: 'PUT',
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            values: trackRowsToAppend,
-          }),
+          body: JSON.stringify({ values: trackRows }),
         }
       );
+    } else {
+      // Append Mode
+      const checkTrackRangeStr = formatA1Range(resolvedTrackSheet, 'A1:Z1');
+      const checkTrackRangeRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(checkTrackRangeStr)}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+
+      let needTrackHeader = true;
+      if (checkTrackRangeRes.ok) {
+        const trackData = await checkTrackRangeRes.json();
+        if (trackData.values && trackData.values.length > 0 && trackData.values[0].length > 0) {
+          needTrackHeader = false;
+        }
+      }
+
+      const trackRowsToAppend: any[][] = [];
+      if (needTrackHeader) trackRowsToAppend.push(TRACKLIST_HEADERS);
+
+      for (const cd of processedItems) {
+        if (cd.tracks && cd.tracks.length > 0) {
+          for (const tr of cd.tracks) {
+            trackRowsToAppend.push(formatTrackToRowValues(cd, tr));
+            totalTracksAdded++;
+          }
+        }
+      }
+
+      if (trackRowsToAppend.length > 0) {
+        const trackTargetRange = formatA1Range(resolvedTrackSheet, 'A1');
+        await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(trackTargetRange)}:append?valueInputOption=USER_ENTERED`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ values: trackRowsToAppend }),
+          }
+        );
+      }
     }
   } catch (trackErr) {
     console.warn('Warning exporting tracks to separate sheet:', trackErr);
