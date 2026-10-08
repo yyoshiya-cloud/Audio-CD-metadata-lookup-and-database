@@ -4,12 +4,24 @@ import { normalizeCatalogNumber, normalizeReleaseDate } from './dateUtils';
 import { parseSpreadsheetRowsToCDs } from './googleSheets';
 
 /**
- * Escape a string field for standard RFC 4180 CSV
+ * Sanitize a string against CSV / Spreadsheet Formula Injection (OWASP CSV Injection defense).
+ * If a cell starts with =, +, -, @, Tab, or CR, prefix it with a single quote (').
+ */
+export function sanitizeFormulaInjection(str: string): string {
+  if (!str) return str;
+  if (/^[\s]*[=+\-@\t\r]/.test(str)) {
+    return `'${str}`;
+  }
+  return str;
+}
+
+/**
+ * Escape a string field for standard RFC 4180 CSV with CSV Injection protection
  */
 function escapeCSV(val: any): string {
   if (val === undefined || val === null) return '""';
-  const str = String(val);
-  return `"${str.replace(/"/g, '""')}"`;
+  const safeStr = sanitizeFormulaInjection(String(val));
+  return `"${safeStr.replace(/"/g, '""')}"`;
 }
 
 /**

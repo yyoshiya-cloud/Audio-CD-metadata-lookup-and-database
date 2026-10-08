@@ -6,6 +6,15 @@ import { fileURLToPath } from 'url';
 import { performAggregatedSearch } from './server/search.js';
 import { fetchITunesTracks } from './server/itunes.js';
 import { processCDImageOCR } from './server/ocr.js';
+import { analyzeCDTagsWithGemini } from './server/aiTagging.js';
+import { backfillCDMetadataWithGemini } from './server/aiBackfill.js';
+import { upscaleJacketImage } from './server/upscaleImage.js';
+import { lookupVinylReleaseDates } from './server/vinylLookup.js';
+import {
+  fetchSafeExternalImage,
+  createRateLimiter,
+  securityHeadersMiddleware,
+} from './server/security.js';
 
 dotenv.config();
 
@@ -15,7 +24,40 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-app.use(express.json({ limit: '15mb' }));
+// 1. Apply global HTTP security headers
+app.use(securityHeadersMiddleware);
+
+// 2. Scoped JSON body parsers: 15MB only for image OCR / upscaling routes, 2MB default for all others
+const largeImageJsonParser = express.json({ limit: '15mb' });
+const defaultJsonParser = express.json({ limit: '2mb' });
+
+app.use((req, res, next) => {
+  if (req.path === '/api/ocr' || req.path === '/api/upscale-jacket') {
+    return largeImageJsonParser(req, res, next);
+  }
+  return defaultJsonParser(req, res, next);
+});
+
+// 3. Rate limiters per endpoint category
+const aiRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 25,
+  message: 'AI分析APIのリクエスト回数が上限（1分あたり25回）に達しました。少し待ってから再試行してください。',
+});
+
+const searchRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 60,
+  message: '検索APIのリクエスト回数が上限（1分あたり60回）に達しました。少し待ってから再試行してください。',
+});
+
+const imageProxyRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 240,
+  message: '画像プロキシのリクエスト回数が上限に達しました。しばらく待ってから再試行してください。',
+});
+
+const MAX_BATCH_ITEMS_PER_REQUEST = 50;
 
 // Health Check API
 app.get('/api/health', (req, res) => {
@@ -23,7 +65,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Aggregated Search API across MusicBrainz, Discogs, iTunes, and NDL
-app.post('/api/search', async (req, res) => {
+app.post('/api/search', searchRateLimiter, async (req, res) => {
   try {
     const { catalogNumber, catno, title, artist, trackTitle, barcode, freeText, sources, apiKeys } = req.body || {};
     const effectiveCatno = catalogNumber || catno;
@@ -51,7 +93,7 @@ app.post('/api/search', async (req, res) => {
 });
 
 // Fetch iTunes tracks on demand
-app.get('/api/itunes/tracks', async (req, res) => {
+app.get('/api/itunes/tracks', searchRateLimiter, async (req, res) => {
   try {
     const collectionId = req.query.collectionId ? parseInt(req.query.collectionId as string, 10) : 0;
     if (!collectionId) {
@@ -66,10 +108,10 @@ app.get('/api/itunes/tracks', async (req, res) => {
 });
 
 // Gemini AI CD Spine / Jacket Photo OCR API
-app.post('/api/ocr', async (req, res) => {
+app.post('/api/ocr', aiRateLimiter, async (req, res) => {
   try {
     const { imageBase64, mimeType } = req.body || {};
-    if (!imageBase64) {
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
       return res.status(400).json({ error: '画像データ(imageBase64)が必要です。' });
     }
 
@@ -81,17 +123,17 @@ app.post('/api/ocr', async (req, res) => {
   }
 });
 
-import { analyzeCDTagsWithGemini } from './server/aiTagging.js';
-import { backfillCDMetadataWithGemini } from './server/aiBackfill.js';
-import { upscaleJacketImage } from './server/upscaleImage.js';
-import { lookupVinylReleaseDates } from './server/vinylLookup.js';
-
 // Server-side API to lookup same-title LP / EP vinyl record release dates via MusicBrainz, Discogs, NDL, and Gemini
-app.post('/api/lookup-vinyl-release', async (req, res) => {
+app.post('/api/lookup-vinyl-release', aiRateLimiter, async (req, res) => {
   try {
     const { items, discogsToken } = req.body || {};
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'LP/EP発売日を検索する対象のCD情報(items)が必要です。' });
+    }
+    if (items.length > MAX_BATCH_ITEMS_PER_REQUEST) {
+      return res.status(400).json({
+        error: `1回のリクエストで処理できる件数は最大 ${MAX_BATCH_ITEMS_PER_REQUEST} 件までです（送信件数: ${items.length}件）。`,
+      });
     }
 
     const queries = items.map((item: any) => ({
@@ -112,10 +154,10 @@ app.post('/api/lookup-vinyl-release', async (req, res) => {
 });
 
 // Server-side Gemini AI Cover Art Upscaling & Enhancement
-app.post('/api/upscale-jacket', async (req, res) => {
+app.post('/api/upscale-jacket', aiRateLimiter, async (req, res) => {
   try {
     const { imageBase64, title, artist, catalogNumber } = req.body || {};
-    if (!imageBase64) {
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
       return res.status(400).json({ error: '画像URLまたは画像データ(imageBase64)が必要です。' });
     }
 
@@ -131,11 +173,16 @@ app.post('/api/upscale-jacket', async (req, res) => {
 });
 
 // Server-side Gemini AI Auto-Tagging and Music Analysis
-app.post('/api/ai-analyze-tags', async (req, res) => {
+app.post('/api/ai-analyze-tags', aiRateLimiter, async (req, res) => {
   try {
     const { cds, options } = req.body || {};
     if (!cds || !Array.isArray(cds) || cds.length === 0) {
       return res.status(400).json({ error: '分析対象のCDリスト(cds)が必要です。' });
+    }
+    if (cds.length > MAX_BATCH_ITEMS_PER_REQUEST) {
+      return res.status(400).json({
+        error: `1回のリクエストで分析できるCD件数は最大 ${MAX_BATCH_ITEMS_PER_REQUEST} 件までです（送信件数: ${cds.length}件）。`,
+      });
     }
 
     const results = await analyzeCDTagsWithGemini(cds, options);
@@ -147,11 +194,16 @@ app.post('/api/ai-analyze-tags', async (req, res) => {
 });
 
 // Server-side Gemini AI Auto-Backfill for missing CD metadata
-app.post('/api/ai-backfill-metadata', async (req, res) => {
+app.post('/api/ai-backfill-metadata', aiRateLimiter, async (req, res) => {
   try {
     const { cds } = req.body || {};
     if (!cds || !Array.isArray(cds) || cds.length === 0) {
       return res.status(400).json({ error: '補完対象のCDリスト(cds)が必要です。' });
+    }
+    if (cds.length > MAX_BATCH_ITEMS_PER_REQUEST) {
+      return res.status(400).json({
+        error: `1回のリクエストで補完できるCD件数は最大 ${MAX_BATCH_ITEMS_PER_REQUEST} 件までです（送信件数: ${cds.length}件）。`,
+      });
     }
 
     const results = await backfillCDMetadataWithGemini(cds);
@@ -162,42 +214,31 @@ app.post('/api/ai-backfill-metadata', async (req, res) => {
   }
 });
 
-// Server-side Image Proxy for external CDNs (Discogs, Cover Art Archive, Rakuten, etc.)
-app.get('/api/image-proxy', async (req, res) => {
+// Server-side Image Proxy for external CDNs (Discogs, Cover Art Archive, Rakuten, etc.) with SSRF & SVG protection
+app.get('/api/image-proxy', imageProxyRateLimiter, async (req, res) => {
   try {
     const imageUrl = req.query.url as string;
-    if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
+    if (!imageUrl) {
       return res.status(400).send('有効な画像URLを指定してください。');
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const { buffer, mimeType } = await fetchSafeExternalImage(imageUrl);
 
-    const response = await fetch(imageUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'Referer': new URL(imageUrl).origin,
-      },
-    }).finally(() => clearTimeout(timeout));
-
-    if (!response.ok) {
-      return res.status(response.status).send(`画像取得エラー: ${response.status}`);
-    }
-
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
-    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
+    );
     res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=604800, immutable');
-    const buffer = await response.arrayBuffer();
-    res.send(Buffer.from(buffer));
+    res.send(buffer);
   } catch (err: any) {
-    res.status(500).send(err.message || '画像プロキシ処理中にエラーが発生しました。');
+    res.status(400).send(err.message || '画像プロキシ処理中にエラーが発生しました。');
   }
 });
 
-// Server-side Image to Base64 Data URL converter for external image links
-app.post('/api/image-base64', async (req, res) => {
+// Server-side Image to Base64 Data URL converter for external image links with SSRF & SVG protection
+app.post('/api/image-base64', imageProxyRateLimiter, async (req, res) => {
   try {
     const { url } = req.body || {};
     if (!url || typeof url !== 'string') {
@@ -205,37 +246,20 @@ app.post('/api/image-base64', async (req, res) => {
     }
     const trimmedUrl = url.trim();
     if (trimmedUrl.startsWith('data:image/')) {
+      const lowerData = trimmedUrl.slice(0, 64).toLowerCase();
+      if (lowerData.includes('svg') || lowerData.includes('xml') || lowerData.includes('html')) {
+        return res.status(400).json({ error: 'セキュリティ保護のため、SVG形式のデータURLは許可されていません。' });
+      }
       return res.json({ dataUrl: trimmedUrl });
     }
-    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
-      return res.status(400).json({ error: 'http:// または https:// で始まる有効な画像URLを指定してください。' });
-    }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
-
-    const response = await fetch(trimmedUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'Referer': new URL(trimmedUrl).origin,
-      },
-    }).finally(() => clearTimeout(timeout));
-
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `画像取得エラー: HTTP ${response.status}` });
-    }
-
-    const rawContentType = response.headers.get('content-type') || 'image/jpeg';
-    const mimeType = rawContentType.split(';')[0].trim() || 'image/jpeg';
-    const arrayBuffer = await response.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    const { buffer, mimeType } = await fetchSafeExternalImage(trimmedUrl);
+    const base64 = buffer.toString('base64');
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
     res.json({ dataUrl, mimeType });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || '画像のBASE64変換中にエラーが発生しました。' });
+    res.status(400).json({ error: err.message || '画像のBASE64変換中にエラーが発生しました。' });
   }
 });
 

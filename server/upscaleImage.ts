@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { fetchSafeExternalImage } from './security.js';
 
 export async function upscaleJacketImage(
   imageBase64: string,
@@ -29,21 +30,15 @@ export async function upscaleJacketImage(
   if (imageBase64.includes(';base64,')) {
     const parts = imageBase64.split(';base64,');
     mimeType = parts[0].replace('data:', '');
+    if (mimeType.toLowerCase().includes('svg') || mimeType.toLowerCase().includes('xml') || mimeType.toLowerCase().includes('html')) {
+      return { error: 'セキュリティ保護のため、SVG形式の画像データは許可されていません。' };
+    }
     cleanBase64 = parts[1];
   } else if (imageBase64.startsWith('http://') || imageBase64.startsWith('https://')) {
     try {
-      const res = await fetch(imageBase64, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
-        },
-      });
-      if (!res.ok) {
-        return { error: `画像URLのダウンロードに失敗しました (${res.status})` };
-      }
-      const contentType = res.headers.get('content-type') || 'image/jpeg';
-      mimeType = contentType.split(';')[0];
-      const arrayBuffer = await res.arrayBuffer();
-      cleanBase64 = Buffer.from(arrayBuffer).toString('base64');
+      const { buffer, mimeType: fetchedMime } = await fetchSafeExternalImage(imageBase64);
+      mimeType = fetchedMime;
+      cleanBase64 = buffer.toString('base64');
     } catch (err: any) {
       return { error: `画像取得エラー: ${err.message || '通信エラー'}` };
     }

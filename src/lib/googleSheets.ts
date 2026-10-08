@@ -297,11 +297,22 @@ async function formatSpreadsheetHeader(
 
 const MAX_CELL_CHARACTERS = 45000;
 
-function sanitizeCellValue(val: any): any {
+/**
+ * Sanitizes cell values for Google Sheets and Excel (.xlsx) exports:
+ * 1. Prevents Formula Injection (cells starting with =, +, -, @, \t, \r are prefixed with ')
+ *    unless allowTrustedFormula is explicitly true.
+ * 2. Enforces the 45,000-character cell limit.
+ */
+function sanitizeCellValue(val: any, allowTrustedFormula: boolean = false): any {
   if (typeof val === 'string') {
-    if (val.length > MAX_CELL_CHARACTERS) {
-      return val.slice(0, MAX_CELL_CHARACTERS) + '... (※セル文字数制限50,000字のため省略)';
+    let processed = val;
+    if (!allowTrustedFormula && /^[\s]*[=+\-@\t\r]/.test(processed)) {
+      processed = `'${processed}`;
     }
+    if (processed.length > MAX_CELL_CHARACTERS) {
+      return processed.slice(0, MAX_CELL_CHARACTERS) + '... (※セル文字数制限50,000字のため省略)';
+    }
+    return processed;
   }
   return val;
 }
@@ -406,8 +417,10 @@ export function formatCDToRowValues(cd: CDMetadata, columns: ExportColumnConfig[
       } else if (cd.coverUrl.startsWith('data:')) {
         cellValue = '[添付画像あり(端末ローカル)]';
       } else {
-        // Use IFERROR + IMAGE formula
-        cellValue = `=IFERROR(IMAGE("${cd.coverUrl}"), "${cd.coverUrl}")`;
+        // Safely escape any double quotes in URL before embedding into =IFERROR(IMAGE(...))
+        const safeUrl = cd.coverUrl.replace(/"/g, '%22');
+        cellValue = `=IFERROR(IMAGE("${safeUrl}"), "${safeUrl}")`;
+        return sanitizeCellValue(cellValue, true);
       }
     } else if (col.key === 'createdAt' || col.key === 'updatedAt') {
       const val = cd[col.key as 'createdAt' | 'updatedAt'];
