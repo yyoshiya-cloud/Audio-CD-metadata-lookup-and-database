@@ -50,18 +50,18 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Collect unique normalized genres & tags
+  // Collect unique normalized genres & tags (prioritize cd.tags when present so removed tags in cd.genre don't linger)
   const genresList = useMemo(() => {
     const set = new Set<string>();
     cds.forEach((c) => {
-      if (c.genre) {
+      const normTags = normalizeTagList(c.tags);
+      if (normTags.length > 0) {
+        for (const t of normTags) {
+          set.add(t);
+        }
+      } else if (c.genre) {
         for (const g of normalizeTagList([c.genre])) {
           set.add(g);
-        }
-      }
-      if (c.tags) {
-        for (const t of normalizeTagList(c.tags)) {
-          set.add(t);
         }
       }
     });
@@ -75,24 +75,26 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
     // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
-      list = list.filter(
-        (c) =>
+      list = list.filter((c) => {
+        const normTags = normalizeTagList(c.tags);
+        const effectiveTags = normTags.length > 0 ? normTags : normalizeTagList(c.genre ? [c.genre] : []);
+        return (
           c.title.toLowerCase().includes(q) ||
           c.artist.toLowerCase().includes(q) ||
           (c.catalogNumber && c.catalogNumber.toLowerCase().includes(q)) ||
           (c.label && c.label.toLowerCase().includes(q)) ||
-          (c.genre && normalizeSingleTag(c.genre).toLowerCase().includes(q)) ||
-          (c.tags && normalizeTagList(c.tags).some((t) => t.toLowerCase().includes(q)))
-      );
+          effectiveTags.some((t) => t.toLowerCase().includes(q))
+        );
+      });
     }
 
     // Genre filter
     if (selectedGenre !== 'all') {
-      list = list.filter(
-        (c) =>
-          normalizeTagList(c.genre ? [c.genre] : []).includes(selectedGenre) ||
-          normalizeTagList(c.tags).includes(selectedGenre)
-      );
+      list = list.filter((c) => {
+        const normTags = normalizeTagList(c.tags);
+        const effectiveTags = normTags.length > 0 ? normTags : normalizeTagList(c.genre ? [c.genre] : []);
+        return effectiveTags.includes(selectedGenre);
+      });
     }
 
     // Sort

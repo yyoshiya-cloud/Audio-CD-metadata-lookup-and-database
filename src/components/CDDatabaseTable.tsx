@@ -620,7 +620,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
 
                   <th className="py-3 px-3 text-center whitespace-nowrap bg-slate-900">収録曲</th>
                   <th className="py-3 px-3 text-center whitespace-nowrap bg-slate-900">スプレッドシート</th>
-                  <th className="py-3 px-3 text-right whitespace-nowrap bg-slate-900">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-sans">
@@ -767,19 +766,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                           ) : (
                             <span className="text-[10px] text-slate-500">未同期</span>
                           )}
-                        </td>
-
-                        {/* Actions (Delete only, edit is on title click) */}
-                        <td className="py-3 px-3 text-right">
-                          <div className="flex items-center justify-end">
-                            <button
-                              onClick={() => handleDeleteConfirmed(cd.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                              title="削除"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
                         </td>
                       </tr>
 

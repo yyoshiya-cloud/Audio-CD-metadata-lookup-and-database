@@ -166,7 +166,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
 
             resultMap.set(item.id, {
               tags: finalTags,
-              genre: normalizeSingleTag(item.genre) || 'J-POP',
+              genre: normalizeSingleTag(item.genre) || 'J-Pop',
               subGenre: item.subGenre ? normalizeSingleTag(item.subGenre) : undefined,
               mood: item.mood,
               era: item.era,
@@ -186,8 +186,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
           let eraStr = '邦楽';
           if (yearMatch) {
             const y = parseInt(yearMatch[1], 10);
-            if (y >= 1950 && y < 2000) eraStr = `${String(y).slice(2, 3)}0年代`;
-            else if (y >= 2000) eraStr = `${String(y).slice(0, 3)}0年代`;
+            if (y >= 1950) eraStr = `${String(y).slice(0, 3)}0年代`;
           }
           const eraEvidenceText =
             hasVinyl && hasCd
@@ -199,8 +198,8 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
               : '国内盤メタデータより算出';
 
           resultMap.set(c.id, {
-            tags: c.tags && c.tags.length > 0 ? Array.from(new Set([...c.tags, eraStr])) : ['J-POP', '邦楽', eraStr],
-            genre: c.genre || 'J-POP',
+            tags: c.tags && c.tags.length > 0 ? normalizeTagList([...c.tags, eraStr]) : ['J-Pop', '邦楽', eraStr],
+            genre: normalizeSingleTag(c.genre) || 'J-Pop',
             mood: 'メロディアス',
             era: eraStr,
             reasoning: `アーティスト「${c.artist}」・タイトル「${c.title}」${
@@ -218,7 +217,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                 sourceFields: [hasVinyl ? 'LP/EP発売年月日' : 'CD発売年月日'],
               },
               {
-                tag: c.genre || 'J-POP',
+                tag: normalizeSingleTag(c.genre) || 'J-Pop',
                 category: 'genre',
                 evidence: `アーティスト「${c.artist}」および収録曲リストの特徴から判定`,
                 sourceFields: ['アーティスト名', '収録曲リスト'],
@@ -243,13 +242,18 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
     const existing = analysisResults.get(cdId);
     if (!existing) return;
     const updatedTags = existing.tags.filter((t) => t !== tagToRemove);
+    const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+    const nextGenre =
+      existing.genre === tagToRemove
+        ? updatedTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || updatedTags[0] || ''
+        : existing.genre;
     const updatedMap = new Map(analysisResults);
-    updatedMap.set(cdId, { ...existing, tags: updatedTags });
+    updatedMap.set(cdId, { ...existing, tags: updatedTags, genre: nextGenre });
     setAnalysisResults(updatedMap);
   };
 
   const handleAddCustomTag = (cdId: string) => {
-    const tagToAdd = (newTagInputs[cdId] || '').trim();
+    const tagToAdd = normalizeSingleTag((newTagInputs[cdId] || '').trim());
     if (!tagToAdd) return;
     const existing = analysisResults.get(cdId);
     if (!existing) return;
@@ -267,25 +271,31 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
     try {
       const targets = getTargetCDs();
       const updatedList: CDMetadata[] = [];
+      const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
 
       targets.forEach((cd) => {
         const res = analysisResults.get(cd.id);
         if (res) {
-          // Filter tagEvidence to keep evidence for tags that are still present, or keep all analyzed evidence
+          const normalizedTags = normalizeTagList(res.tags);
+          const resolvedGenre =
+            res.genre && normalizedTags.includes(res.genre)
+              ? res.genre
+              : normalizedTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || normalizedTags[0] || '';
+
           const activeTagEvidence = (res.tagEvidence || []).filter((ev) =>
-            res.tags.includes(ev.tag)
+            normalizedTags.includes(normalizeSingleTag(ev.tag))
           );
           updatedList.push({
             ...cd,
-            tags: res.tags,
-            genre: res.genre || cd.genre,
+            tags: normalizedTags,
+            genre: resolvedGenre,
             aiTagAnalysis: {
-              genre: res.genre || cd.genre,
-              subGenre: res.subGenre,
+              genre: resolvedGenre,
+              subGenre: res.subGenre && normalizedTags.includes(res.subGenre) ? res.subGenre : undefined,
               mood: res.mood,
               era: res.era,
               reasoning: res.reasoning,
-              tagEvidence: activeTagEvidence.length > 0 ? activeTagEvidence : res.tagEvidence,
+              tagEvidence: activeTagEvidence,
               analyzedAt: getJSTISOString(),
             },
             updatedAt: getJSTISOString(),
@@ -447,7 +457,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                     />
                     <div>
                       <p className="text-xs font-semibold text-slate-200">音楽ジャンル</p>
-                      <p className="text-[10px] text-slate-400">J-POP, ロック, シティポップ, 歌謡曲等</p>
+                      <p className="text-[10px] text-slate-400">J-Pop, ロック, シティポップ, 歌謡曲等</p>
                     </div>
                   </label>
 
@@ -473,7 +483,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                     />
                     <div>
                       <p className="text-xs font-semibold text-slate-200">リリース年代・時代</p>
-                      <p className="text-[10px] text-slate-400">80年代, 90年代, 昭和歌謡, 2000年代等</p>
+                      <p className="text-[10px] text-slate-400">1970年代, 1980年代, 1990年代, 昭和歌謡, 2000年代等</p>
                     </div>
                   </label>
                 </div>
@@ -518,7 +528,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-[11px]">
                   <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
                     <span className="font-bold text-purple-300 block mb-0.5">① アーティスト名・活動文脈</span>
-                    <span className="text-slate-400">歌手・バンド・作曲家の音楽的バックグラウンドから主要ジャンル（J-POP、ロック、シティポップ、ジャズ等）を特定します。</span>
+                    <span className="text-slate-400">歌手・バンド・作曲家の音楽的バックグラウンドから主要ジャンル（J-Pop、ロック、シティポップ、ジャズ等）を特定します。</span>
                   </div>
                   <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
                     <span className="font-bold text-indigo-300 block mb-0.5">② 収録曲リスト（最大10曲の曲名・語彙）</span>
@@ -526,7 +536,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                   </div>
                   <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
                     <span className="font-bold text-amber-300 block mb-0.5">③ 発売年月日（LP/EP発売日を最優先）</span>
-                    <span className="text-slate-400">CD発売年月日と同タイトルLP/EP発売年月日の両方がある場合、オリジナルである<strong className="text-amber-200">LP/EP発売年月日</strong>から「70年代」「80年代」等の年代タグを生成します。</span>
+                    <span className="text-slate-400">CD発売年月日と同タイトルLP/EP発売年月日の両方がある場合、オリジナルである<strong className="text-amber-200">LP/EP発売年月日</strong>から「1970年代」「1980年代」「1990年代」等の年代タグを生成します。</span>
                   </div>
                   <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
                     <span className="font-bold text-emerald-300 block mb-0.5">④ 規格品番（型番）・レーベル名</span>

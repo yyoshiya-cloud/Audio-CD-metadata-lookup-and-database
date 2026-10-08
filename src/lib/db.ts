@@ -169,7 +169,8 @@ export async function getAllCDs(): Promise<CDMetadata[]> {
       const norm = normalizeCDRecord(item);
       if (
         norm.genre !== item.genre ||
-        JSON.stringify(norm.tags || []) !== JSON.stringify(item.tags || [])
+        JSON.stringify(norm.tags || []) !== JSON.stringify(item.tags || []) ||
+        JSON.stringify(norm.aiTagAnalysis || null) !== JSON.stringify(item.aiTagAnalysis || null)
       ) {
         toUpdateInDB.push(norm);
       }

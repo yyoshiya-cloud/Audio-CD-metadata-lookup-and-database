@@ -52,11 +52,11 @@ function deriveEraTagFromDate(dateStr?: string): string {
   if (!match) return '';
   const y = parseInt(match[1], 10);
   if (isNaN(y)) return '';
-  if (y >= 1950 && y < 1960) return '50年代';
-  if (y >= 1960 && y < 1970) return '60年代';
-  if (y >= 1970 && y < 1980) return '70年代';
-  if (y >= 1980 && y < 1990) return '80年代';
-  if (y >= 1990 && y < 2000) return '90年代';
+  if (y >= 1950 && y < 1960) return '1950年代';
+  if (y >= 1960 && y < 1970) return '1960年代';
+  if (y >= 1970 && y < 1980) return '1970年代';
+  if (y >= 1980 && y < 1990) return '1980年代';
+  if (y >= 1990 && y < 2000) return '1990年代';
   if (y >= 2000 && y < 2010) return '2000年代';
   if (y >= 2010 && y < 2020) return '2010年代';
   if (y >= 2020) return '2020年代';
@@ -66,16 +66,16 @@ function deriveEraTagFromDate(dateStr?: string): string {
 const DECADE_TAG_REGEX = /^(19\d0|20\d0|[56789]0)年代$/;
 
 const SERVER_TAG_CANONICAL_MAP: Record<string, string> = {
-  'j-pop': 'J-POP',
-  'jpop': 'J-POP',
-  'j pop': 'J-POP',
-  'j-pop / 邦楽': 'J-POP',
-  'j-pop/邦楽': 'J-POP',
-  '邦楽 / j-pop': 'J-POP',
-  'ポップス': 'J-POP',
-  'ポップ': 'J-POP',
-  'pop': 'J-POP',
-  'pops': 'J-POP',
+  'j-pop': 'J-Pop',
+  'jpop': 'J-Pop',
+  'j pop': 'J-Pop',
+  'j-pop / 邦楽': 'J-Pop',
+  'j-pop/邦楽': 'J-Pop',
+  '邦楽 / j-pop': 'J-Pop',
+  'ポップス': 'J-Pop',
+  'ポップ': 'J-Pop',
+  'pop': 'J-Pop',
+  'pops': 'J-Pop',
   'aidol': 'アイドル',
   'idol': 'アイドル',
   'idol pop': 'アイドル',
@@ -133,8 +133,12 @@ function normalizeServerTag(raw?: string): string {
   let t = String(raw).trim().replace(/^#+/, '').trim();
   if (!t) return '';
   t = t.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
+  const decade2Digit = t.match(/^([56789]0)年代$/);
+  if (decade2Digit) return `19${decade2Digit[1]}年代`;
   const decade19xx = t.match(/^19([56789]0)年代$/);
-  if (decade19xx) return `${decade19xx[1]}年代`;
+  if (decade19xx) return `19${decade19xx[1]}年代`;
+  const decadeEn = t.match(/^(?:19)?([56789]0)'?s$/i);
+  if (decadeEn) return `19${decadeEn[1]}年代`;
   const lower = t.toLowerCase().replace(/\s+/g, ' ');
   if (SERVER_TAG_CANONICAL_MAP[lower]) return SERVER_TAG_CANONICAL_MAP[lower];
   return t;
@@ -149,7 +153,7 @@ function normalizeServerTagList(tags?: string[]): string[] {
     const trimmed = String(raw).trim();
     const lower = trimmed.toLowerCase().replace(/\s+/g, ' ');
     if (lower.includes('j-pop') && lower.includes('邦楽')) {
-      for (const sub of ['J-POP', '邦楽']) {
+      for (const sub of ['J-Pop', '邦楽']) {
         if (!seen.has(sub)) {
           seen.add(sub);
           out.push(sub);
@@ -232,7 +236,7 @@ Crucially, you must explicitly provide the objective/analytical BASIS (根拠) f
 
 CRITICAL ERA TAG RULE (年代タグ生成の最優先ルール):
 - If an album has BOTH "cdReleaseDate" (CD発売年月日) and "vinylRecordReleaseDate" (同タイトルLP/EP発売年月日) — or whenever "vinylRecordReleaseDate" is present — you MUST generate the era/decade tag ("era" and the decade tag inside "suggestedTags") from "vinylRecordReleaseDate" (i.e. "effectiveReleaseDateForEraTag" / "requiredEraTag"), NOT from "cdReleaseDate".
-- For example, if a CD reissue was released in 2005 ("cdReleaseDate": "2005-09-21") but its original LP/EP record was released in 1982 ("vinylRecordReleaseDate": "1982-05-21"), the era tag MUST be "80年代" (derived from the LP/EP release date 1982-05-21), and its "tagEvidence" must state that the era tag was generated from the LP/EP release date ("LP/EP発売年月日") because both CD and LP/EP dates exist.
+- For example, if a CD reissue was released in 2005 ("cdReleaseDate": "2005-09-21") but its original LP/EP record was released in 1982 ("vinylRecordReleaseDate": "1982-05-21"), the era tag MUST be "1980年代" (derived from the LP/EP release date 1982-05-21), and its "tagEvidence" must state that the era tag was generated from the LP/EP release date ("LP/EP発売年月日") because both CD and LP/EP dates exist.
 - Only use "cdReleaseDate" for the era tag when "vinylRecordReleaseDate" is empty.
 
 Options requested:
@@ -246,14 +250,14 @@ ${JSON.stringify(simplifiedChunk, null, 2)}
 
 Instructions & STRICT TAG UNIFICATION RULES (表記ゆれ防止・タグ統一ルール):
 1. NEVER use English/Romaji spelling variants or slash-combined tags. Always use these unified Japanese canonical tags:
-   - Use "J-POP" (NEVER "J-Pop", "Jpop", or "J-POP / 邦楽")
-   - Use "邦楽" or "洋楽" as separate single tags (NEVER combine with "/" like "J-POP / 邦楽")
+   - Use "J-Pop" (NEVER "J-POP", "Jpop", or "J-POP / 邦楽")
+   - Use "邦楽" or "洋楽" as separate single tags (NEVER combine with "/" like "J-Pop / 邦楽")
    - Use "アイドル" (NEVER "Aidol" or "Idol")
    - Use "アニソン" (NEVER "Anime", "アニメ", or "アニメソング")
    - Use "CMソング" (NEVER "CM-Song" or "CM曲")
    - Use "シンガーソングライター", "ニューミュージック", "フォーク", "シティポップ", "昭和歌謡", "ロック", "ハードロック", "パンク", "ジャズ", "フュージョン", "クラシック", "R&B", "ヒップホップ", "テクノポップ", "AOR", "バラード", "アコースティック", "サウンドトラック", "ベスト盤", "ライブ盤", "お笑い・バラエティ"
-   - Era tags MUST be strictly one of: "50年代", "60年代", "70年代", "80年代", "90年代", "2000年代", "2010年代", "2020年代" (NEVER "1980年代" or "80s").
-2. "genre": The primary music genre using ONLY a single unified canonical name from rule 1 (e.g., "J-POP", "ニューミュージック", "シティポップ", "ロック", "アニソン", "ジャズ", "昭和歌謡", "フォーク", "R&B", "ヒップホップ", "アイドル", "クラシック").
+   - Era tags MUST be strictly one of: "1950年代", "1960年代", "1970年代", "1980年代", "1990年代", "2000年代", "2010年代", "2020年代" (NEVER "70年代", "80年代", "90年代", or "80s").
+2. "genre": The primary music genre using ONLY a single unified canonical name from rule 1 (e.g., "J-Pop", "ニューミュージック", "シティポップ", "ロック", "アニソン", "ジャズ", "昭和歌謡", "フォーク", "R&B", "ヒップホップ", "アイドル", "クラシック").
 3. "subGenre": Sub-genre or musical style using unified Japanese terms (e.g., "シンガーソングライター", "バラード", "アコースティック", "AOR", "テクノポップ", "ベスト盤", "ライブ盤").
 4. "mood": Atmosphere & emotional feel keywords in Japanese (e.g., "爽快・疾走感", "切ない・哀愁", "メロウ・チル", "エモーショナル", "叙情的・優しさ", "ダンサブル").
 5. "era": Era/decade classification derived strictly from "effectiveReleaseDateForEraTag" ("vinylRecordReleaseDate" when present, otherwise "cdReleaseDate").
@@ -311,7 +315,7 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
       if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
         // Post-process each result to deterministically enforce unified tags and the LP/EP release date era rule
         for (const item of parsed.results as CDTagAnalysisResult[]) {
-          item.genre = normalizeServerTag(item.genre) || 'J-POP';
+          item.genre = normalizeServerTag(item.genre) || 'J-Pop';
           if (item.subGenre) {
             item.subGenre = normalizeServerTag(item.subGenre);
           }
@@ -391,7 +395,7 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
             ? `同タイトルのLP/EP発売年月日(${cd.vinylRecordReleaseDate})から「${era}」タグを生成`
             : `CD発売年月日(${cd.releaseDate})から「${era}」タグを生成`;
 
-        const canonicalGenre = normalizeServerTag(cd.genre) || 'J-POP';
+        const canonicalGenre = normalizeServerTag(cd.genre) || 'J-Pop';
         const suggested = normalizeServerTagList([era, canonicalGenre, '邦楽'].filter(Boolean));
         allResults.push({
           id: cd.id,
@@ -418,7 +422,7 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
                 ]
               : []),
             {
-              tag: cd.genre || 'J-POP',
+              tag: canonicalGenre,
               category: 'genre' as const,
               evidence: `アーティスト「${cd.artist}」およびレーベル（${cd.label || '国内盤規格'}）の傾向から判定`,
               sourceFields: ['アーティスト名', 'レーベル'],

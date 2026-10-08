@@ -6,19 +6,19 @@ import { CDMetadata, TagEvidenceItem } from '../types/cd';
  * into unified Japanese standard tags.
  */
 const DIRECT_TAG_MAP: Record<string, string> = {
-  // J-POP variants
-  'j-pop': 'J-POP',
-  'jpop': 'J-POP',
-  'j pop': 'J-POP',
-  'j-pop / 邦楽': 'J-POP',
-  'j-pop/邦楽': 'J-POP',
-  '邦楽 / j-pop': 'J-POP',
-  'japanese pop': 'J-POP',
-  'ジャパニーズ・ポップ': 'J-POP',
-  'ポップス': 'J-POP',
-  'ポップ': 'J-POP',
-  'pop': 'J-POP',
-  'pops': 'J-POP',
+  // J-Pop variants
+  'j-pop': 'J-Pop',
+  'jpop': 'J-Pop',
+  'j pop': 'J-Pop',
+  'j-pop / 邦楽': 'J-Pop',
+  'j-pop/邦楽': 'J-Pop',
+  '邦楽 / j-pop': 'J-Pop',
+  'japanese pop': 'J-Pop',
+  'ジャパニーズ・ポップ': 'J-Pop',
+  'ポップス': 'J-Pop',
+  'ポップ': 'J-Pop',
+  'pop': 'J-Pop',
+  'pops': 'J-Pop',
 
   // Idol variants
   'aidol': 'アイドル',
@@ -124,12 +124,15 @@ export function normalizeSingleTag(rawTag?: string): string {
   // Normalize full-width alphanumeric to half-width
   t = t.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
 
-  // Normalize decades: "1980年代" -> "80年代", "80s" -> "80年代", "1990s" -> "90年代"
+  // Normalize decades to 4-digit format: "90年代" -> "1990年代", "80年代" -> "1980年代", "70年代" -> "1970年代", "80s" -> "1980年代"
+  const decade2Digit = t.match(/^([56789]0)年代$/);
+  if (decade2Digit) return `19${decade2Digit[1]}年代`;
+
   const decade19xx = t.match(/^19([56789]0)年代$/);
-  if (decade19xx) return `${decade19xx[1]}年代`;
+  if (decade19xx) return `19${decade19xx[1]}年代`;
 
   const decadeEn = t.match(/^(?:19)?([56789]0)'?s$/i);
-  if (decadeEn) return `${decadeEn[1]}年代`;
+  if (decadeEn) return `19${decadeEn[1]}年代`;
 
   const decade20xxEn = t.match(/^(20[012]0)'?s$/i);
   if (decade20xxEn) return `${decade20xxEn[1]}年代`;
@@ -158,9 +161,9 @@ export function normalizeTagList(tags?: string[]): string[] {
 
     // First check if the whole string is in DIRECT_TAG_MAP (e.g. "j-pop / 邦楽")
     if (DIRECT_TAG_MAP[lower]) {
-      // For "J-POP / 邦楽", include both canonical "J-POP" and "邦楽" cleanly, or canonical mapped tag
+      // For "J-Pop / 邦楽", include both canonical "J-Pop" and "邦楽" cleanly, or canonical mapped tag
       if (lower.includes('j-pop') && lower.includes('邦楽')) {
-        for (const sub of ['J-POP', '邦楽']) {
+        for (const sub of ['J-Pop', '邦楽']) {
           if (!seen.has(sub)) {
             seen.add(sub);
             result.push(sub);
@@ -199,12 +202,26 @@ export function normalizeTagList(tags?: string[]): string[] {
   return result;
 }
 
+const NON_GENRE_DECADE_REGEX = /^(19\d0|20\d0|[56789]0)年代$/;
+
 /**
- * Normalize a CD's genre, tags, and aiTagAnalysis evidence so all tags are unified.
+ * Normalize a CD's genre, tags, and aiTagAnalysis evidence so all tags are unified,
+ * and ensure `genre` does not retain stale/removed tags when `tags` is populated.
  */
 export function normalizeCDTagsAndGenre(cd: CDMetadata): CDMetadata {
-  const normalizedGenre = cd.genre ? normalizeSingleTag(cd.genre) : cd.genre;
   const normalizedTags = cd.tags ? normalizeTagList(cd.tags) : cd.tags;
+  let normalizedGenre = cd.genre ? normalizeSingleTag(cd.genre) : cd.genre;
+
+  // If the CD has an explicit tags list, ensure `genre` does not hold a tag that was removed from `tags`
+  if (normalizedTags && normalizedTags.length > 0 && normalizedGenre) {
+    const genreParts = normalizeTagList([normalizedGenre]);
+    const isPresentInTags = genreParts.some((g) => normalizedTags.includes(g));
+    if (!isPresentInTags) {
+      // Pick the first non-decade tag from normalizedTags, or fallback to first tag
+      const primaryTag = normalizedTags.find((t) => !NON_GENRE_DECADE_REGEX.test(t) && t !== '邦楽') || normalizedTags[0];
+      normalizedGenre = primaryTag;
+    }
+  }
 
   let normalizedAiAnalysis = cd.aiTagAnalysis;
   if (cd.aiTagAnalysis) {
@@ -213,16 +230,19 @@ export function normalizeCDTagsAndGenre(cd: CDMetadata): CDMetadata {
     for (const ev of cd.aiTagAnalysis.tagEvidence || []) {
       const normTag = normalizeSingleTag(ev.tag);
       if (normTag && !seenEvTags.has(normTag)) {
-        seenEvTags.add(normTag);
-        normalizedEvidence.push({
-          ...ev,
-          tag: normTag,
-        });
+        // If tags exist, only keep evidence for tags that are actually present in normalizedTags
+        if (!normalizedTags || normalizedTags.length === 0 || normalizedTags.includes(normTag)) {
+          seenEvTags.add(normTag);
+          normalizedEvidence.push({
+            ...ev,
+            tag: normTag,
+          });
+        }
       }
     }
     normalizedAiAnalysis = {
       ...cd.aiTagAnalysis,
-      genre: cd.aiTagAnalysis.genre ? normalizeSingleTag(cd.aiTagAnalysis.genre) : cd.aiTagAnalysis.genre,
+      genre: normalizedGenre || (cd.aiTagAnalysis.genre ? normalizeSingleTag(cd.aiTagAnalysis.genre) : cd.aiTagAnalysis.genre),
       subGenre: cd.aiTagAnalysis.subGenre ? normalizeSingleTag(cd.aiTagAnalysis.subGenre) : cd.aiTagAnalysis.subGenre,
       era: cd.aiTagAnalysis.era ? normalizeSingleTag(cd.aiTagAnalysis.era) : cd.aiTagAnalysis.era,
       tagEvidence: normalizedEvidence,

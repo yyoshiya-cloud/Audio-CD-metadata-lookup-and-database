@@ -345,6 +345,18 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       }
     }
 
+    const finalTags = normalizeTagList(tagsInput.split(',').map((t) => t.trim()).filter(Boolean));
+    const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+    let finalGenre = genre ? normalizeSingleTag(genre) : (cd.genre ? normalizeSingleTag(cd.genre) : undefined);
+    if (finalTags.length > 0 && finalGenre) {
+      const genreParts = normalizeTagList([finalGenre]);
+      if (!genreParts.some((g) => finalTags.includes(g))) {
+        finalGenre = finalTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || finalTags[0];
+      }
+    } else if (finalTags.length === 0) {
+      finalGenre = '';
+    }
+
     const updatedCD: CDMetadata = {
       ...cd,
       title,
@@ -357,14 +369,22 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       vinylRecordCatalogNumber: vinylRecordCatalogNumber ? normalizeCatalogNumber(vinylRecordCatalogNumber) : undefined,
       barcode,
       notes,
-      genre: genre || cd.genre,
+      genre: finalGenre,
       tracks: tracks.map((tr) => ({
         ...tr,
         duration: formatTrackDuration(tr.duration || ''),
       })),
       coverUrl: finalCoverUrl,
-      tags: tagsInput.split(',').map((t) => t.trim()).filter(Boolean),
-      aiTagAnalysis,
+      tags: finalTags,
+      aiTagAnalysis: aiTagAnalysis
+        ? {
+            ...aiTagAnalysis,
+            genre: finalGenre || aiTagAnalysis.genre,
+            tagEvidence: (aiTagAnalysis.tagEvidence || []).filter((ev) =>
+              finalTags.includes(normalizeSingleTag(ev.tag))
+            ),
+          }
+        : undefined,
       updatedAt: getJSTISOString(),
     };
     onSaveCD(updatedCD);

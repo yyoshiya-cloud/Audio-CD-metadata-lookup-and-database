@@ -280,13 +280,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const map: Record<string, number> = {};
 
     cds.forEach((cd) => {
-      let g = cd.genre?.trim();
-      if (!g && cd.tags && cd.tags.length > 0) {
-        // Look for common genre in tags
+      let g = '';
+      if (cd.tags && cd.tags.length > 0) {
+        // Look for common genre in tags first so removed tags in cd.genre don't skew stats
         const genreTag = cd.tags.find((t) =>
-          ['J-POP', 'シティポップ', 'ロック', '歌謡曲', 'ジャズ', 'アニソン', 'アニメソング', 'アイドル', 'R&B', 'ヒップホップ', 'クラシック', 'フォーク', 'AOR'].includes(t)
+          ['J-Pop', 'J-POP', 'シティポップ', 'ロック', '昭和歌謡', '歌謡曲', 'ニューミュージック', 'ジャズ', 'アニソン', 'アニメソング', 'アイドル', 'R&B', 'ヒップホップ', 'クラシック', 'フォーク', 'AOR', 'シンガーソングライター'].includes(t)
         );
-        if (genreTag) g = genreTag;
+        if (genreTag) g = genreTag === 'J-POP' ? 'J-Pop' : genreTag;
+      }
+      if (!g && cd.genre?.trim()) {
+        g = cd.genre.trim() === 'J-POP' ? 'J-Pop' : cd.genre.trim();
       }
 
       const finalGenre = g || '未分類 / その他';
