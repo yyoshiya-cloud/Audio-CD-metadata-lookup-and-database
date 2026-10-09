@@ -44,6 +44,9 @@ export async function searchDiscogs(query: {
   } else if (cleanBarcode) {
     params.append('barcode', cleanBarcode);
   } else if (query.title || query.artist || query.trackTitle) {
+    if (query.artist) params.append('artist', query.artist.trim());
+    if (query.title) params.append('release_title', query.title.trim());
+    if (query.trackTitle) params.append('track', query.trackTitle.trim());
     const q = [query.artist, query.title, query.trackTitle].filter(Boolean).join(' ');
     params.append('q', q);
   } else if (query.freeText) {

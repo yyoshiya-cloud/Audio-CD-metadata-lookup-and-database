@@ -266,6 +266,7 @@ function mergeCDCandidates(items: CDMetadata[], query: SearchQuery): SearchResul
     // Evaluate exact match conditions
     const targetCat = normalizeCatNo(query.catalogNumber || (query as any).catno);
     const targetTitle = cleanTitleForMatching(query.title);
+    const targetTrackTitle = cleanTitleForMatching(query.trackTitle);
     const targetBarcode = query.barcode ? query.barcode.replace(/\D/g, '') : '';
 
     const candCat = normalizeCatNo(catalogNumber);
@@ -274,11 +275,19 @@ function mergeCDCandidates(items: CDMetadata[], query: SearchQuery): SearchResul
 
     const catMatch = Boolean(targetCat && candCat && (candCat === targetCat || candCat.replace(/[- ]/g, '') === targetCat.replace(/[- ]/g, '')));
     const titleMatch = Boolean(targetTitle && candTitle && (candTitle === targetTitle || candTitle.replace(/\s+/g, '') === targetTitle.replace(/\s+/g, '')));
+    const trackMatch = Boolean(
+      targetTrackTitle &&
+        (tracks.some((tr) => {
+          const cleanTr = cleanTitleForMatching(tr.title);
+          return cleanTr && (cleanTr === targetTrackTitle || cleanTr.includes(targetTrackTitle) || targetTrackTitle.includes(cleanTr));
+        }) ||
+          (candTitle && (candTitle === targetTrackTitle || candTitle.includes(targetTrackTitle))))
+    );
     const barcodeMatch = Boolean(targetBarcode && candBarcode && targetBarcode === candBarcode);
 
     const exactMatchTypes: ('catalogNumber' | 'title' | 'barcode')[] = [];
     if (catMatch) exactMatchTypes.push('catalogNumber');
-    if (titleMatch) exactMatchTypes.push('title');
+    if (titleMatch || trackMatch) exactMatchTypes.push('title');
     if (barcodeMatch) exactMatchTypes.push('barcode');
     const isExactMatch = exactMatchTypes.length > 0;
 
@@ -291,6 +300,8 @@ function mergeCDCandidates(items: CDMetadata[], query: SearchQuery): SearchResul
     } else if (catMatch) {
       matchScore = Math.max(95, matchScore + 25);
     } else if (titleMatch) {
+      matchScore = Math.max(90, matchScore + 20);
+    } else if (trackMatch) {
       matchScore = Math.max(90, matchScore + 20);
     }
     if (tracks.length > 0) matchScore += 5;

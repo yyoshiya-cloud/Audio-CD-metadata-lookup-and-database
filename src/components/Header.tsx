@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogIn, LogOut, Database, Sparkles, Key, BarChart3, Copy, Info, LayoutGrid } from 'lucide-react';
+import { LogIn, LogOut, Database, Sparkles, Key, BarChart3, Copy, Info, LayoutGrid, ListMusic } from 'lucide-react';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -11,8 +11,8 @@ interface HeaderProps {
   onOpenAppInfo: () => void;
   onLogin: () => void;
   onLogout: () => void;
-  activeTab: 'search' | 'database' | 'gallery' | 'dashboard' | 'duplicates';
-  setActiveTab: (tab: 'search' | 'database' | 'gallery' | 'dashboard' | 'duplicates') => void;
+  activeTab: 'search' | 'database' | 'gallery' | 'tracks' | 'dashboard' | 'duplicates';
+  setActiveTab: (tab: 'search' | 'database' | 'gallery' | 'tracks' | 'dashboard' | 'duplicates') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -92,6 +92,17 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <LayoutGrid className="w-3.5 h-3.5 text-indigo-300" />
             <span>ジャケットギャラリー</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('tracks')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+              activeTab === 'tracks'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <ListMusic className="w-3.5 h-3.5 text-emerald-300" />
+            <span>収録曲検索・セットリスト</span>
           </button>
           <button
             onClick={() => setActiveTab('dashboard')}

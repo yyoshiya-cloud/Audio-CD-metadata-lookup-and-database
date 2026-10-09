@@ -77,7 +77,9 @@ export async function searchSpotify(query: {
 
     if (!q) return [];
 
-    const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=album&limit=8&market=JP`;
+    const isTrackSearch = Boolean(query.trackTitle && query.trackTitle.trim() && !query.title && !query.barcode && !query.catno);
+    const searchType = isTrackSearch ? 'track' : 'album';
+    const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=${searchType}&limit=10&market=JP`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
@@ -97,7 +99,20 @@ export async function searchSpotify(query: {
     }
 
     const data = await res.json();
-    const albums = data.albums?.items || [];
+    let albums: any[] = [];
+    if (isTrackSearch) {
+      const trackItems = data.tracks?.items || [];
+      const seenAlbumIds = new Set<string>();
+      for (const tr of trackItems) {
+        if (tr.album && tr.album.id && !seenAlbumIds.has(tr.album.id)) {
+          seenAlbumIds.add(tr.album.id);
+          albums.push(tr.album);
+          if (albums.length >= 8) break;
+        }
+      }
+    } else {
+      albums = data.albums?.items || [];
+    }
 
     const results: CDMetadata[] = [];
 

@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CDMetadata, TrackInfo, APISource, AITagAnalysisMetadata } from '../types/cd';
+import { CDMetadata, TrackInfo, APISource, AITagAnalysisMetadata, CDSubImage, SubImageType } from '../types/cd';
 import { getJSTISOString, normalizeCatalogNumber, normalizeReleaseDate } from '../lib/dateUtils';
 import { normalizeSingleTag, normalizeTagList, applyGenreRuleFilter } from '../lib/tagNormalizer';
 import { loadTagPresetsDB, saveTagPresetsDB, DEFAULT_TAG_PRESETS } from '../lib/db';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
 import { enhanceImageWithCanvas, convertImageUrlToBase64 } from '../utils/imageEnhancer';
-import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2, BookOpen, Tag, ChevronDown, ChevronUp, ShieldCheck, Plus, Edit3 } from 'lucide-react';
+import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2, BookOpen, Tag, ChevronDown, ChevronUp, ShieldCheck, Plus, Edit3, Images } from 'lucide-react';
 
 interface CDDetailModalProps {
   cd: CDMetadata | null;
@@ -49,6 +49,9 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [barcode, setBarcode] = useState(cd.barcode || '');
   const [notes, setNotes] = useState(cd.notes || '');
   const [coverUrl, setCoverUrl] = useState(cd.coverUrl || '');
+  const [subImages, setSubImages] = useState<CDSubImage[]>(cd.subImages || []);
+  const [activeImageSlot, setActiveImageSlot] = useState<'front' | string>('front');
+  const [pendingSubImageType, setPendingSubImageType] = useState<SubImageType>('back');
   const [tagsInput, setTagsInput] = useState((cd.tags || []).join(', '));
   const [genre, setGenre] = useState(cd.genre || '');
   const [aiTagAnalysis, setAiTagAnalysis] = useState<AITagAnalysisMetadata | undefined>(cd.aiTagAnalysis);
@@ -72,6 +75,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [isConvertingBase64, setIsConvertingBase64] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const subImageFileInputRef = useRef<HTMLInputElement>(null);
   const loadedCdIdRef = useRef<string | null>(cd.id);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -91,6 +95,8 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       setBarcode(cd.barcode || '');
       setNotes(cd.notes || '');
       setCoverUrl(cd.coverUrl || '');
+      setSubImages(cd.subImages || []);
+      setActiveImageSlot('front');
       setTagsInput((cd.tags || []).join(', '));
       setGenre(cd.genre || '');
       setAiTagAnalysis(cd.aiTagAnalysis);
@@ -484,6 +490,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
         duration: formatTrackDuration(tr.duration || ''),
       })),
       coverUrl: finalCoverUrl,
+      subImages,
       tags: finalTags,
       aiTagAnalysis: updatedAiTagAnalysis,
       updatedAt: getJSTISOString(),
@@ -554,6 +561,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
         duration: formatTrackDuration(tr.duration || ''),
       })),
       coverUrl: coverUrl.trim(),
+      subImages,
       tags: finalTags,
       aiTagAnalysis: updatedAiTagAnalysis,
       updatedAt: getJSTISOString(),
@@ -626,10 +634,52 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
     try {
       const compressedDataUrl = await compressImageFile(file, 600, 0.82);
       if (compressedDataUrl) {
+        setIsDirty(true);
         setCoverUrl(compressedDataUrl);
+        setActiveImageSlot('front');
       }
     } catch (err) {
       console.error('Image compression error:', err);
+    }
+  };
+
+  const SUB_IMAGE_TYPE_LABELS: Record<SubImageType, string> = {
+    back: '裏ジャケット (バックインレイ)',
+    obi: '帯 (オビ)',
+    disc: '盤面 (ディスク・レーベル面)',
+    booklet: '歌詞カード・ブックレット',
+    other: 'その他付属画像',
+  };
+
+  const handleSubImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const compressedDataUrl = await compressImageFile(file, 750, 0.84);
+      if (compressedDataUrl) {
+        setIsDirty(true);
+        const newSub: CDSubImage = {
+          id: `subimg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          type: pendingSubImageType,
+          label: SUB_IMAGE_TYPE_LABELS[pendingSubImageType],
+          imageUrl: compressedDataUrl,
+        };
+        setSubImages((prev) => [...prev, newSub]);
+        setActiveImageSlot(newSub.id);
+      }
+    } catch (err) {
+      console.error('Sub image compression error:', err);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveSubImage = (subId: string) => {
+    setIsDirty(true);
+    setSubImages((prev) => prev.filter((item) => item.id !== subId));
+    if (activeImageSlot === subId) {
+      setActiveImageSlot('front');
     }
   };
 
@@ -960,29 +1010,93 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
           
           {/* Hero Card */}
           <div className="flex flex-col sm:flex-row gap-4 bg-slate-800/40 p-4 rounded-xl border border-slate-800">
-            {/* High Res Jacket Image & Image Change Actions */}
-            <div className="flex flex-col gap-1.5 w-full sm:w-36 md:w-40 flex-shrink-0">
-              <div className="w-full h-32 sm:h-36 rounded-xl bg-slate-900 overflow-hidden border border-slate-700 shadow-md relative group mx-auto">
-                {coverUrl ? (
-                  <img
-                    src={coverUrl}
-                    alt={title}
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      const target = e.currentTarget;
-                      if (!target.dataset.triedProxy && coverUrl && !coverUrl.startsWith('data:')) {
-                        target.dataset.triedProxy = 'true';
-                        target.src = `/api/image-proxy?url=${encodeURIComponent(coverUrl)}`;
-                      }
-                    }}
-                  />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-3 text-center">
-                    <Disc className="w-10 h-10 mb-1 opacity-40" />
-                    <span className="text-[11px]">No Cover Image</span>
+            {/* High Res Jacket Image & Multi-Image Switcher Actions */}
+            <div className="flex flex-col gap-1.5 w-full sm:w-40 md:w-44 flex-shrink-0">
+              {(() => {
+                const activeSub =
+                  activeImageSlot !== 'front'
+                    ? subImages.find((s) => s.id === activeImageSlot)
+                    : undefined;
+                const displayImgUrl = activeSub ? activeSub.imageUrl : coverUrl;
+                const displayImgLabel = activeSub ? activeSub.label : '表ジャケット';
+
+                return (
+                  <div className="w-full h-36 sm:h-40 rounded-xl bg-slate-900 overflow-hidden border border-slate-700 shadow-md relative group mx-auto">
+                    {displayImgUrl ? (
+                      <img
+                        src={displayImgUrl}
+                        alt={`${title} - ${displayImgLabel}`}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (!target.dataset.triedProxy && displayImgUrl && !displayImgUrl.startsWith('data:')) {
+                            target.dataset.triedProxy = 'true';
+                            target.src = `/api/image-proxy?url=${encodeURIComponent(displayImgUrl)}`;
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-3 text-center">
+                        <Disc className="w-10 h-10 mb-1 opacity-40" />
+                        <span className="text-[11px]">No Cover Image</span>
+                      </div>
+                    )}
+                    <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1 pointer-events-none">
+                      <span className="text-[9px] font-bold bg-slate-950/85 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded shadow truncate">
+                        {displayImgLabel}
+                      </span>
+                      {activeSub && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSubImage(activeSub.id)}
+                          className="pointer-events-auto text-[9px] bg-rose-950/90 hover:bg-rose-800 text-rose-200 border border-rose-500/50 px-1.5 py-0.5 rounded cursor-pointer font-bold"
+                          title="このサブ画像を削除"
+                        >
+                          削除
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
+                );
+              })()}
+
+              {/* Thumbnail Strip for Front + Sub-Images (Back / Obi / Disc / Booklet) */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveImageSlot('front')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer flex-shrink-0 ${
+                    activeImageSlot === 'front'
+                      ? 'bg-indigo-600 text-white border-indigo-400'
+                      : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+                  }`}
+                >
+                  表ジャケ
+                </button>
+                {subImages.map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setActiveImageSlot(sub.id)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer flex-shrink-0 ${
+                      activeImageSlot === sub.id
+                        ? 'bg-amber-600 text-white border-amber-400'
+                        : 'bg-slate-900 text-amber-300/80 border-amber-500/30 hover:text-amber-200'
+                    }`}
+                    title={sub.label}
+                  >
+                    {sub.type === 'back'
+                      ? '裏ジャケ'
+                      : sub.type === 'obi'
+                      ? '帯'
+                      : sub.type === 'disc'
+                      ? '盤面'
+                      : sub.type === 'booklet'
+                      ? '歌詞冊子'
+                      : '他'}
+                  </button>
+                ))}
               </div>
 
               {/* Action under image */}
@@ -993,8 +1107,32 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                   className="text-[11px] text-slate-400 hover:text-indigo-300 py-0.5 text-center flex items-center justify-center gap-1 transition-colors cursor-pointer"
                 >
                   <Upload className="w-3 h-3" />
-                  <span>画像を変更・登録</span>
+                  <span>表ジャケを変更・登録</span>
                 </button>
+
+                {/* Quick Add Sub-Image (Back / Obi / Disc) */}
+                <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1">
+                  <select
+                    value={pendingSubImageType}
+                    onChange={(e) => setPendingSubImageType(e.target.value as SubImageType)}
+                    className="bg-slate-950 text-[10px] text-amber-300 border border-slate-700 rounded px-1 py-0.5 flex-1 focus:outline-none cursor-pointer"
+                  >
+                    <option value="back">裏ジャケ</option>
+                    <option value="obi">帯 (オビ)</option>
+                    <option value="disc">盤面</option>
+                    <option value="booklet">歌詞冊子</option>
+                    <option value="other">その他</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => subImageFileInputRef.current?.click()}
+                    className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold flex items-center gap-0.5 cursor-pointer whitespace-nowrap"
+                    title="裏面ジャケット・帯・盤面などのサブ画像を追加登録"
+                  >
+                    <Images className="w-2.5 h-2.5" />
+                    <span>＋追加</span>
+                  </button>
+                </div>
 
                 {coverUrl && !coverUrl.startsWith('data:image/') && (
                   <button
@@ -1042,6 +1180,13 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                 type="file"
                 ref={fileInputRef}
                 onChange={handleImageFileUpload}
+                accept="image/*"
+                className="hidden"
+              />
+              <input
+                type="file"
+                ref={subImageFileInputRef}
+                onChange={handleSubImageFileUpload}
                 accept="image/*"
                 className="hidden"
               />

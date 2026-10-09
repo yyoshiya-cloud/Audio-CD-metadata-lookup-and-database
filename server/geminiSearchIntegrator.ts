@@ -182,6 +182,7 @@ export function applyDeterministicVerification(
 ): SearchResultCandidate[] {
   const normQueryCat = normalizeText(query.catalogNumber || (query as any).catno || '');
   const normQueryTitle = normalizeText(query.title || '');
+  const normQueryTrack = normalizeText(query.trackTitle || '');
   const normQueryBarcode = query.barcode ? query.barcode.replace(/\D/g, '') : '';
 
   return candidates.map((cand) => {
@@ -191,11 +192,21 @@ export function applyDeterministicVerification(
 
     const catMatch = Boolean(normQueryCat && candCat && (candCat === normQueryCat || candCat.includes(normQueryCat) || normQueryCat.includes(candCat)));
     const titleMatch = Boolean(normQueryTitle && candTitle && (candTitle === normQueryTitle || candTitle.includes(normQueryTitle)));
+    const matchedTrackObj = normQueryTrack
+      ? (cand.cd.tracks || []).find((tr) => {
+          const nt = normalizeText(tr.title || '');
+          return nt && (nt === normQueryTrack || nt.includes(normQueryTrack) || normQueryTrack.includes(nt));
+        })
+      : undefined;
+    const trackMatch = Boolean(
+      normQueryTrack &&
+        (matchedTrackObj || (candTitle && (candTitle === normQueryTrack || candTitle.includes(normQueryTrack))))
+    );
     const barcodeMatch = Boolean(normQueryBarcode && candBarcode && normQueryBarcode === candBarcode);
 
     const exactMatchTypes: ('catalogNumber' | 'title' | 'barcode')[] = [];
     if (catMatch) exactMatchTypes.push('catalogNumber');
-    if (titleMatch) exactMatchTypes.push('title');
+    if (titleMatch || trackMatch) exactMatchTypes.push('title');
     if (barcodeMatch) exactMatchTypes.push('barcode');
 
     const isExactMatch = exactMatchTypes.length > 0;
@@ -203,6 +214,7 @@ export function applyDeterministicVerification(
     if (catMatch && titleMatch) score = 100;
     else if (barcodeMatch) score = 100;
     else if (catMatch) score = Math.max(score, 95);
+    else if (trackMatch) score = Math.max(score, 92);
 
     let summary = '';
     if (barcodeMatch && catMatch) {
@@ -213,6 +225,8 @@ export function applyDeterministicVerification(
       summary = `型番(${cand.cd.catalogNumber})で${cand.sourcesMatched.join('・')}のデータを一致照合済み`;
     } else if (catMatch) {
       summary = `規格品番(${cand.cd.catalogNumber})が完全一致`;
+    } else if (trackMatch && matchedTrackObj) {
+      summary = `収録曲「${matchedTrackObj.title}」(Tr.${matchedTrackObj.trackNumber}) を含むアルバムとして一致`;
     } else if (titleMatch) {
       summary = `タイトル「${cand.cd.title}」が検索クエリと完全一致`;
     }

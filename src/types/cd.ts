@@ -28,6 +28,37 @@ export interface AITagAnalysisMetadata {
   analyzedAt?: string;
 }
 
+export type SubImageType = 'back' | 'obi' | 'disc' | 'booklet' | 'other';
+
+export interface CDSubImage {
+  id: string;
+  type: SubImageType;
+  label: string;
+  imageUrl: string; // Base64 or URL
+}
+
+export interface CustomSetlistItem {
+  id: string; // unique item id in the setlist
+  cdId: string;
+  cdTitle: string;
+  cdArtist: string;
+  catalogNumber?: string;
+  coverUrl?: string;
+  trackNumber: number;
+  trackTitle: string;
+  duration?: string;
+}
+
+export interface CustomSetlist {
+  id: string;
+  name: string;
+  description?: string;
+  targetMinutes?: number; // e.g., 46, 60, 74, 80, 90 (Cassette / MD / CD-R capacity)
+  items: CustomSetlistItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CDMetadata {
   id: string; // unique ID or hash
   catalogNumber: string; // 型番 (e.g. SRCL-1234, VICL-60001)
@@ -40,6 +71,7 @@ export interface CDMetadata {
   vinylRecordCatalogNumber?: string; // Original LP/EP catalog number if available
   barcode?: string; // JAN/EAN code (e.g. 4988001...)
   coverUrl?: string; // High-res artwork URL
+  subImages?: CDSubImage[]; // Additional images: Back cover (裏ジャケ), Obi (帯), Disc (盤面), Booklet (歌詞カード)
   country?: string; // Release country (e.g. JP)
   format?: string; // e.g. CD, 2xCD, SACD, Limited Edition
   genre?: string; // Genre

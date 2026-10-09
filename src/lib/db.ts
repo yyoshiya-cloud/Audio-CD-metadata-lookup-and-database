@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { CDMetadata, APICredentials } from '../types/cd';
+import { CDMetadata, APICredentials, CustomSetlist } from '../types/cd';
 import { normalizeCatalogNumber, normalizeReleaseDate } from './dateUtils';
 import { ensureCDCoverBase64 } from '../utils/imageEnhancer';
 import { normalizeCDTagsAndGenre } from './tagNormalizer';
@@ -395,6 +395,80 @@ export async function saveTagPresetsDB(presets: string[]): Promise<void> {
   } catch {}
   try {
     localStorage.setItem('cd_custom_tag_presets', JSON.stringify(cleaned));
+  } catch {}
+}
+
+/**
+ * Load user-created Custom Setlists / Playlists from Dexie settings table
+ */
+export async function loadCustomSetlistsDB(): Promise<CustomSetlist[]> {
+  try {
+    const record = await db.settings.get('customSetlists');
+    if (record && Array.isArray(record.value)) {
+      return record.value as CustomSetlist[];
+    }
+  } catch {}
+  try {
+    const saved = localStorage.getItem('cd_custom_setlists');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+/**
+ * Save user-created Custom Setlists / Playlists to Dexie settings table
+ */
+export async function saveCustomSetlistsDB(setlists: CustomSetlist[]): Promise<void> {
+  const cleanData: CustomSetlist[] = JSON.parse(JSON.stringify(setlists || []));
+  try {
+    await db.settings.put({
+      key: 'customSetlists',
+      value: cleanData,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {}
+  try {
+    localStorage.setItem('cd_custom_setlists', JSON.stringify(cleanData));
+  } catch {}
+}
+
+/**
+ * Load favorite track keys (`${cdId}::${trackNumber}`) from Dexie settings table
+ */
+export async function loadFavoriteTrackKeysDB(): Promise<string[]> {
+  try {
+    const record = await db.settings.get('favoriteTrackKeys');
+    if (record && Array.isArray(record.value)) {
+      return record.value as string[];
+    }
+  } catch {}
+  try {
+    const saved = localStorage.getItem('cd_favorite_track_keys');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+/**
+ * Save favorite track keys (`${cdId}::${trackNumber}`) to Dexie settings table
+ */
+export async function saveFavoriteTrackKeysDB(keys: string[]): Promise<void> {
+  const cleaned = Array.from(new Set(keys.filter(Boolean)));
+  try {
+    await db.settings.put({
+      key: 'favoriteTrackKeys',
+      value: cleaned,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {}
+  try {
+    localStorage.setItem('cd_favorite_track_keys', JSON.stringify(cleaned));
   } catch {}
 }
 

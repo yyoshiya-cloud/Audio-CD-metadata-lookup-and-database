@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import { CDMetadata } from '../types/cd';
 import { convertImageUrlToBase64 } from '../utils/imageEnhancer';
+import { matchesCDSearchQuery } from '../utils/japaneseSearchNormalizer';
 import {
   X,
   FileDown,
@@ -73,16 +74,8 @@ export const PDFCatalogModal: React.FC<PDFCatalogModalProps> = ({
 
   // Filtered list for selection sidebar
   const filteredSelectionCDs = useMemo(() => {
-    const kw = filterKeyword.trim().toLowerCase();
-    if (!kw) return allCDs;
-    return allCDs.filter(
-      (c) =>
-        (c.title && c.title.toLowerCase().includes(kw)) ||
-        (c.artist && c.artist.toLowerCase().includes(kw)) ||
-        (c.catalogNumber && c.catalogNumber.toLowerCase().includes(kw)) ||
-        (c.label && c.label.toLowerCase().includes(kw)) ||
-        (c.genre && c.genre.toLowerCase().includes(kw))
-    );
+    if (!filterKeyword.trim()) return allCDs;
+    return allCDs.filter((c) => matchesCDSearchQuery(c, filterKeyword));
   }, [allCDs, filterKeyword]);
 
   // Sorted selected CDs for output

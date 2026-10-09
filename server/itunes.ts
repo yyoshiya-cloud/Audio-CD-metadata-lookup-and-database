@@ -23,7 +23,9 @@ export async function searchITunes(query: {
 
     if (!term) return [];
 
-    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=album&country=jp&limit=8`;
+    const hasTrackQuery = Boolean(query.trackTitle && query.trackTitle.trim());
+    const entity = hasTrackQuery && !query.title ? 'song' : 'album';
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=${entity}&country=jp&limit=10`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
@@ -37,14 +39,25 @@ export async function searchITunes(query: {
     }
 
     const data = await res.json();
-    const results = data.results || [];
+    const rawResults = data.results || [];
+
+    // Deduplicate by collectionId when entity=song returns multiple songs from the same album
+    const seenCollectionIds = new Set<number>();
+    const results: any[] = [];
+    for (const item of rawResults) {
+      const cid = item.collectionId;
+      if (!cid || seenCollectionIds.has(cid)) continue;
+      seenCollectionIds.add(cid);
+      results.push(item);
+      if (results.length >= 8) break;
+    }
 
     const items: CDMetadata[] = [];
 
     for (const album of results) {
       const collectionId = album.collectionId;
-      const title = album.collectionName || album.collectionCensoredName || 'Unknown Title';
-      const artist = album.artistName || 'Unknown Artist';
+      const title = album.collectionName || album.collectionCensoredName || album.trackName || 'Unknown Title';
+      const artist = album.collectionArtistName || album.artistName || 'Unknown Artist';
       const releaseDate = album.releaseDate ? album.releaseDate.slice(0, 10) : '';
       const genre = album.primaryGenreName || '';
       
@@ -54,10 +67,30 @@ export async function searchITunes(query: {
         coverUrl = coverUrl.replace('100x100bb', '600x600bb').replace('100x100', '600x600');
       }
 
-      // Fetch tracks for top 3 results
+      // Fetch tracks for top 4 results (or when trackTitle was queried so the matched song is guaranteed in tracks)
       let tracks: TrackInfo[] = [];
-      if (items.length < 3 && collectionId) {
+      if ((items.length < 4 || hasTrackQuery) && collectionId && items.length < 5) {
         tracks = await fetchITunesTracks(collectionId);
+      }
+      // If lookup returned empty and this came from entity=song, at least include the matched song
+      if (tracks.length === 0 && album.wrapperType === 'track' && album.trackName) {
+        const ms = album.trackTimeMillis;
+        let duration = '';
+        if (ms) {
+          const totalSec = Math.floor(ms / 1000);
+          const mins = Math.floor(totalSec / 60);
+          const secs = totalSec % 60;
+          duration = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+        tracks = [
+          {
+            trackNumber: album.trackNumber || 1,
+            title: album.trackName,
+            artist: album.artistName,
+            duration,
+            previewUrl: album.previewUrl,
+          },
+        ];
       }
 
       items.push({

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CDMetadata } from '../types/cd';
 import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2, Tag, Edit3 } from 'lucide-react';
+import { matchesCDSearchQuery, getMatchedTracksForQuery } from '../utils/japaneseSearchNormalizer';
 import { SpreadsheetEditorView } from './SpreadsheetEditorView';
 import { BatchEditModal } from './BatchEditModal';
 
@@ -65,16 +66,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
 
   // Filter & Sort logic
   const filteredCDs = cds.filter((cd) => {
-    const kw = searchKeyword.toLowerCase().trim();
-    const matchesKw =
-      !kw ||
-      (cd.title && cd.title.toLowerCase().includes(kw)) ||
-      (cd.artist && cd.artist.toLowerCase().includes(kw)) ||
-      (cd.catalogNumber && cd.catalogNumber.toLowerCase().includes(kw)) ||
-      (cd.label && cd.label.toLowerCase().includes(kw)) ||
-      (cd.barcode && cd.barcode.includes(kw)) ||
-      (cd.tags && cd.tags.some((t) => t.toLowerCase().includes(kw))) ||
-      (cd.tracks && cd.tracks.some((t) => t.title && t.title.toLowerCase().includes(kw)));
+    const matchesKw = matchesCDSearchQuery(cd, searchKeyword);
 
     const matchesSynced =
       filterSynced === 'all'
@@ -730,6 +722,33 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                           >
                             {cd.title}
                           </button>
+                          {searchKeyword.trim() && (() => {
+                            const matchedTrs = getMatchedTracksForQuery(cd, searchKeyword);
+                            if (matchedTrs.length === 0) return null;
+                            return (
+                              <div className="flex items-center gap-1 flex-wrap mt-1">
+                                {matchedTrs.slice(0, 2).map((tr, mIdx) => (
+                                  <span
+                                    key={mIdx}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedTracklistId(isExpanded ? null : cd.id);
+                                    }}
+                                    className="text-[10px] font-bold bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded inline-flex items-center gap-1 cursor-pointer"
+                                    title="クリックしてトラックリストを展開"
+                                  >
+                                    <Music className="w-2.5 h-2.5 text-emerald-400" />
+                                    <span>Tr.{tr.trackNumber} {tr.title}</span>
+                                  </span>
+                                ))}
+                                {matchedTrs.length > 2 && (
+                                  <span className="text-[10px] text-emerald-400 font-mono">
+                                    +{matchedTrs.length - 2}曲一致
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                           {cd.tags && cd.tags.length > 0 && (
                             <div className="flex items-center gap-1 flex-wrap mt-1">
                               {cd.tags.slice(0, 3).map((t, idx) => (

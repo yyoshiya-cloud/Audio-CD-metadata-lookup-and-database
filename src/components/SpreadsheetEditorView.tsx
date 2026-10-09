@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CDMetadata, TrackInfo } from '../types/cd';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
 import { convertImageUrlToBase64 } from '../utils/imageEnhancer';
+import { matchesCDSearchQuery } from '../utils/japaneseSearchNormalizer';
 import {
   Save,
   RotateCcw,
@@ -458,9 +459,39 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
             .split(/[,、]/)
             .map((t) => t.trim().replace(/^#/, ''))
             .filter(Boolean);
+          const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+          const nextGenre =
+            splitTags.length === 0
+              ? ''
+              : row.genre && splitTags.includes(row.genre)
+              ? row.genre
+              : splitTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || splitTags[0] || '';
           return {
             ...row,
             tags: splitTags,
+            genre: nextGenre,
+          };
+        }
+
+        if (field === 'genre') {
+          const trimmedGenre = processedValue.trim().replace(/^#/, '');
+          const currentTags = Array.isArray(row.tags) ? [...row.tags] : [];
+          let nextTags = currentTags;
+          if (!trimmedGenre) {
+            if (row.genre && currentTags.includes(row.genre)) {
+              nextTags = currentTags.filter((t) => t !== row.genre);
+            }
+          } else if (!currentTags.includes(trimmedGenre)) {
+            if (row.genre && currentTags.includes(row.genre)) {
+              nextTags = currentTags.map((t) => (t === row.genre ? trimmedGenre : t));
+            } else {
+              nextTags = [trimmedGenre, ...currentTags];
+            }
+          }
+          return {
+            ...row,
+            genre: trimmedGenre,
+            tags: nextTags,
           };
         }
 
@@ -710,21 +741,9 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
       result = result.filter((r) => brokenImageRowIds.has(r.id));
     }
 
-    // Filter by keyword
+    // Filter by keyword (supports Japanese orthographic normalization such as 走ってください / 走って下さい)
     if (searchKeyword.trim()) {
-      const kw = searchKeyword.toLowerCase().trim();
-      result = result.filter((r) => {
-        return (
-          (r.title && r.title.toLowerCase().includes(kw)) ||
-          (r.artist && r.artist.toLowerCase().includes(kw)) ||
-          (r.catalogNumber && r.catalogNumber.toLowerCase().includes(kw)) ||
-          (r.label && r.label.toLowerCase().includes(kw)) ||
-          (r.barcode && r.barcode.includes(kw)) ||
-          (r.genre && r.genre.toLowerCase().includes(kw)) ||
-          (r.notes && r.notes.toLowerCase().includes(kw)) ||
-          (r.tags && r.tags.some((t) => t.toLowerCase().includes(kw)))
-        );
-      });
+      result = result.filter((r) => matchesCDSearchQuery(r, searchKeyword));
     }
 
     // Sort by field

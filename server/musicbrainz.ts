@@ -14,6 +14,123 @@ export async function searchMusicBrainz(query: {
   try {
     const luceneParts: string[] = [];
 
+    const isTrackOnlyOrArtistTrackSearch = Boolean(
+      query.trackTitle && query.trackTitle.trim() && !query.catno && !query.barcode && !query.title
+    );
+
+    if (isTrackOnlyOrArtistTrackSearch) {
+      const recParts: string[] = [`recording:"${query.trackTitle!.trim()}"`];
+      if (query.artist && query.artist.trim()) {
+        recParts.push(`artist:"${query.artist.trim()}"`);
+      }
+      const recQuery = recParts.join(' AND ');
+      const recUrl = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(recQuery)}&fmt=json&limit=10`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      let recRes: Response;
+      try {
+        recRes = await fetch(recUrl, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'CDCatalogApp/1.0.0 (https://github.com/aistudio-applet; contact@example.com)',
+            'Accept': 'application/json',
+          },
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (recRes.ok) {
+        const recData = await recRes.json();
+        const recordings = recData.recordings || [];
+        const seenReleaseIds = new Set<string>();
+        const results: CDMetadata[] = [];
+
+        for (const rec of recordings) {
+          const recArtist = rec['artist-credit']
+            ? rec['artist-credit'].map((ac: any) => ac.name || ac.artist?.name).filter(Boolean).join(', ')
+            : query.artist || 'Unknown Artist';
+          const releases = rec.releases || [];
+
+          for (const rel of releases) {
+            const mbid = rel.id;
+            if (!mbid || seenReleaseIds.has(mbid)) continue;
+            seenReleaseIds.add(mbid);
+
+            const title = rel.title || 'Unknown Title';
+            const artist = rel['artist-credit']
+              ? rel['artist-credit'].map((ac: any) => ac.name || ac.artist?.name).filter(Boolean).join(', ')
+              : recArtist;
+
+            let label = '';
+            let catalogNumber = '';
+            if (rel['label-info'] && rel['label-info'].length > 0) {
+              const info = rel['label-info'][0];
+              label = info.label?.name || '';
+              if (info['catalog-number']) {
+                catalogNumber = info['catalog-number'];
+              }
+            }
+
+            const releaseDate = rel.date || '';
+            const country = rel.country || 'JP';
+            const coverUrl = `https://coverartarchive.org/release/${mbid}/front-500`;
+
+            let tracks: TrackInfo[] = [];
+            if (results.length < 3) {
+              tracks = await fetchMBTracklist(mbid);
+            }
+            if (tracks.length === 0 && rec.title) {
+              const lengthMs = rec.length;
+              let duration = '';
+              if (lengthMs) {
+                const totalSec = Math.floor(lengthMs / 1000);
+                const mins = Math.floor(totalSec / 60);
+                const secs = totalSec % 60;
+                duration = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+              }
+              tracks = [
+                {
+                  trackNumber: 1,
+                  title: rec.title,
+                  artist: recArtist,
+                  duration,
+                },
+              ];
+            }
+
+            results.push({
+              id: `mb-${mbid}`,
+              catalogNumber,
+              title,
+              artist,
+              label,
+              releaseDate,
+              barcode: rel.barcode || '',
+              country,
+              format: rel.media?.[0]?.format || 'CD',
+              coverUrl,
+              tracks,
+              source: 'musicbrainz',
+              sourceDetails: {
+                musicbrainzId: mbid,
+              },
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+
+            if (results.length >= 8) break;
+          }
+          if (results.length >= 8) break;
+        }
+
+        if (results.length > 0) {
+          return results;
+        }
+      }
+    }
+
     if (query.barcode) {
       const cleanBarcode = query.barcode.replace(/\D/g, '');
       if (cleanBarcode) {
@@ -25,7 +142,7 @@ export async function searchMusicBrainz(query: {
     } else if (query.title || query.artist || query.trackTitle) {
       if (query.title) luceneParts.push(`release:"${query.title.trim()}"`);
       if (query.artist) luceneParts.push(`artist:"${query.artist.trim()}"`);
-      if (query.trackTitle) luceneParts.push(`recording:"${query.trackTitle.trim()}"`);
+      if (query.trackTitle && !query.title) luceneParts.push(`"${query.trackTitle.trim()}"`);
     } else if (query.freeText) {
       luceneParts.push(`"${query.freeText.trim()}"`);
     }

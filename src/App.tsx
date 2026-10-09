@@ -20,6 +20,7 @@ import { DuplicateCheckView } from './components/DuplicateCheckView';
 import { JacketGalleryView } from './components/JacketGalleryView';
 import { PDFCatalogModal } from './components/PDFCatalogModal';
 import { TagManagerModal } from './components/TagManagerModal';
+import { TrackSearchAndSetlistView } from './components/TrackSearchAndSetlistView';
 import { CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -40,7 +41,7 @@ export default function App() {
   const [savedCDs, setSavedCDs] = useState<CDMetadata[]>([]);
   
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'search' | 'database' | 'gallery' | 'dashboard' | 'duplicates'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'database' | 'gallery' | 'tracks' | 'dashboard' | 'duplicates'>('search');
   const [librarySearchFilter, setLibrarySearchFilter] = useState<string>('');
 
   // Duplicate groups calculation
@@ -506,6 +507,19 @@ export default function App() {
             onBatchUpdateCDs={handleApplyBatchAITags}
             onNavigateToSpreadsheet={() => setActiveTab('database')}
             onOpenPDFCatalog={handleOpenPDFCatalog}
+            onOpenTagManager={() => setIsTagManagerOpen(true)}
+          />
+        )}
+
+        {/* TAB 3.5: CROSS-CD TRACK SEARCH & CUSTOM SETLIST BUILDER */}
+        {activeTab === 'tracks' && (
+          <TrackSearchAndSetlistView
+            cds={savedCDs}
+            onSelectCD={(cd, list) => {
+              setSelectedCDForModal(cd);
+              setModalCDList(list || savedCDs);
+            }}
+            onBatchUpdateCDs={handleApplyBatchAITags}
           />
         )}
 

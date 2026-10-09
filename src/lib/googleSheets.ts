@@ -1066,7 +1066,13 @@ export function parseSpreadsheetRowsToCDs(
         list.push(trackObj);
         tracksByCatNo.set(catNo, list);
       }
-      if (albumName) {
+      if (albumName && artist) {
+        const keyByAlbumArtist = `title_artist:${albumName}::${artist.toLowerCase()}`;
+        const listByAlbumArtist = tracksByCatNo.get(keyByAlbumArtist) || [];
+        listByAlbumArtist.push(trackObj);
+        tracksByCatNo.set(keyByAlbumArtist, listByAlbumArtist);
+      }
+      if (albumName && !catNo) {
         const listByAlbum = tracksByCatNo.get(`title:${albumName}`) || [];
         listByAlbum.push(trackObj);
         tracksByCatNo.set(`title:${albumName}`, listByAlbum);
@@ -1201,10 +1207,12 @@ export function parseSpreadsheetRowsToCDs(
     }
 
     // Standard Album Row Mode:
-    // Priority 1: From relational "収録曲リスト" sheet keyed by catalogNumber or title
+    // Priority 1: From relational "収録曲リスト" sheet keyed by catalogNumber or title+artist or title
     let tracks: TrackInfo[] = [];
     if (catalogNumber && tracksByCatNo.has(catalogNumber)) {
       tracks = tracksByCatNo.get(catalogNumber) || [];
+    } else if (title && artist && tracksByCatNo.has(`title_artist:${title.toLowerCase()}::${artist.toLowerCase()}`)) {
+      tracks = tracksByCatNo.get(`title_artist:${title.toLowerCase()}::${artist.toLowerCase()}`) || [];
     } else if (title && tracksByCatNo.has(`title:${title.toLowerCase()}`)) {
       tracks = tracksByCatNo.get(`title:${title.toLowerCase()}`) || [];
     } else if (title && tracksByCatNo.has(title.toLowerCase())) {
