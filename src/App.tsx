@@ -19,6 +19,7 @@ import { DashboardView } from './components/DashboardView';
 import { DuplicateCheckView } from './components/DuplicateCheckView';
 import { JacketGalleryView } from './components/JacketGalleryView';
 import { PDFCatalogModal } from './components/PDFCatalogModal';
+import { TagManagerModal } from './components/TagManagerModal';
 import { CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -75,6 +76,7 @@ export default function App() {
   const [aiTaggingSelectedCDs, setAiTaggingSelectedCDs] = useState<CDMetadata[]>([]);
   const [isPDFCatalogOpen, setIsPDFCatalogOpen] = useState(false);
   const [pdfCatalogSelectedCDs, setPdfCatalogSelectedCDs] = useState<CDMetadata[]>([]);
+  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -193,10 +195,11 @@ export default function App() {
   };
 
   // Save single CD to DB
-  const handleSaveCDToDB = async (cd: CDMetadata) => {
-    await saveCD(cd);
+  const handleSaveCDToDB = async (cd: CDMetadata): Promise<CDMetadata> => {
+    const saved = await saveCD(cd);
     await loadLocalLibrary();
-    showToast(`「${cd.title}」をライブラリに保存しました`);
+    showToast(`「${saved.title}」をライブラリに保存しました`);
+    return saved;
   };
 
   const handleOpenManualAdd = () => {
@@ -483,6 +486,7 @@ export default function App() {
             onOpenBatchModal={() => setIsBatchModalOpen(true)}
             onOpenAITagging={handleOpenAITagging}
             onOpenPDFCatalog={handleOpenPDFCatalog}
+            onOpenTagManager={() => setIsTagManagerOpen(true)}
             onBatchUpdateCDs={handleApplyBatchAITags}
             initialSearchKeyword={librarySearchFilter}
           />
@@ -496,7 +500,9 @@ export default function App() {
               setSelectedCDForModal(cd);
               setModalCDList(list || savedCDs);
             }}
-            onSaveCD={handleSaveCDToDB}
+            onSaveCD={async (cd) => {
+              await handleSaveCDToDB(cd);
+            }}
             onBatchUpdateCDs={handleApplyBatchAITags}
             onNavigateToSpreadsheet={() => setActiveTab('database')}
             onOpenPDFCatalog={handleOpenPDFCatalog}
@@ -547,13 +553,14 @@ export default function App() {
             setModalCDList([]);
           }}
           onSaveCD={async (updatedCD) => {
-            await handleSaveCDToDB(updatedCD);
-            setModalCDList((prev) => prev.map((c) => (c.id === updatedCD.id ? updatedCD : c)));
-            setSelectedCDForModal(updatedCD);
+            const saved = await handleSaveCDToDB(updatedCD);
+            setModalCDList((prev) => prev.map((c) => (c.id === saved.id ? saved : c)));
+            setSelectedCDForModal(saved);
           }}
           onOpenPDFCatalog={(singleCD) => {
             handleOpenPDFCatalog([singleCD]);
           }}
+          onOpenTagManager={() => setIsTagManagerOpen(true)}
           isSaved={savedCDIds.includes(selectedCDForModal.id)}
           currentIndex={currentModalIndex >= 0 ? currentModalIndex : undefined}
           totalCount={modalCDList.length > 0 ? modalCDList.length : undefined}
@@ -630,6 +637,22 @@ export default function App() {
           onClose={() => setIsAppInfoOpen(false)}
         />
       )}
+
+      {/* Tag Name Add / Rename / Manager Modal */}
+      <TagManagerModal
+        isOpen={isTagManagerOpen}
+        onClose={() => setIsTagManagerOpen(false)}
+        allCDs={savedCDs}
+        onBatchUpdateCDs={async (updatedCDs) => {
+          await handleApplyBatchAITags(updatedCDs);
+          if (selectedCDForModal) {
+            const match = updatedCDs.find((c) => c.id === selectedCDForModal.id);
+            if (match) {
+              setSelectedCDForModal(match);
+            }
+          }
+        }}
+      />
 
     </div>
   );

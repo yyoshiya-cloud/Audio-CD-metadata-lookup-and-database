@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CDMetadata } from '../types/cd';
 import { normalizeTagList, normalizeSingleTag, normalizeCDTagsAndGenre } from '../lib/tagNormalizer';
+import { loadTagPresetsDB, saveTagPresetsDB, DEFAULT_TAG_PRESETS } from '../lib/db';
 import {
   X,
   Tag,
@@ -22,33 +23,6 @@ interface BatchEditModalProps {
   onBatchUpdateCDs: (updatedCDs: CDMetadata[]) => Promise<void>;
 }
 
-const PRESET_TAGS = [
-  'J-Pop',
-  'アイドル',
-  'シティポップ',
-  '昭和歌謡',
-  'ニューミュージック',
-  'ロック',
-  'フォーク',
-  'アニソン',
-  'シンガーソングライター',
-  'バラード',
-  'ベスト盤',
-  'ライブ盤',
-  'AOR',
-  'テクノポップ',
-  'ジャズ',
-  'フュージョン',
-  'R&B',
-  'CMソング',
-  'サウンドトラック',
-  '1970年代',
-  '1980年代',
-  '1990年代',
-  '2000年代',
-  '邦楽',
-];
-
 type TagEditMode = 'add' | 'remove' | 'replace' | 'keep';
 type NotesEditMode = 'keep' | 'append' | 'overwrite' | 'clear';
 
@@ -62,6 +36,7 @@ export const BatchEditModal: React.FC<BatchEditModalProps> = ({
   const [tagMode, setTagMode] = useState<TagEditMode>('add');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [customTagInput, setCustomTagInput] = useState('');
+  const [customPresets, setCustomPresets] = useState<string[]>(DEFAULT_TAG_PRESETS);
 
   const [updateGenreToo, setUpdateGenreToo] = useState(false);
   const [genreValue, setGenreValue] = useState('');
@@ -71,11 +46,17 @@ export const BatchEditModal: React.FC<BatchEditModalProps> = ({
 
   const [isSaving, setIsSaving] = useState(false);
 
+  useEffect(() => {
+    if (isOpen) {
+      loadTagPresetsDB().then((loaded) => setCustomPresets(loaded));
+    }
+  }, [isOpen]);
+
   // Collect existing tags across selected CDs and across the entire library
   const existingTagsInSelected = useMemo(() => {
     const map = new Map<string, number>();
     selectedCDs.forEach((cd) => {
-      const norms = normalizeTagList(cd.tags || []);
+      const norms = normalizeTagList(cd.tags || [], { preserveCustomName: true });
       norms.forEach((t) => {
         map.set(t, (map.get(t) || 0) + 1);
       });
@@ -84,17 +65,17 @@ export const BatchEditModal: React.FC<BatchEditModalProps> = ({
   }, [selectedCDs]);
 
   const allAvailableQuickTags = useMemo(() => {
-    const set = new Set<string>(PRESET_TAGS);
+    const set = new Set<string>(customPresets);
     allCDs.forEach((cd) => {
-      normalizeTagList(cd.tags || []).forEach((t) => set.add(t));
+      normalizeTagList(cd.tags || [], { preserveCustomName: true }).forEach((t) => set.add(t));
     });
     return Array.from(set);
-  }, [allCDs]);
+  }, [allCDs, customPresets]);
 
   if (!isOpen || selectedCDs.length === 0) return null;
 
   const toggleTagSelection = (rawTag: string) => {
-    const norm = normalizeSingleTag(rawTag);
+    const norm = normalizeSingleTag(rawTag, { preserveCustomName: true });
     if (!norm) return;
     setSelectedTags((prev) =>
       prev.includes(norm) ? prev.filter((t) => t !== norm) : [...prev, norm]
@@ -107,9 +88,14 @@ export const BatchEditModal: React.FC<BatchEditModalProps> = ({
       customTagInput
         .split(/[,、]/)
         .map((t) => t.trim())
-        .filter(Boolean)
+        .filter(Boolean),
+      { preserveCustomName: true }
     );
     if (parsed.length === 0) return;
+
+    const nextPresets = Array.from(new Set([...parsed, ...customPresets]));
+    setCustomPresets(nextPresets);
+    saveTagPresetsDB(nextPresets);
 
     setSelectedTags((prev) => {
       const next = [...prev];
@@ -125,23 +111,26 @@ export const BatchEditModal: React.FC<BatchEditModalProps> = ({
     if (isSaving) return;
     setIsSaving(true);
     try {
-      const normRemove = normalizeSingleTag(tagToRemove);
+      const normRemove = normalizeSingleTag(tagToRemove, { preserveCustomName: true });
       const updatedList: CDMetadata[] = selectedCDs.map((cd) => {
-        const currentTags = normalizeTagList(cd.tags || []);
+        const currentTags = normalizeTagList(cd.tags || [], { preserveCustomName: true });
         const nextTags = currentTags.filter((t) => t !== normRemove);
-        let nextGenre = cd.genre ? normalizeSingleTag(cd.genre) : cd.genre;
+        let nextGenre = cd.genre ? normalizeSingleTag(cd.genre, { preserveCustomName: true }) : cd.genre;
         if (nextGenre === normRemove) {
           nextGenre =
             nextTags.find((t) => !/^(19\d0|20\d0|[56789]0)年代$/.test(t) && t !== '邦楽') ||
             nextTags[0] ||
             '';
         }
-        return normalizeCDTagsAndGenre({
-          ...cd,
-          tags: nextTags,
-          genre: nextGenre,
-          updatedAt: new Date().toISOString(),
-        });
+        return normalizeCDTagsAndGenre(
+          {
+            ...cd,
+            tags: nextTags,
+            genre: nextGenre,
+            updatedAt: new Date().toISOString(),
+          },
+          { preserveUserTags: true }
+        );
       });
 
       await onBatchUpdateCDs(updatedList);
@@ -160,21 +149,28 @@ export const BatchEditModal: React.FC<BatchEditModalProps> = ({
           customTagInput
             .split(/[,、]/)
             .map((t) => t.trim())
-            .filter(Boolean)
+            .filter(Boolean),
+          { preserveCustomName: true }
         )
       : [];
-    const targetTags = normalizeTagList([...selectedTags, ...pendingCustom]);
+    const targetTags = normalizeTagList([...selectedTags, ...pendingCustom], { preserveCustomName: true });
+
+    if (pendingCustom.length > 0) {
+      const nextPresets = Array.from(new Set([...pendingCustom, ...customPresets]));
+      setCustomPresets(nextPresets);
+      saveTagPresetsDB(nextPresets);
+    }
 
     setIsSaving(true);
     try {
       const nowIso = new Date().toISOString();
 
       const updatedCDs: CDMetadata[] = selectedCDs.map((cd) => {
-        const currentTags = normalizeTagList(cd.tags || []);
+        const currentTags = normalizeTagList(cd.tags || [], { preserveCustomName: true });
         let nextTags = [...currentTags];
 
         if (tagMode === 'add' && targetTags.length > 0) {
-          nextTags = normalizeTagList([...currentTags, ...targetTags]);
+          nextTags = normalizeTagList([...currentTags, ...targetTags], { preserveCustomName: true });
         } else if (tagMode === 'remove' && targetTags.length > 0) {
           const removeSet = new Set(targetTags);
           nextTags = currentTags.filter((t) => !removeSet.has(t));
@@ -183,11 +179,11 @@ export const BatchEditModal: React.FC<BatchEditModalProps> = ({
         }
 
         // Sync genre if needed
-        let nextGenre = cd.genre ? normalizeSingleTag(cd.genre) : cd.genre;
+        let nextGenre = cd.genre ? normalizeSingleTag(cd.genre, { preserveCustomName: true }) : cd.genre;
         if (updateGenreToo) {
-          nextGenre = genreValue.trim() ? normalizeSingleTag(genreValue.trim()) : '';
+          nextGenre = genreValue.trim() ? normalizeSingleTag(genreValue.trim(), { preserveCustomName: true }) : '';
           if (nextGenre && !nextTags.includes(nextGenre)) {
-            nextTags = normalizeTagList([nextGenre, ...nextTags]);
+            nextTags = normalizeTagList([nextGenre, ...nextTags], { preserveCustomName: true });
           }
         } else if (tagMode === 'remove' && nextGenre && targetTags.includes(nextGenre)) {
           nextGenre =
@@ -212,13 +208,16 @@ export const BatchEditModal: React.FC<BatchEditModalProps> = ({
           nextNotes = '';
         }
 
-        return normalizeCDTagsAndGenre({
-          ...cd,
-          tags: nextTags,
-          genre: nextGenre,
-          notes: nextNotes,
-          updatedAt: nowIso,
-        });
+        return normalizeCDTagsAndGenre(
+          {
+            ...cd,
+            tags: nextTags,
+            genre: nextGenre,
+            notes: nextNotes,
+            updatedAt: nowIso,
+          },
+          { preserveUserTags: true }
+        );
       });
 
       await onBatchUpdateCDs(updatedCDs);

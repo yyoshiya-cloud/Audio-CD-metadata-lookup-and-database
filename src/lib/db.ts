@@ -31,8 +31,11 @@ export class CDCatalogDexieDB extends Dexie {
 
 export const db = new CDCatalogDexieDB();
 
-export function normalizeCDRecord(cd: CDMetadata): CDMetadata {
-  const withUnifiedTags = normalizeCDTagsAndGenre(cd);
+export function normalizeCDRecord(
+  cd: CDMetadata,
+  options?: { preserveUserTags?: boolean }
+): CDMetadata {
+  const withUnifiedTags = normalizeCDTagsAndGenre(cd, options);
   return {
     ...withUnifiedTags,
     catalogNumber: normalizeCatalogNumber(withUnifiedTags.catalogNumber),
@@ -190,10 +193,11 @@ export async function getAllCDs(): Promise<CDMetadata[]> {
 /**
  * Save single CD to Dexie IndexedDB (automatically converts external image URL to Base64)
  */
-export async function saveCD(cd: CDMetadata): Promise<void> {
+export async function saveCD(cd: CDMetadata): Promise<CDMetadata> {
   const withBase64 = await ensureCDCoverBase64(cd);
-  const normalized = normalizeCDRecord(withBase64);
+  const normalized = normalizeCDRecord(withBase64, { preserveUserTags: true });
   await db.cds.put(normalized);
+  return normalized;
 }
 
 /**
@@ -222,7 +226,7 @@ export async function saveMultipleCDs(
 ): Promise<void> {
   if (cds.length === 0) return;
   const convertedList = await convertCDListCoversToBase64(cds);
-  const normalizedList = convertedList.map(normalizeCDRecord);
+  const normalizedList = convertedList.map((item) => normalizeCDRecord(item, { preserveUserTags: true }));
 
   // Process in chunks of 200 for responsive progress reporting on huge collections
   const CHUNK_SIZE = 200;
@@ -246,7 +250,7 @@ export async function saveMultipleCDs(
 export async function importCDs(cds: CDMetadata[]): Promise<void> {
   if (cds.length === 0) return;
   const convertedList = await convertCDListCoversToBase64(cds);
-  const normalizedList = convertedList.map(normalizeCDRecord);
+  const normalizedList = convertedList.map((item) => normalizeCDRecord(item));
   await db.transaction('rw', db.cds, async () => {
     await db.cds.bulkPut(normalizedList);
   });
@@ -325,5 +329,72 @@ export async function loadApiCredentialsDB(): Promise<APICredentials> {
   } catch {}
 
   return {};
+}
+
+export const DEFAULT_TAG_PRESETS: string[] = [
+  'J-Pop',
+  'アイドル',
+  'シティポップ',
+  '昭和歌謡',
+  'ニューミュージック',
+  'ロック',
+  'フォーク',
+  'アニソン',
+  'シンガーソングライター',
+  'バラード',
+  'ベスト盤',
+  'ライブ盤',
+  'AOR',
+  'テクノポップ',
+  'ジャズ',
+  'フュージョン',
+  'R&B',
+  'CMソング',
+  'サウンドトラック',
+  'クラシック',
+  '演歌',
+  'お笑い・バラエティ',
+  '1970年代',
+  '1980年代',
+  '1990年代',
+  '2000年代',
+  '邦楽',
+];
+
+/**
+ * Load user-defined Tag Master List from Dexie settings table (or localStorage fallback)
+ */
+export async function loadTagPresetsDB(): Promise<string[]> {
+  try {
+    const record = await db.settings.get('customTagPresets');
+    if (record && Array.isArray(record.value) && record.value.length > 0) {
+      return record.value as string[];
+    }
+  } catch {}
+  try {
+    const saved = localStorage.getItem('cd_custom_tag_presets');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return DEFAULT_TAG_PRESETS;
+}
+
+/**
+ * Save user-defined Tag Master List to Dexie settings table and localStorage
+ */
+export async function saveTagPresetsDB(presets: string[]): Promise<void> {
+  const cleaned = Array.from(new Set(presets.map((t) => t.trim()).filter(Boolean)));
+  try {
+    await db.settings.put({
+      key: 'customTagPresets',
+      value: cleaned,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {}
+  try {
+    localStorage.setItem('cd_custom_tag_presets', JSON.stringify(cleaned));
+  } catch {}
 }
 

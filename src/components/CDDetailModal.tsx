@@ -2,15 +2,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import { CDMetadata, TrackInfo, APISource, AITagAnalysisMetadata } from '../types/cd';
 import { getJSTISOString, normalizeCatalogNumber, normalizeReleaseDate } from '../lib/dateUtils';
 import { normalizeSingleTag, normalizeTagList, applyGenreRuleFilter } from '../lib/tagNormalizer';
+import { loadTagPresetsDB, saveTagPresetsDB, DEFAULT_TAG_PRESETS } from '../lib/db';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
 import { enhanceImageWithCanvas, convertImageUrlToBase64 } from '../utils/imageEnhancer';
-import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2, BookOpen, Tag, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
+import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2, BookOpen, Tag, ChevronDown, ChevronUp, ShieldCheck, Plus, Edit3 } from 'lucide-react';
 
 interface CDDetailModalProps {
   cd: CDMetadata | null;
   onClose: () => void;
   onSaveCD: (updatedCD: CDMetadata) => void;
   onOpenPDFCatalog?: (cd: CDMetadata) => void;
+  onOpenTagManager?: () => void;
   isSaved?: boolean;
   currentIndex?: number;
   totalCount?: number;
@@ -23,6 +25,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   onClose,
   onSaveCD,
   onOpenPDFCatalog,
+  onOpenTagManager,
   isSaved,
   currentIndex,
   totalCount,
@@ -51,7 +54,15 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [aiTagAnalysis, setAiTagAnalysis] = useState<AITagAnalysisMetadata | undefined>(cd.aiTagAnalysis);
   const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
   const [showTagEvidenceDetails, setShowTagEvidenceDetails] = useState(true);
+  const [tagPresets, setTagPresets] = useState<string[]>(DEFAULT_TAG_PRESETS);
+  const [newSingleTagInput, setNewSingleTagInput] = useState('');
+  const [editingPillIndex, setEditingPillIndex] = useState<number | null>(null);
+  const [editingPillValue, setEditingPillValue] = useState('');
   const [tracks, setTracks] = useState<TrackInfo[]>(cd.tracks || []);
+
+  useEffect(() => {
+    loadTagPresetsDB().then((loaded) => setTagPresets(loaded));
+  }, []);
   const [bulkTrackText, setBulkTrackText] = useState('');
   const [showBulkPasteInput, setShowBulkPasteInput] = useState(false);
   const [activeTab, setActiveTab] = useState<'edit' | 'tracks' | 'sourceComparison'>('edit');
@@ -61,10 +72,13 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [isConvertingBase64, setIsConvertingBase64] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadedCdIdRef = useRef<string | null>(cd.id);
+  const [isDirty, setIsDirty] = useState(false);
 
-  // Synchronize state whenever navigating to a different CD
+  // Synchronize state only when navigating to a different CD
   useEffect(() => {
-    if (cd) {
+    if (cd && cd.id !== loadedCdIdRef.current) {
+      loadedCdIdRef.current = cd.id;
       setTitle(cd.title || '');
       setArtist(cd.artist || '');
       setCatalogNumber(cd.catalogNumber || '');
@@ -83,6 +97,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       setTracks(cd.tracks || []);
       setBulkTrackText('');
       setShowBulkPasteInput(false);
+      setIsDirty(false);
     }
   }, [cd?.id, cd]);
 
@@ -105,21 +120,21 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       if (e.key === 'ArrowLeft') {
         if (onNavigatePrev) {
           e.preventDefault();
-          onNavigatePrev();
+          handlePrevWithAutoSave();
         }
       } else if (e.key === 'ArrowRight') {
         if (onNavigateNext) {
           e.preventDefault();
-          onNavigateNext();
+          handleNextWithAutoSave();
         }
       } else if (e.key === 'Escape') {
-        onClose();
+        handleCloseWithAutoSave();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onNavigatePrev, onNavigateNext, onClose]);
+  }, [onNavigatePrev, onNavigateNext, onClose, isDirty, isSaved, tagsInput, genre, aiTagAnalysis, title, artist, catalogNumber, label, releaseDate, vinylRecordReleaseDate, vinylRecordFormat, vinylRecordCatalogNumber, barcode, notes, tracks, coverUrl]);
 
   const normalizeToYYYYMMDD = (raw?: string | null): string => {
     if (!raw) return '';
@@ -196,8 +211,8 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
               vinylRecordFormat,
               vinylRecordCatalogNumber,
               barcode,
-              country,
-              format,
+              country: cd.country,
+              format: cd.format,
               tracks: tracks.slice(0, 12),
               genre,
               existingTags,
@@ -247,8 +262,8 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
             vinylRecordFormat,
             vinylRecordCatalogNumber,
             barcode,
-            country,
-            format,
+            country: cd.country,
+            format: cd.format,
             tracks,
             genre,
             notes,
@@ -267,7 +282,8 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
           }
         }
 
-        setTagsInput(clientRuleFiltered.suggestedTags.join(', '));
+        const newTagsString = clientRuleFiltered.suggestedTags.join(', ');
+        setTagsInput(newTagsString);
         const unifiedGenre = clientRuleFiltered.genre || normalizeSingleTag(item.genre || genre);
         if (unifiedGenre) setGenre(unifiedGenre);
 
@@ -283,8 +299,36 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
         };
         setAiTagAnalysis(newAnalysis);
         setShowTagEvidenceDetails(true);
-        setSaveSuccessMessage('AIによる自動タグ付けと複合メタデータ検証が完了しました！「保存」を押すとDBに永続保存されます。');
-        setTimeout(() => setSaveSuccessMessage(null), 4500);
+
+        const autoSavedCD: CDMetadata = {
+          ...cd,
+          title,
+          artist,
+          catalogNumber: normalizeCatalogNumber(catalogNumber),
+          label,
+          releaseDate: releaseDate ? normalizeToYYYYMMDD(releaseDate) : undefined,
+          vinylRecordReleaseDate: vinylRecordReleaseDate ? normalizeToYYYYMMDD(vinylRecordReleaseDate) : undefined,
+          vinylRecordFormat: vinylRecordReleaseDate ? vinylRecordFormat : undefined,
+          vinylRecordCatalogNumber: vinylRecordCatalogNumber ? normalizeCatalogNumber(vinylRecordCatalogNumber) : undefined,
+          barcode,
+          notes,
+          genre: unifiedGenre || '',
+          tracks: tracks.map((tr) => ({
+            ...tr,
+            duration: formatTrackDuration(tr.duration || ''),
+          })),
+          coverUrl,
+          tags: clientRuleFiltered.suggestedTags,
+          aiTagAnalysis: newAnalysis,
+          updatedAt: getJSTISOString(),
+        };
+        onSaveCD(autoSavedCD);
+        setIsSavedState(true);
+        setSaveSuccessMessage('AIによる自動タグ付けと複合メタデータ検証が完了し、DBに自動保存しました！');
+        setTimeout(() => {
+          setIsSavedState(false);
+          setSaveSuccessMessage(null);
+        }, 4500);
       }
     } catch (err) {
       console.error('Single CD AI tag analysis error:', err);
@@ -381,17 +425,46 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       }
     }
 
-    const finalTags = normalizeTagList(tagsInput.split(',').map((t) => t.trim()).filter(Boolean));
+    const finalTags = normalizeTagList(
+      tagsInput.split(/[,、]/).map((t) => t.trim()).filter(Boolean),
+      { preserveCustomName: true }
+    );
     const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
-    let finalGenre = genre ? normalizeSingleTag(genre) : (cd.genre ? normalizeSingleTag(cd.genre) : undefined);
-    if (finalTags.length > 0 && finalGenre) {
-      const genreParts = normalizeTagList([finalGenre]);
-      if (!genreParts.some((g) => finalTags.includes(g))) {
+    let finalGenre = genre
+      ? normalizeSingleTag(genre, { preserveCustomName: true })
+      : cd.genre
+      ? normalizeSingleTag(cd.genre, { preserveCustomName: true })
+      : undefined;
+    if (finalTags.length > 0) {
+      if (finalGenre) {
+        const genreParts = normalizeTagList([finalGenre], { preserveCustomName: true });
+        if (!genreParts.some((g) => finalTags.includes(g))) {
+          finalGenre = finalTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || finalTags[0];
+        }
+      } else {
         finalGenre = finalTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || finalTags[0];
       }
-    } else if (finalTags.length === 0) {
+    } else {
       finalGenre = '';
     }
+
+    const updatedAiTagAnalysis: AITagAnalysisMetadata | undefined = aiTagAnalysis
+      ? {
+          ...aiTagAnalysis,
+          genre: finalTags.length > 0 ? (finalGenre || '') : '',
+          subGenre:
+            aiTagAnalysis.subGenre && finalTags.includes(normalizeSingleTag(aiTagAnalysis.subGenre, { preserveCustomName: true }))
+              ? normalizeSingleTag(aiTagAnalysis.subGenre, { preserveCustomName: true })
+              : undefined,
+          tagEvidence: (aiTagAnalysis.tagEvidence || []).filter((ev) =>
+            finalTags.includes(normalizeSingleTag(ev.tag, { preserveCustomName: true }))
+          ),
+        }
+      : undefined;
+
+    setTagsInput(finalTags.join(', '));
+    setGenre(finalGenre || '');
+    setAiTagAnalysis(updatedAiTagAnalysis);
 
     const updatedCD: CDMetadata = {
       ...cd,
@@ -412,24 +485,102 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       })),
       coverUrl: finalCoverUrl,
       tags: finalTags,
-      aiTagAnalysis: aiTagAnalysis
-        ? {
-            ...aiTagAnalysis,
-            genre: finalGenre || aiTagAnalysis.genre,
-            tagEvidence: (aiTagAnalysis.tagEvidence || []).filter((ev) =>
-              finalTags.includes(normalizeSingleTag(ev.tag))
-            ),
-          }
-        : undefined,
+      aiTagAnalysis: updatedAiTagAnalysis,
       updatedAt: getJSTISOString(),
     };
     onSaveCD(updatedCD);
+    setIsDirty(false);
     setIsSavedState(true);
     setSaveSuccessMessage('保存が完了しました！（LP/EPレコード発売日・ジャケット画像・タグ分類根拠を保存済）');
     setTimeout(() => {
       setIsSavedState(false);
       setSaveSuccessMessage(null);
     }, 3000);
+  };
+
+  const buildCurrentUpdatedCD = (): CDMetadata => {
+    const finalTags = normalizeTagList(
+      tagsInput.split(/[,、]/).map((t) => t.trim()).filter(Boolean),
+      { preserveCustomName: true }
+    );
+    const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+    let finalGenre = genre
+      ? normalizeSingleTag(genre, { preserveCustomName: true })
+      : cd.genre
+      ? normalizeSingleTag(cd.genre, { preserveCustomName: true })
+      : undefined;
+    if (finalTags.length > 0) {
+      if (finalGenre) {
+        const genreParts = normalizeTagList([finalGenre], { preserveCustomName: true });
+        if (!genreParts.some((g) => finalTags.includes(g))) {
+          finalGenre = finalTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || finalTags[0];
+        }
+      } else {
+        finalGenre = finalTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || finalTags[0];
+      }
+    } else {
+      finalGenre = '';
+    }
+
+    const updatedAiTagAnalysis: AITagAnalysisMetadata | undefined = aiTagAnalysis
+      ? {
+          ...aiTagAnalysis,
+          genre: finalTags.length > 0 ? (finalGenre || '') : '',
+          subGenre:
+            aiTagAnalysis.subGenre && finalTags.includes(normalizeSingleTag(aiTagAnalysis.subGenre, { preserveCustomName: true }))
+              ? normalizeSingleTag(aiTagAnalysis.subGenre, { preserveCustomName: true })
+              : undefined,
+          tagEvidence: (aiTagAnalysis.tagEvidence || []).filter((ev) =>
+            finalTags.includes(normalizeSingleTag(ev.tag, { preserveCustomName: true }))
+          ),
+        }
+      : undefined;
+
+    return {
+      ...cd,
+      title,
+      artist,
+      catalogNumber: normalizeCatalogNumber(catalogNumber),
+      label,
+      releaseDate: releaseDate ? normalizeToYYYYMMDD(releaseDate) : undefined,
+      vinylRecordReleaseDate: vinylRecordReleaseDate ? normalizeToYYYYMMDD(vinylRecordReleaseDate) : undefined,
+      vinylRecordFormat: vinylRecordReleaseDate ? vinylRecordFormat : undefined,
+      vinylRecordCatalogNumber: vinylRecordCatalogNumber ? normalizeCatalogNumber(vinylRecordCatalogNumber) : undefined,
+      barcode,
+      notes,
+      genre: finalGenre,
+      tracks: tracks.map((tr) => ({
+        ...tr,
+        duration: formatTrackDuration(tr.duration || ''),
+      })),
+      coverUrl: coverUrl.trim(),
+      tags: finalTags,
+      aiTagAnalysis: updatedAiTagAnalysis,
+      updatedAt: getJSTISOString(),
+    };
+  };
+
+  const handleCloseWithAutoSave = () => {
+    if (isSaved && isDirty) {
+      onSaveCD(buildCurrentUpdatedCD());
+    }
+    onClose();
+  };
+
+  const handlePrevWithAutoSave = () => {
+    if (!onNavigatePrev) return;
+    if (isSaved && isDirty) {
+      onSaveCD(buildCurrentUpdatedCD());
+    }
+    onNavigatePrev();
+  };
+
+  const handleNextWithAutoSave = () => {
+    if (!onNavigateNext) return;
+    if (isSaved && isDirty) {
+      onSaveCD(buildCurrentUpdatedCD());
+    }
+    onNavigateNext();
   };
 
   const compressImageFile = (file: File, maxSide = 600, quality = 0.82): Promise<string> => {
@@ -752,7 +903,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
               <div className="flex items-center bg-slate-900/90 border border-slate-700/80 rounded-xl p-1 shadow-inner gap-1">
                 <button
                   type="button"
-                  onClick={onNavigatePrev}
+                  onClick={handlePrevWithAutoSave}
                   disabled={!onNavigatePrev}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                     onNavigatePrev
@@ -779,7 +930,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={onNavigateNext}
+                  onClick={handleNextWithAutoSave}
                   disabled={!onNavigateNext}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                     onNavigateNext
@@ -795,7 +946,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
             )}
 
             <button
-              onClick={onClose}
+              onClick={handleCloseWithAutoSave}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               title="閉じる (Esc)"
             >
@@ -1313,67 +1464,400 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     <Tag className="w-3.5 h-3.5 text-purple-400" />
                     <span>タグ (カンマ区切り) ＆ AI自動分類根拠</span>
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleAnalyzeSingleCDTags}
-                    disabled={isAnalyzingTags}
-                    className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white border border-purple-400/40 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
-                    title="このCDのタイトル・歌手・収録曲・発売日・規格品番からAIがタグと分類根拠（ジャンル選定理由・音楽的特徴）を自動生成します"
-                  >
-                    {isAnalyzingTags ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-200" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5 text-purple-200" />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {onOpenTagManager && (
+                      <button
+                        type="button"
+                        onClick={onOpenTagManager}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                        title="タグ名称の追加・一括名称変更・管理モーダルを開く"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>タグ名称の追加・変更管理</span>
+                      </button>
                     )}
-                    <span>
-                      {isAnalyzingTags
-                        ? 'AIがタグと根拠を分析中...'
-                        : aiTagAnalysis
-                        ? '✨ AIタグ＆分類根拠を再分析'
-                        : '✨ AIでタグ＆分類根拠を自動生成'}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleAnalyzeSingleCDTags}
+                      disabled={isAnalyzingTags}
+                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white border border-purple-400/40 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                      title="このCDのタイトル・歌手・収録曲・発売日・規格品番からAIがタグと分類根拠（ジャンル選定理由・音楽的特徴）を自動生成します"
+                    >
+                      {isAnalyzingTags ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-200" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5 text-purple-200" />
+                      )}
+                      <span>
+                        {isAnalyzingTags
+                          ? 'AIがタグと根拠を分析中...'
+                          : aiTagAnalysis
+                          ? '✨ AIタグ＆分類根拠を再分析'
+                          : '✨ AIでタグ＆分類根拠を自動生成'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
-                <input
-                  type="text"
-                  value={tagsInput}
-                  onChange={(e) => setTagsInput(e.target.value)}
-                  placeholder="J-POP, 80年代, 初回盤"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
-                />
+                {/* Comma-separated Tag Input + Quick Add New Tag Name */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={tagsInput}
+                    onChange={(e) => {
+                      const nextVal = e.target.value;
+                      setTagsInput(nextVal);
+                      setIsDirty(true);
+                      const parsedTags = normalizeTagList(
+                        nextVal.split(/[,、]/).map((t) => t.trim()).filter(Boolean),
+                        { preserveCustomName: true }
+                      );
+                      const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+                      if (parsedTags.length === 0) {
+                        setGenre('');
+                        setAiTagAnalysis((prev) =>
+                          prev ? { ...prev, genre: '', subGenre: undefined } : prev
+                        );
+                      } else {
+                        const nextPrimary =
+                          parsedTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || parsedTags[0];
+                        if (!genre || !parsedTags.includes(normalizeSingleTag(genre, { preserveCustomName: true }))) {
+                          setGenre(nextPrimary);
+                        }
+                        setAiTagAnalysis((prev) => {
+                          if (!prev) return prev;
+                          const currentG = prev.genre ? normalizeSingleTag(prev.genre, { preserveCustomName: true }) : '';
+                          const updatedG = currentG && parsedTags.includes(currentG) ? currentG : nextPrimary;
+                          const updatedSub =
+                            prev.subGenre && parsedTags.includes(normalizeSingleTag(prev.subGenre, { preserveCustomName: true }))
+                              ? prev.subGenre
+                              : undefined;
+                          return {
+                            ...prev,
+                            genre: updatedG,
+                            subGenre: updatedSub,
+                          };
+                        });
+                      }
+                    }}
+                    placeholder="J-Pop, 80年代, 初回盤 (直接入力または下のタグ候補・追加欄から編集)"
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  />
 
-                {/* Interactive Tag Pills */}
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={newSingleTagInput}
+                      onChange={(e) => setNewSingleTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const cleaned = normalizeSingleTag(newSingleTagInput, { preserveCustomName: true });
+                          if (!cleaned) return;
+                          const currentTags = normalizeTagList(
+                            tagsInput.split(/[,、]/).map((t) => t.trim()).filter(Boolean),
+                            { preserveCustomName: true }
+                          );
+                          const nextTags = currentTags.includes(cleaned)
+                            ? currentTags
+                            : [...currentTags, cleaned];
+                          const nextStr = nextTags.join(', ');
+                          setTagsInput(nextStr);
+                          setNewSingleTagInput('');
+                          setIsDirty(true);
+                          if (!tagPresets.includes(cleaned)) {
+                            const nextPresets = [cleaned, ...tagPresets];
+                            setTagPresets(nextPresets);
+                            saveTagPresetsDB(nextPresets);
+                          }
+                          const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+                          const nextPrimary =
+                            nextTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || nextTags[0] || '';
+                          if (!genre) setGenre(nextPrimary);
+                          setAiTagAnalysis((prev) =>
+                            prev ? { ...prev, genre: prev.genre || nextPrimary } : prev
+                          );
+                        }
+                      }}
+                      placeholder="新しいタグ名を入力..."
+                      className="w-40 sm:w-44 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cleaned = normalizeSingleTag(newSingleTagInput, { preserveCustomName: true });
+                        if (!cleaned) return;
+                        const currentTags = normalizeTagList(
+                          tagsInput.split(/[,、]/).map((t) => t.trim()).filter(Boolean),
+                          { preserveCustomName: true }
+                        );
+                        const nextTags = currentTags.includes(cleaned)
+                          ? currentTags
+                          : [...currentTags, cleaned];
+                        const nextStr = nextTags.join(', ');
+                        setTagsInput(nextStr);
+                        setNewSingleTagInput('');
+                        setIsDirty(true);
+                        if (!tagPresets.includes(cleaned)) {
+                          const nextPresets = [cleaned, ...tagPresets];
+                          setTagPresets(nextPresets);
+                          saveTagPresetsDB(nextPresets);
+                        }
+                        const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+                        const nextPrimary =
+                          nextTags.find((t) => !decadeRegex.test(t) && t !== '邦楽') || nextTags[0] || '';
+                        if (!genre) setGenre(nextPrimary);
+                        setAiTagAnalysis((prev) =>
+                          prev ? { ...prev, genre: prev.genre || nextPrimary } : prev
+                        );
+                      }}
+                      disabled={!newSingleTagInput.trim()}
+                      className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+                      title="新しいタグ名称をこのCDとタグ候補リストに追加"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>タグ追加</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Interactive Tag Pills (Click pencil or tag name to rename, × to delete) */}
                 {tagsInput.trim() && (
                   <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                     {tagsInput
-                      .split(',')
+                      .split(/[,、]/)
                       .map((t) => t.trim())
                       .filter(Boolean)
-                      .map((tagItem, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold bg-slate-800 text-indigo-200 border border-slate-700 px-2.5 py-0.5 rounded-full"
-                        >
-                          <span>#{tagItem}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextTags = tagsInput
-                                .split(',')
-                                .map((t) => t.trim())
-                                .filter((t) => t && t !== tagItem);
-                              setTagsInput(nextTags.join(', '));
-                            }}
-                            className="text-slate-400 hover:text-rose-400 ml-0.5 font-bold cursor-pointer"
-                            title="このタグを削除"
+                      .map((tagItem, idx) => {
+                        const isEditingPill = editingPillIndex === idx;
+                        if (isEditingPill) {
+                          return (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1 bg-slate-900 border border-indigo-400 px-2 py-0.5 rounded-full"
+                            >
+                              <span className="text-[11px] text-indigo-400 font-bold">#</span>
+                              <input
+                                type="text"
+                                value={editingPillValue}
+                                onChange={(e) => setEditingPillValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const renamed = normalizeSingleTag(editingPillValue, { preserveCustomName: true });
+                                    const list = tagsInput
+                                      .split(/[,、]/)
+                                      .map((t) => t.trim())
+                                      .filter(Boolean);
+                                    if (renamed) {
+                                      list[idx] = renamed;
+                                      if (!tagPresets.includes(renamed)) {
+                                        const nextPresets = [renamed, ...tagPresets];
+                                        setTagPresets(nextPresets);
+                                        saveTagPresetsDB(nextPresets);
+                                      }
+                                    } else {
+                                      list.splice(idx, 1);
+                                    }
+                                    const deduped = normalizeTagList(list, { preserveCustomName: true });
+                                    setTagsInput(deduped.join(', '));
+                                    setIsDirty(true);
+                                    const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+                                    const nextPrimary =
+                                      deduped.find((t) => !decadeRegex.test(t) && t !== '邦楽') || deduped[0] || '';
+                                    setGenre(nextPrimary);
+                                    setAiTagAnalysis((prev) =>
+                                      prev
+                                        ? {
+                                            ...prev,
+                                            genre: prev.genre === tagItem && renamed ? renamed : nextPrimary,
+                                            subGenre:
+                                              prev.subGenre === tagItem && renamed
+                                                ? renamed
+                                                : prev.subGenre && deduped.includes(prev.subGenre)
+                                                ? prev.subGenre
+                                                : undefined,
+                                            tagEvidence: (prev.tagEvidence || []).map((ev) =>
+                                              ev.tag === tagItem && renamed ? { ...ev, tag: renamed } : ev
+                                            ),
+                                          }
+                                        : prev
+                                    );
+                                    setEditingPillIndex(null);
+                                    setEditingPillValue('');
+                                  } else if (e.key === 'Escape') {
+                                    setEditingPillIndex(null);
+                                    setEditingPillValue('');
+                                  }
+                                }}
+                                autoFocus
+                                className="w-24 bg-transparent text-[11px] text-white focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const renamed = normalizeSingleTag(editingPillValue, { preserveCustomName: true });
+                                  const list = tagsInput
+                                    .split(/[,、]/)
+                                    .map((t) => t.trim())
+                                    .filter(Boolean);
+                                  if (renamed) {
+                                    list[idx] = renamed;
+                                    if (!tagPresets.includes(renamed)) {
+                                      const nextPresets = [renamed, ...tagPresets];
+                                      setTagPresets(nextPresets);
+                                      saveTagPresetsDB(nextPresets);
+                                    }
+                                  } else {
+                                    list.splice(idx, 1);
+                                  }
+                                  const deduped = normalizeTagList(list, { preserveCustomName: true });
+                                  setTagsInput(deduped.join(', '));
+                                  setIsDirty(true);
+                                  const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+                                  const nextPrimary =
+                                    deduped.find((t) => !decadeRegex.test(t) && t !== '邦楽') || deduped[0] || '';
+                                  setGenre(nextPrimary);
+                                  setAiTagAnalysis((prev) =>
+                                    prev
+                                      ? {
+                                          ...prev,
+                                          genre: prev.genre === tagItem && renamed ? renamed : nextPrimary,
+                                          subGenre:
+                                            prev.subGenre === tagItem && renamed
+                                              ? renamed
+                                              : prev.subGenre && deduped.includes(prev.subGenre)
+                                              ? prev.subGenre
+                                              : undefined,
+                                          tagEvidence: (prev.tagEvidence || []).map((ev) =>
+                                            ev.tag === tagItem && renamed ? { ...ev, tag: renamed } : ev
+                                          ),
+                                        }
+                                      : prev
+                                  );
+                                  setEditingPillIndex(null);
+                                  setEditingPillValue('');
+                                }}
+                                className="text-emerald-400 hover:text-emerald-300 text-[11px] font-bold cursor-pointer"
+                                title="変更を確定"
+                              >
+                                ✓
+                              </button>
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold bg-slate-800 text-indigo-200 border border-slate-700 px-2.5 py-0.5 rounded-full group"
                           >
-                            ×
-                          </button>
-                        </span>
-                      ))}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingPillIndex(idx);
+                                setEditingPillValue(tagItem);
+                              }}
+                              className="inline-flex items-center gap-1 hover:text-white cursor-pointer"
+                              title="クリックしてこのタグの名称を変更"
+                            >
+                              <span>#{tagItem}</span>
+                              <Edit3 className="w-2.5 h-2.5 text-slate-400 group-hover:text-indigo-300" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextTags = tagsInput
+                                  .split(/[,、]/)
+                                  .map((t) => t.trim())
+                                  .filter((t, i) => t && i !== idx);
+                                const nextStr = nextTags.join(', ');
+                                setTagsInput(nextStr);
+                                setIsDirty(true);
+                                const normNext = normalizeTagList(nextTags, { preserveCustomName: true });
+                                const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+                                const nextPrimary =
+                                  normNext.find((t) => !decadeRegex.test(t) && t !== '邦楽') || normNext[0] || '';
+                                setGenre(nextPrimary);
+                                setAiTagAnalysis((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        genre: nextPrimary,
+                                        subGenre:
+                                          prev.subGenre && normNext.includes(normalizeSingleTag(prev.subGenre, { preserveCustomName: true }))
+                                            ? prev.subGenre
+                                            : undefined,
+                                        tagEvidence: (prev.tagEvidence || []).filter((ev) =>
+                                          normNext.includes(normalizeSingleTag(ev.tag, { preserveCustomName: true }))
+                                        ),
+                                      }
+                                    : prev
+                                );
+                              }}
+                              className="text-slate-400 hover:text-rose-400 ml-0.5 font-bold cursor-pointer"
+                              title="このタグを削除"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
                   </div>
                 )}
+
+                {/* Quick Tag Preset Selector */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-2 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <span>クイックタグ候補（クリックで追加・解除 / タグ名クリックで名称変更可能）:</span>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap max-h-20 overflow-y-auto">
+                    {tagPresets.map((preset) => {
+                      const currentList = tagsInput
+                        .split(/[,、]/)
+                        .map((t) => t.trim())
+                        .filter(Boolean);
+                      const isActive = currentList.includes(preset);
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            const nextList = isActive
+                              ? currentList.filter((t) => t !== preset)
+                              : [...currentList, preset];
+                            const deduped = normalizeTagList(nextList, { preserveCustomName: true });
+                            setTagsInput(deduped.join(', '));
+                            setIsDirty(true);
+                            const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
+                            const nextPrimary =
+                              deduped.find((t) => !decadeRegex.test(t) && t !== '邦楽') || deduped[0] || '';
+                            setGenre(nextPrimary);
+                            setAiTagAnalysis((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    genre: nextPrimary,
+                                    subGenre:
+                                      prev.subGenre && deduped.includes(prev.subGenre)
+                                        ? prev.subGenre
+                                        : undefined,
+                                  }
+                                : prev
+                            );
+                          }}
+                          className={`text-[10px] px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-indigo-600 text-white border-indigo-400 font-bold'
+                              : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:border-indigo-500/50 hover:text-white'
+                          }`}
+                        >
+                          {isActive ? `✓ #${preset}` : `＋ #${preset}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 {/* Persisted AI Tag Classification Basis & Musical Characteristics Panel */}
                 {aiTagAnalysis && (
@@ -1385,42 +1869,97 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                           AIタグ分類根拠（ジャンル選定理由・音楽的特徴の要約）
                         </span>
                       </div>
-                      {aiTagAnalysis.analyzedAt && (
-                        <span className="text-[10px] font-mono text-slate-400">
-                          分析日時: {aiTagAnalysis.analyzedAt.slice(0, 16).replace('T', ' ')}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Genre / Mood / Era Summary Pills */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {(aiTagAnalysis.genre || genre) && (
-                        <span className="text-[11px] bg-blue-950/90 text-blue-300 border border-blue-500/40 px-2.5 py-0.5 rounded-full font-bold">
-                          主要ジャンル: {aiTagAnalysis.genre || genre}
-                          {aiTagAnalysis.subGenre ? ` / ${aiTagAnalysis.subGenre}` : ''}
-                        </span>
-                      )}
-                      {aiTagAnalysis.mood && (
-                        <span className="text-[11px] bg-purple-950/90 text-purple-300 border border-purple-500/40 px-2.5 py-0.5 rounded-full font-bold">
-                          雰囲気・ムード: {aiTagAnalysis.mood}
-                        </span>
-                      )}
-                      {aiTagAnalysis.era && (
-                        <span className="text-[11px] bg-amber-950/90 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded-full font-bold">
-                          時代区分: {aiTagAnalysis.era}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Musical Characteristics Summary (Reasoning) */}
-                    {aiTagAnalysis.reasoning && (
-                      <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-lg p-2.5 text-xs text-indigo-100 leading-relaxed">
-                        <span className="font-bold text-indigo-300 block mb-0.5 text-[11px]">
-                          💡 ジャンル選定理由・音楽的特徴の要約:
-                        </span>
-                        <p>{aiTagAnalysis.reasoning}</p>
+                      <div className="flex items-center gap-2">
+                        {aiTagAnalysis.analyzedAt && (
+                          <span className="text-[10px] font-mono text-slate-400">
+                            分析日時: {aiTagAnalysis.analyzedAt.slice(0, 16).replace('T', ' ')}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAiTagAnalysis(undefined);
+                            setIsDirty(true);
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-rose-400 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 hover:border-rose-500/40 transition-colors cursor-pointer"
+                          title="AI自動分類根拠データをクリア"
+                        >
+                          根拠をクリア
+                        </button>
                       </div>
-                    )}
+                    </div>
+
+                    {/* Genre / Mood / Era Summary Inputs */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="bg-blue-950/50 border border-blue-500/30 rounded-lg px-2.5 py-1.5">
+                        <label className="block text-[10px] font-bold text-blue-300 mb-0.5">
+                          主要ジャンル
+                        </label>
+                        <input
+                          type="text"
+                          value={aiTagAnalysis.genre || genre || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setIsDirty(true);
+                            setGenre(val);
+                            setAiTagAnalysis((prev) => (prev ? { ...prev, genre: val } : prev));
+                          }}
+                          placeholder="主要ジャンル..."
+                          className="w-full bg-slate-900/90 border border-blue-500/30 focus:border-blue-400 rounded px-2 py-1 text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                      <div className="bg-purple-950/50 border border-purple-500/30 rounded-lg px-2.5 py-1.5">
+                        <label className="block text-[10px] font-bold text-purple-300 mb-0.5">
+                          雰囲気・ムード
+                        </label>
+                        <input
+                          type="text"
+                          value={aiTagAnalysis.mood || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setIsDirty(true);
+                            setAiTagAnalysis((prev) => (prev ? { ...prev, mood: val } : prev));
+                          }}
+                          placeholder="雰囲気・ムード..."
+                          className="w-full bg-slate-900/90 border border-purple-500/30 focus:border-purple-400 rounded px-2 py-1 text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                      <div className="bg-amber-950/50 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
+                        <label className="block text-[10px] font-bold text-amber-300 mb-0.5">
+                          時代区分
+                        </label>
+                        <input
+                          type="text"
+                          value={aiTagAnalysis.era || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setIsDirty(true);
+                            setAiTagAnalysis((prev) => (prev ? { ...prev, era: val } : prev));
+                          }}
+                          placeholder="1980年代など..."
+                          className="w-full bg-slate-900/90 border border-amber-500/30 focus:border-amber-400 rounded px-2 py-1 text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Musical Characteristics Summary (Reasoning) - Directly Editable */}
+                    <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-lg p-2.5 text-xs text-indigo-100 leading-relaxed space-y-1">
+                      <span className="font-bold text-indigo-300 block text-[11px]">
+                        💡 ジャンル選定理由・音楽的特徴の要約 (直接編集可能):
+                      </span>
+                      <textarea
+                        value={aiTagAnalysis.reasoning || ''}
+                        onChange={(e) => {
+                          setIsDirty(true);
+                          setAiTagAnalysis((prev) =>
+                            prev ? { ...prev, reasoning: e.target.value } : prev
+                          );
+                        }}
+                        rows={2}
+                        placeholder="ジャンル選定理由・音楽的特徴を入力..."
+                        className="w-full bg-slate-900/80 border border-indigo-500/30 focus:border-indigo-400 rounded p-2 text-xs text-indigo-100 focus:outline-none"
+                      />
+                    </div>
 
                     {/* Rule-based False Positive Filter Adjustments */}
                     {aiTagAnalysis.ruleAdjustments && aiTagAnalysis.ruleAdjustments.length > 0 && (
@@ -1437,7 +1976,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                       </div>
                     )}
 
-                    {/* Per-Tag Evidence Breakdown */}
+                    {/* Per-Tag Evidence Breakdown (Directly Editable) */}
                     {aiTagAnalysis.tagEvidence && aiTagAnalysis.tagEvidence.length > 0 && (
                       <div className="space-y-2 pt-1 border-t border-slate-800">
                         <button
@@ -1451,7 +1990,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                             <ChevronDown className="w-3.5 h-3.5" />
                           )}
                           <span>
-                            個別タグごとの判定根拠・参照メタデータ ({aiTagAnalysis.tagEvidence.length}件)
+                            個別タグごとの判定根拠・参照メタデータ ({aiTagAnalysis.tagEvidence.length}件 / 編集・削除可能)
                           </span>
                         </button>
 
@@ -1460,15 +1999,15 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                             {aiTagAnalysis.tagEvidence.map((ev, idx) => (
                               <div
                                 key={idx}
-                                className="bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 text-[11px] space-y-1"
+                                className="bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 text-[11px] space-y-1.5"
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="font-extrabold text-white bg-purple-950/90 border border-purple-500/40 px-2 py-0.5 rounded text-[10px]">
                                     #{ev.tag}
                                   </span>
-                                  {ev.sourceFields && ev.sourceFields.length > 0 && (
-                                    <div className="flex items-center gap-1 flex-wrap justify-end">
-                                      {ev.sourceFields.map((sf, sIdx) => (
+                                  <div className="flex items-center gap-1 flex-wrap justify-end">
+                                    {ev.sourceFields &&
+                                      ev.sourceFields.map((sf, sIdx) => (
                                         <span
                                           key={sIdx}
                                           className="text-[9px] font-mono bg-slate-800 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded"
@@ -1476,10 +2015,41 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                                           参照: {sf}
                                         </span>
                                       ))}
-                                    </div>
-                                  )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setIsDirty(true);
+                                        setAiTagAnalysis((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                tagEvidence: (prev.tagEvidence || []).filter((_, i) => i !== idx),
+                                              }
+                                            : prev
+                                        );
+                                      }}
+                                      className="text-slate-500 hover:text-rose-400 text-[10px] px-1 cursor-pointer"
+                                      title="この根拠を削除"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
                                 </div>
-                                <p className="text-slate-300 leading-relaxed">{ev.evidence}</p>
+                                <input
+                                  type="text"
+                                  value={ev.evidence}
+                                  onChange={(e) => {
+                                    const newEvText = e.target.value;
+                                    setIsDirty(true);
+                                    setAiTagAnalysis((prev) => {
+                                      if (!prev || !prev.tagEvidence) return prev;
+                                      const nextEv = [...prev.tagEvidence];
+                                      nextEv[idx] = { ...nextEv[idx], evidence: newEvText };
+                                      return { ...prev, tagEvidence: nextEv };
+                                    });
+                                  }}
+                                  className="w-full bg-slate-950/80 border border-slate-800 focus:border-purple-500/60 rounded px-2 py-1 text-[11px] text-slate-200 focus:outline-none"
+                                />
                               </div>
                             ))}
                           </div>
@@ -1788,7 +2358,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCloseWithAutoSave}
               className="px-4 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer"
             >
               閉じる
@@ -1862,7 +2432,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       {onNavigatePrev && (
         <button
           type="button"
-          onClick={onNavigatePrev}
+          onClick={handlePrevWithAutoSave}
           className="hidden md:flex fixed left-3 lg:left-8 top-1/2 -translate-y-1/2 z-50 w-11 h-11 rounded-full bg-slate-800/90 hover:bg-indigo-600 border border-slate-700 hover:border-indigo-400 text-slate-200 hover:text-white items-center justify-center shadow-2xl transition-all cursor-pointer group"
           title="前のCDへ移動 (キーボード: ←)"
         >
@@ -1874,7 +2444,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       {onNavigateNext && (
         <button
           type="button"
-          onClick={onNavigateNext}
+          onClick={handleNextWithAutoSave}
           className="hidden md:flex fixed right-3 lg:right-8 top-1/2 -translate-y-1/2 z-50 w-11 h-11 rounded-full bg-slate-800/90 hover:bg-indigo-600 border border-slate-700 hover:border-indigo-400 text-slate-200 hover:text-white items-center justify-center shadow-2xl transition-all cursor-pointer group"
           title="次のCDへ移動 (キーボード: →)"
         >

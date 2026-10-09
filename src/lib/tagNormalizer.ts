@@ -118,8 +118,13 @@ const DIRECT_TAG_MAP: Record<string, string> = {
 
 /**
  * Normalize a single tag or genre string to its canonical Japanese representation.
+ * When `preserveCustomName` is true, only fixes full-width alphanumeric and "J-POP"->"J-Pop" / decades,
+ * without mapping synonyms (e.g. "ポップス" or "歌謡曲") to a different tag name.
  */
-export function normalizeSingleTag(rawTag?: string): string {
+export function normalizeSingleTag(
+  rawTag?: string,
+  options?: { preserveCustomName?: boolean }
+): string {
   if (!rawTag) return '';
   let t = String(rawTag).trim().replace(/^#+/, '').trim();
   if (!t) return '';
@@ -141,7 +146,12 @@ export function normalizeSingleTag(rawTag?: string): string {
   if (decade20xxEn) return `${decade20xxEn[1]}年代`;
 
   const lower = t.toLowerCase().replace(/\s+/g, ' ');
-  if (DIRECT_TAG_MAP[lower]) {
+  // Always unify J-POP casing to J-Pop as requested by user
+  if (lower === 'j-pop' || lower === 'jpop' || lower === 'j pop') {
+    return 'J-Pop';
+  }
+
+  if (!options?.preserveCustomName && DIRECT_TAG_MAP[lower]) {
     return DIRECT_TAG_MAP[lower];
   }
 
@@ -151,7 +161,10 @@ export function normalizeSingleTag(rawTag?: string): string {
 /**
  * Normalize and deduplicate an array of tags, expanding compound slash tags like "J-POP / 邦楽".
  */
-export function normalizeTagList(tags?: string[]): string[] {
+export function normalizeTagList(
+  tags?: string[],
+  options?: { preserveCustomName?: boolean }
+): string[] {
   if (!tags || !Array.isArray(tags)) return [];
 
   const result: string[] = [];
@@ -162,9 +175,7 @@ export function normalizeTagList(tags?: string[]): string[] {
     const trimmed = String(raw).trim();
     const lower = trimmed.toLowerCase().replace(/\s+/g, ' ');
 
-    // First check if the whole string is in DIRECT_TAG_MAP (e.g. "j-pop / 邦楽")
-    if (DIRECT_TAG_MAP[lower]) {
-      // For "J-Pop / 邦楽", include both canonical "J-Pop" and "邦楽" cleanly, or canonical mapped tag
+    if (!options?.preserveCustomName && DIRECT_TAG_MAP[lower]) {
       if (lower.includes('j-pop') && lower.includes('邦楽')) {
         for (const sub of ['J-Pop', '邦楽']) {
           if (!seen.has(sub)) {
@@ -182,11 +193,11 @@ export function normalizeTagList(tags?: string[]): string[] {
       continue;
     }
 
-    // Split compound tags separated by " / " or "・" when they combine distinct genres
-    if (trimmed.includes(' / ') || trimmed.includes('／')) {
+    // Split compound tags separated by " / " or "／" when they combine distinct genres
+    if (!options?.preserveCustomName && (trimmed.includes(' / ') || trimmed.includes('／'))) {
       const parts = trimmed.split(/\s*[/／]\s*/);
       for (const part of parts) {
-        const norm = normalizeSingleTag(part);
+        const norm = normalizeSingleTag(part, options);
         if (norm && !seen.has(norm)) {
           seen.add(norm);
           result.push(norm);
@@ -195,7 +206,7 @@ export function normalizeTagList(tags?: string[]): string[] {
       continue;
     }
 
-    const norm = normalizeSingleTag(trimmed);
+    const norm = normalizeSingleTag(trimmed, options);
     if (norm && !seen.has(norm)) {
       seen.add(norm);
       result.push(norm);
@@ -211,56 +222,63 @@ const NON_GENRE_DECADE_REGEX = /^(19\d0|20\d0|[56789]0)年代$/;
  * Normalize a CD's genre, tags, and aiTagAnalysis evidence so all tags are unified,
  * and ensure `genre` does not retain stale/removed tags when `tags` is populated.
  */
-export function normalizeCDTagsAndGenre(cd: CDMetadata): CDMetadata {
-  let normalizedTags = cd.tags ? normalizeTagList(cd.tags) : cd.tags;
-  let normalizedGenre = cd.genre ? normalizeSingleTag(cd.genre) : cd.genre;
+export function normalizeCDTagsAndGenre(
+  cd: CDMetadata,
+  options?: { preserveUserTags?: boolean }
+): CDMetadata {
+  const preserveCustomName = options?.preserveUserTags ?? true;
+  let normalizedTags = cd.tags ? normalizeTagList(cd.tags, { preserveCustomName }) : cd.tags;
+  let normalizedGenre = cd.genre ? normalizeSingleTag(cd.genre, { preserveCustomName }) : cd.genre;
 
-  // Apply multi-metadata rule precheck to eliminate hard-blocked false-positive genres (e.g. アイドル / J-Pop)
-  const precheck = runGenreRulePrecheck({
-    id: cd.id,
-    title: cd.title,
-    artist: cd.artist,
-    catalogNumber: cd.catalogNumber,
-    label: cd.label,
-    releaseDate: cd.releaseDate,
-    vinylRecordReleaseDate: cd.vinylRecordReleaseDate,
-    vinylRecordFormat: cd.vinylRecordFormat,
-    vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber,
-    barcode: cd.barcode,
-    country: cd.country,
-    format: cd.format,
-    tracks: cd.tracks,
-    genre: normalizedGenre,
-    existingTags: normalizedTags,
-    notes: cd.notes,
-  });
+  // Only run rule precheck when preserveUserTags is explicitly false (e.g. during AI analysis)
+  let hardBlockedTags = new Set<string>();
+  if (options?.preserveUserTags === false) {
+    const precheck = runGenreRulePrecheck({
+      id: cd.id,
+      title: cd.title,
+      artist: cd.artist,
+      catalogNumber: cd.catalogNumber,
+      label: cd.label,
+      releaseDate: cd.releaseDate,
+      vinylRecordReleaseDate: cd.vinylRecordReleaseDate,
+      vinylRecordFormat: cd.vinylRecordFormat,
+      vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber,
+      barcode: cd.barcode,
+      country: cd.country,
+      format: cd.format,
+      tracks: cd.tracks,
+      genre: normalizedGenre,
+      existingTags: normalizedTags,
+      notes: cd.notes,
+    });
 
-  const hardBlockedTags = new Set(precheck.blockedTags.map((b) => b.tag));
+    hardBlockedTags = new Set(precheck.blockedTags.map((b) => b.tag));
 
-  // If the CD was AI-analyzed, or if a hard metadata contradiction exists (e.g. Classical/Jazz prefix, Western barcode, Non-Idol musician/label),
-  // remove blocked false-positive tags and resolve primary genre
-  if (hardBlockedTags.size > 0) {
-    if (normalizedTags && normalizedTags.length > 0 && cd.aiTagAnalysis) {
-      const filtered = normalizedTags.filter((t) => !hardBlockedTags.has(t));
-      if (filtered.length === 0 && precheck.enforcedPrimaryGenre) {
-        filtered.push(precheck.enforcedPrimaryGenre);
+    if (hardBlockedTags.size > 0) {
+      if (normalizedTags && normalizedTags.length > 0 && cd.aiTagAnalysis) {
+        normalizedTags = normalizedTags.filter((t) => !hardBlockedTags.has(t));
       }
-      normalizedTags = filtered;
-    }
-    if (normalizedGenre && hardBlockedTags.has(normalizedGenre)) {
-      normalizedGenre =
-        precheck.enforcedPrimaryGenre ||
-        (normalizedTags || []).find((t) => !NON_GENRE_DECADE_REGEX.test(t) && t !== '邦楽' && !hardBlockedTags.has(t)) ||
-        '';
+      if (normalizedGenre && hardBlockedTags.has(normalizedGenre)) {
+        normalizedGenre =
+          (normalizedTags || []).find((t) => !NON_GENRE_DECADE_REGEX.test(t) && t !== '邦楽' && !hardBlockedTags.has(t)) ||
+          '';
+      }
     }
   }
 
-  // If the CD has an explicit tags list, ensure `genre` does not hold a tag that was removed from `tags`
-  if (normalizedTags && normalizedTags.length > 0 && normalizedGenre) {
-    const genreParts = normalizeTagList([normalizedGenre]);
-    const isPresentInTags = genreParts.some((g) => normalizedTags!.includes(g));
-    if (!isPresentInTags) {
-      // Pick the first non-decade tag from normalizedTags, or fallback to first tag
+  // If the CD has an explicit tags array, keep `genre` strictly synchronized with `tags`
+  if (Array.isArray(normalizedTags)) {
+    if (normalizedTags.length === 0) {
+      normalizedGenre = '';
+    } else if (normalizedGenre) {
+      const genreParts = normalizeTagList([normalizedGenre], { preserveCustomName });
+      const isPresentInTags = genreParts.some((g) => normalizedTags!.includes(g));
+      if (!isPresentInTags) {
+        // Pick the first non-decade tag from normalizedTags, or fallback to first tag
+        const primaryTag = normalizedTags.find((t) => !NON_GENRE_DECADE_REGEX.test(t) && t !== '邦楽') || normalizedTags[0];
+        normalizedGenre = primaryTag;
+      }
+    } else {
       const primaryTag = normalizedTags.find((t) => !NON_GENRE_DECADE_REGEX.test(t) && t !== '邦楽') || normalizedTags[0];
       normalizedGenre = primaryTag;
     }
@@ -271,10 +289,10 @@ export function normalizeCDTagsAndGenre(cd: CDMetadata): CDMetadata {
     const seenEvTags = new Set<string>();
     const normalizedEvidence: TagEvidenceItem[] = [];
     for (const ev of cd.aiTagAnalysis.tagEvidence || []) {
-      const normTag = normalizeSingleTag(ev.tag);
+      const normTag = normalizeSingleTag(ev.tag, { preserveCustomName });
       if (normTag && !seenEvTags.has(normTag) && !hardBlockedTags.has(normTag)) {
-        // If tags exist, only keep evidence for tags that are actually present in normalizedTags
-        if (!normalizedTags || normalizedTags.length === 0 || normalizedTags.includes(normTag)) {
+        // If tags array is defined, only keep evidence for tags that are actually present in normalizedTags
+        if (!Array.isArray(normalizedTags) || normalizedTags.includes(normTag)) {
           seenEvTags.add(normTag);
           normalizedEvidence.push({
             ...ev,
@@ -285,9 +303,18 @@ export function normalizeCDTagsAndGenre(cd: CDMetadata): CDMetadata {
     }
     normalizedAiAnalysis = {
       ...cd.aiTagAnalysis,
-      genre: normalizedGenre || (cd.aiTagAnalysis.genre ? normalizeSingleTag(cd.aiTagAnalysis.genre) : cd.aiTagAnalysis.genre),
-      subGenre: cd.aiTagAnalysis.subGenre ? normalizeSingleTag(cd.aiTagAnalysis.subGenre) : cd.aiTagAnalysis.subGenre,
-      era: cd.aiTagAnalysis.era ? normalizeSingleTag(cd.aiTagAnalysis.era) : cd.aiTagAnalysis.era,
+      genre: Array.isArray(normalizedTags)
+        ? normalizedGenre
+        : normalizedGenre || (cd.aiTagAnalysis.genre ? normalizeSingleTag(cd.aiTagAnalysis.genre, { preserveCustomName }) : cd.aiTagAnalysis.genre),
+      subGenre:
+        Array.isArray(normalizedTags) &&
+        cd.aiTagAnalysis.subGenre &&
+        !normalizedTags.includes(normalizeSingleTag(cd.aiTagAnalysis.subGenre, { preserveCustomName }))
+          ? undefined
+          : cd.aiTagAnalysis.subGenre
+          ? normalizeSingleTag(cd.aiTagAnalysis.subGenre, { preserveCustomName })
+          : cd.aiTagAnalysis.subGenre,
+      era: cd.aiTagAnalysis.era ? normalizeSingleTag(cd.aiTagAnalysis.era, { preserveCustomName }) : cd.aiTagAnalysis.era,
       tagEvidence: normalizedEvidence,
     };
   }

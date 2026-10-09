@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CDMetadata } from '../types/cd';
-import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2, Tag } from 'lucide-react';
+import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2, Tag, Edit3 } from 'lucide-react';
 import { SpreadsheetEditorView } from './SpreadsheetEditorView';
 import { BatchEditModal } from './BatchEditModal';
 
@@ -15,6 +15,7 @@ interface CDDatabaseTableProps {
   onOpenBatchModal?: () => void;
   onOpenAITagging?: (selectedCDs: CDMetadata[]) => void;
   onOpenPDFCatalog?: (selectedCDs: CDMetadata[]) => void;
+  onOpenTagManager?: () => void;
   onBatchUpdateCDs?: (updatedCDs: CDMetadata[]) => Promise<void>;
   initialSearchKeyword?: string;
 }
@@ -30,6 +31,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   onOpenBatchModal,
   onOpenAITagging,
   onOpenPDFCatalog,
+  onOpenTagManager,
   onBatchUpdateCDs,
   initialSearchKeyword = '',
 }) => {
@@ -391,6 +393,18 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             >
               <Tag className="w-3.5 h-3.5 text-indigo-100" />
               <span>タグ・備考一括編集 ({selectedIds.length}件)</span>
+            </button>
+          )}
+
+          {onOpenTagManager && (
+            <button
+              type="button"
+              onClick={onOpenTagManager}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-indigo-200 hover:text-white border border-slate-700 transition-all cursor-pointer"
+              title="新しいタグ名称の追加や、既存タグ名称の一括変更（リネーム）・削除を行います"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
+              <span>タグ名称管理</span>
             </button>
           )}
 
