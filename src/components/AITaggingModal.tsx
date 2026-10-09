@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { CDMetadata } from '../types/cd';
 import { getJSTISOString } from '../lib/dateUtils';
-import { normalizeSingleTag, normalizeTagList } from '../lib/tagNormalizer';
-import { X, Sparkles, RefreshCw, CheckCircle2, Tag, Disc, AlertCircle, Check, Plus, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { normalizeSingleTag, normalizeTagList, applyGenreRuleFilter } from '../lib/tagNormalizer';
+import { X, Sparkles, RefreshCw, CheckCircle2, Tag, Disc, AlertCircle, Check, Plus, Info, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 
 interface TagEvidenceItem {
   tag: string;
@@ -20,6 +20,7 @@ interface CDTagAnalysisResult {
   suggestedTags: string[];
   reasoning?: string;
   tagEvidence?: TagEvidenceItem[];
+  ruleAdjustments?: string[];
 }
 
 interface AITaggingModalProps {
@@ -56,6 +57,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
     era: string;
     reasoning?: string;
     tagEvidence?: TagEvidenceItem[];
+    ruleAdjustments?: string[];
   }>>(new Map());
   const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<Set<string>>(new Set());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -92,6 +94,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
       era: string;
       reasoning?: string;
       tagEvidence?: TagEvidenceItem[];
+      ruleAdjustments?: string[];
     }>();
 
     // Batch in chunks of 4 to avoid gateway request timeouts
@@ -119,7 +122,10 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
               vinylRecordReleaseDate: c.vinylRecordReleaseDate,
               vinylRecordFormat: c.vinylRecordFormat,
               vinylRecordCatalogNumber: c.vinylRecordCatalogNumber,
-              tracks: c.tracks?.slice(0, 10),
+              barcode: c.barcode,
+              country: c.country,
+              format: c.format,
+              tracks: c.tracks?.slice(0, 12),
               genre: c.genre,
               existingTags: c.tags,
               notes: c.notes,
@@ -149,7 +155,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
           const decadeRegex = /^(19\d0|20\d0|[56789]0)年代$/;
           data.results.forEach((item) => {
             const originalCD = targets.find((c) => c.id === item.id);
-            let finalTags: string[] = [];
+            let candidateTags: string[] = [];
 
             if (mergeMode === 'append' && originalCD?.tags) {
               const normalizedSuggested = normalizeTagList(item.suggestedTags || []);
@@ -159,31 +165,57 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
               const cleanedExisting = newDecadeTag
                 ? normalizedExisting.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
                 : normalizedExisting;
-              finalTags = normalizeTagList([...cleanedExisting, ...normalizedSuggested]);
+              candidateTags = normalizeTagList([...cleanedExisting, ...normalizedSuggested]);
             } else {
-              finalTags = normalizeTagList(item.suggestedTags || []);
+              candidateTags = normalizeTagList(item.suggestedTags || []);
+            }
+
+            let resolvedGenre = normalizeSingleTag(item.genre);
+            let resolvedSubGenre = item.subGenre ? normalizeSingleTag(item.subGenre) : undefined;
+            let resolvedEvidence = item.tagEvidence || [];
+            let combinedAdjustments = [...(item.ruleAdjustments || [])];
+
+            if (originalCD) {
+              const clientRuleFiltered = applyGenreRuleFilter(
+                originalCD,
+                candidateTags,
+                resolvedGenre,
+                resolvedSubGenre,
+                item.reasoning,
+                resolvedEvidence
+              );
+              candidateTags = clientRuleFiltered.suggestedTags;
+              resolvedGenre = clientRuleFiltered.genre;
+              resolvedSubGenre = clientRuleFiltered.subGenre;
+              resolvedEvidence = clientRuleFiltered.tagEvidence;
+              for (const adj of clientRuleFiltered.ruleAdjustments) {
+                if (!combinedAdjustments.includes(adj)) {
+                  combinedAdjustments.push(adj);
+                }
+              }
             }
 
             resultMap.set(item.id, {
-              tags: finalTags,
-              genre: normalizeSingleTag(item.genre) || 'J-Pop',
-              subGenre: item.subGenre ? normalizeSingleTag(item.subGenre) : undefined,
+              tags: candidateTags,
+              genre: resolvedGenre || 'J-Pop',
+              subGenre: resolvedSubGenre,
               mood: item.mood,
               era: item.era,
               reasoning: item.reasoning,
-              tagEvidence: item.tagEvidence,
+              tagEvidence: resolvedEvidence,
+              ruleAdjustments: combinedAdjustments,
             });
           });
         }
       } catch (err: any) {
         console.warn('Handled batch chunk fallback:', err?.message || err);
-        // Fallback for this chunk so workflow continues (prioritizing vinylRecordReleaseDate over releaseDate)
+        // Fallback for this chunk using multi-metadata rule filter (prioritizing vinylRecordReleaseDate over releaseDate)
         chunk.forEach((c) => {
           const hasVinyl = Boolean(c.vinylRecordReleaseDate && c.vinylRecordReleaseDate.trim());
           const hasCd = Boolean(c.releaseDate && c.releaseDate.trim());
           const effectiveDate = hasVinyl ? c.vinylRecordReleaseDate!.trim() : (c.releaseDate || '').trim();
           const yearMatch = effectiveDate.match(/(\d{4})/);
-          let eraStr = '邦楽';
+          let eraStr = '';
           if (yearMatch) {
             const y = parseInt(yearMatch[1], 10);
             if (y >= 1950) eraStr = `${String(y).slice(0, 3)}0年代`;
@@ -197,32 +229,42 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
               ? `CD発売年月日 (${c.releaseDate}) から年代を算出`
               : '国内盤メタデータより算出';
 
+          const baseTags = normalizeTagList([eraStr, c.genre || '', ...(c.tags || []), '邦楽'].filter(Boolean));
+          const ruleFiltered = applyGenreRuleFilter(
+            c,
+            baseTags,
+            normalizeSingleTag(c.genre)
+          );
+
           resultMap.set(c.id, {
-            tags: c.tags && c.tags.length > 0 ? normalizeTagList([...c.tags, eraStr]) : ['J-Pop', '邦楽', eraStr],
-            genre: normalizeSingleTag(c.genre) || 'J-Pop',
+            tags: ruleFiltered.suggestedTags,
+            genre: ruleFiltered.genre,
+            subGenre: ruleFiltered.subGenre,
             mood: 'メロディアス',
-            era: eraStr,
+            era: eraStr || (ruleFiltered.suggestedTags.includes('洋楽') ? '洋楽' : '邦楽'),
             reasoning: `アーティスト「${c.artist}」・タイトル「${c.title}」${
+              c.label ? `・レーベル(${c.label})` : ''
+            }${c.catalogNumber ? `・規格品番(${c.catalogNumber})` : ''}${
               hasVinyl
                 ? `・LP/EP発売日(${c.vinylRecordReleaseDate})`
                 : c.releaseDate
                 ? `・CD発売日(${c.releaseDate})`
                 : ''
-            }のメタデータに基づく判定`,
+            }の複合メタデータ規則に基づく判定`,
             tagEvidence: [
-              {
-                tag: eraStr,
-                category: 'era',
-                evidence: eraEvidenceText,
-                sourceFields: [hasVinyl ? 'LP/EP発売年月日' : 'CD発売年月日'],
-              },
-              {
-                tag: normalizeSingleTag(c.genre) || 'J-Pop',
-                category: 'genre',
-                evidence: `アーティスト「${c.artist}」および収録曲リストの特徴から判定`,
-                sourceFields: ['アーティスト名', '収録曲リスト'],
-              },
+              ...(eraStr
+                ? [
+                    {
+                      tag: eraStr,
+                      category: 'era' as const,
+                      evidence: eraEvidenceText,
+                      sourceFields: [hasVinyl ? 'LP/EP発売年月日' : 'CD発売年月日'],
+                    },
+                  ]
+                : []),
+              ...ruleFiltered.tagEvidence.filter((ev) => ev.tag !== eraStr),
             ],
+            ruleAdjustments: ruleFiltered.ruleAdjustments,
           });
         });
       }
@@ -296,6 +338,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
               era: res.era,
               reasoning: res.reasoning,
               tagEvidence: activeTagEvidence,
+              ruleAdjustments: res.ruleAdjustments,
               analyzedAt: getJSTISOString(),
             },
             updatedAt: getJSTISOString(),
@@ -542,9 +585,18 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                     <span className="font-bold text-emerald-300 block mb-0.5">④ 規格品番（型番）・レーベル名</span>
                     <span className="text-slate-400">レコード会社固有の品番プレフィックス（例: LACA=Lantis/アニソン、TOCT=東芝EMI、SRCL=Sony等）やレーベル特徴を参照します。</span>
                   </div>
-                  <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 sm:col-span-2 lg:col-span-2">
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
                     <span className="font-bold text-rose-300 block mb-0.5">⑤ アルバムタイトル・既存ジャンル・備考メモ</span>
                     <span className="text-slate-400">「BEST」「ORIGINAL SOUNDTRACK」「SINGLE COLLECTION」等のタイトル構造や備考欄のタイアップ記述を総合し、各タグごとの判定根拠（Evidence）を明示して出力します。</span>
+                  </div>
+                  <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-2.5">
+                    <span className="font-bold text-emerald-300 flex items-center gap-1 mb-0.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>⑥ ルールベース誤判定防止フィルター</span>
+                    </span>
+                    <span className="text-slate-300">
+                      規格品番・レーベル・発売年代（1988年以前のJ-Pop抑制）・JAN国番号・収録時間（長尺曲）・LP/EP盤種を横断検証し、「アイドル」「J-Pop」等の誤判定を自動除外します。
+                    </span>
                   </div>
                 </div>
               </div>
@@ -672,6 +724,19 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
                               <div className="mt-1.5 bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1.5 text-[11px] text-indigo-200 leading-relaxed">
                                 <span className="font-bold text-indigo-300 mr-1">💡 AI総合判定理由:</span>
                                 <span>{res.reasoning}</span>
+                              </div>
+                            )}
+                            {res?.ruleAdjustments && res.ruleAdjustments.length > 0 && (
+                              <div className="mt-1.5 bg-emerald-950/40 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-[11px] text-emerald-200 space-y-1">
+                                <div className="font-bold text-emerald-300 flex items-center gap-1">
+                                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                  <span>ルールベース誤判定防止フィルター適用済 ({res.ruleAdjustments.length}件):</span>
+                                </div>
+                                <ul className="list-disc list-inside space-y-0.5 text-[10px] text-emerald-100/90">
+                                  {res.ruleAdjustments.map((adj, adjIdx) => (
+                                    <li key={adjIdx}>{adj}</li>
+                                  ))}
+                                </ul>
                               </div>
                             )}
                           </div>

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { CDMetadata } from '../types/cd';
-import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2 } from 'lucide-react';
+import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2, Tag } from 'lucide-react';
 import { SpreadsheetEditorView } from './SpreadsheetEditorView';
+import { BatchEditModal } from './BatchEditModal';
 
 interface CDDatabaseTableProps {
   cds: CDMetadata[];
@@ -48,6 +49,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   const [isLookingUpVinylBatch, setIsLookingUpVinylBatch] = useState(false);
   const [vinylBatchProgress, setVinylBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [vinylLookupNotice, setVinylLookupNotice] = useState<string | null>(null);
+  const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
 
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
     type: 'single' | 'batch' | 'all';
@@ -380,6 +382,18 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             </button>
           )}
 
+          {onBatchUpdateCDs && selectedIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsBatchEditModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/30 border border-indigo-400/40 transition-all cursor-pointer"
+              title="選択したCDのタグ（アイドル・J-Pop等）や備考を一括編集"
+            >
+              <Tag className="w-3.5 h-3.5 text-indigo-100" />
+              <span>タグ・備考一括編集 ({selectedIds.length}件)</span>
+            </button>
+          )}
+
           {onOpenAITagging && (
             <button
               onClick={() => onOpenAITagging(selectedCDs)}
@@ -445,6 +459,17 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {onBatchUpdateCDs && (
+              <button
+                type="button"
+                onClick={() => setIsBatchEditModalOpen(true)}
+                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
+              >
+                <Tag className="w-3 h-3" />
+                タグ・備考を一括編集
+              </button>
+            )}
+
             {onBatchUpdateCDs && (
               <button
                 type="button"
@@ -886,6 +911,21 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Batch Tag & Notes Edit Modal */}
+      {onBatchUpdateCDs && (
+        <BatchEditModal
+          isOpen={isBatchEditModalOpen}
+          onClose={() => setIsBatchEditModalOpen(false)}
+          selectedCDs={selectedCDs}
+          allCDs={cds}
+          onBatchUpdateCDs={async (updatedCDs) => {
+            await onBatchUpdateCDs(updatedCDs);
+            setVinylLookupNotice(`${updatedCDs.length} 件のCDのタグ・備考を一括更新しました！`);
+            setTimeout(() => setVinylLookupNotice(null), 4000);
+          }}
+        />
       )}
 
     </div>

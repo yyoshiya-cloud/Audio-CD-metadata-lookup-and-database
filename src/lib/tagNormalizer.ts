@@ -1,4 +1,7 @@
 import { CDMetadata, TagEvidenceItem } from '../types/cd';
+import { runGenreRulePrecheck, applyGenreRuleFilter } from './genreRuleFilter';
+
+export { runGenreRulePrecheck, applyGenreRuleFilter };
 
 /**
  * Canonical tag normalizer to eliminate duplicate/variant tags across the library.
@@ -209,13 +212,53 @@ const NON_GENRE_DECADE_REGEX = /^(19\d0|20\d0|[56789]0)年代$/;
  * and ensure `genre` does not retain stale/removed tags when `tags` is populated.
  */
 export function normalizeCDTagsAndGenre(cd: CDMetadata): CDMetadata {
-  const normalizedTags = cd.tags ? normalizeTagList(cd.tags) : cd.tags;
+  let normalizedTags = cd.tags ? normalizeTagList(cd.tags) : cd.tags;
   let normalizedGenre = cd.genre ? normalizeSingleTag(cd.genre) : cd.genre;
+
+  // Apply multi-metadata rule precheck to eliminate hard-blocked false-positive genres (e.g. アイドル / J-Pop)
+  const precheck = runGenreRulePrecheck({
+    id: cd.id,
+    title: cd.title,
+    artist: cd.artist,
+    catalogNumber: cd.catalogNumber,
+    label: cd.label,
+    releaseDate: cd.releaseDate,
+    vinylRecordReleaseDate: cd.vinylRecordReleaseDate,
+    vinylRecordFormat: cd.vinylRecordFormat,
+    vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber,
+    barcode: cd.barcode,
+    country: cd.country,
+    format: cd.format,
+    tracks: cd.tracks,
+    genre: normalizedGenre,
+    existingTags: normalizedTags,
+    notes: cd.notes,
+  });
+
+  const hardBlockedTags = new Set(precheck.blockedTags.map((b) => b.tag));
+
+  // If the CD was AI-analyzed, or if a hard metadata contradiction exists (e.g. Classical/Jazz prefix, Western barcode, Non-Idol musician/label),
+  // remove blocked false-positive tags and resolve primary genre
+  if (hardBlockedTags.size > 0) {
+    if (normalizedTags && normalizedTags.length > 0 && cd.aiTagAnalysis) {
+      const filtered = normalizedTags.filter((t) => !hardBlockedTags.has(t));
+      if (filtered.length === 0 && precheck.enforcedPrimaryGenre) {
+        filtered.push(precheck.enforcedPrimaryGenre);
+      }
+      normalizedTags = filtered;
+    }
+    if (normalizedGenre && hardBlockedTags.has(normalizedGenre)) {
+      normalizedGenre =
+        precheck.enforcedPrimaryGenre ||
+        (normalizedTags || []).find((t) => !NON_GENRE_DECADE_REGEX.test(t) && t !== '邦楽' && !hardBlockedTags.has(t)) ||
+        '';
+    }
+  }
 
   // If the CD has an explicit tags list, ensure `genre` does not hold a tag that was removed from `tags`
   if (normalizedTags && normalizedTags.length > 0 && normalizedGenre) {
     const genreParts = normalizeTagList([normalizedGenre]);
-    const isPresentInTags = genreParts.some((g) => normalizedTags.includes(g));
+    const isPresentInTags = genreParts.some((g) => normalizedTags!.includes(g));
     if (!isPresentInTags) {
       // Pick the first non-decade tag from normalizedTags, or fallback to first tag
       const primaryTag = normalizedTags.find((t) => !NON_GENRE_DECADE_REGEX.test(t) && t !== '邦楽') || normalizedTags[0];
@@ -229,7 +272,7 @@ export function normalizeCDTagsAndGenre(cd: CDMetadata): CDMetadata {
     const normalizedEvidence: TagEvidenceItem[] = [];
     for (const ev of cd.aiTagAnalysis.tagEvidence || []) {
       const normTag = normalizeSingleTag(ev.tag);
-      if (normTag && !seenEvTags.has(normTag)) {
+      if (normTag && !seenEvTags.has(normTag) && !hardBlockedTags.has(normTag)) {
         // If tags exist, only keep evidence for tags that are actually present in normalizedTags
         if (!normalizedTags || normalizedTags.length === 0 || normalizedTags.includes(normTag)) {
           seenEvTags.add(normTag);

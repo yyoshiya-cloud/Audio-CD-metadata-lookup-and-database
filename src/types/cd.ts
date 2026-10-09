@@ -15,6 +15,8 @@ export interface AITagEvidenceItem {
   sourceFields: string[];
 }
 
+export type TagEvidenceItem = AITagEvidenceItem;
+
 export interface AITagAnalysisMetadata {
   genre?: string;
   subGenre?: string;
@@ -22,6 +24,7 @@ export interface AITagAnalysisMetadata {
   era?: string;
   reasoning?: string;
   tagEvidence?: AITagEvidenceItem[];
+  ruleAdjustments?: string[];
   analyzedAt?: string;
 }
 

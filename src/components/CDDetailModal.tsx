@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CDMetadata, TrackInfo, APISource, AITagAnalysisMetadata } from '../types/cd';
 import { getJSTISOString, normalizeCatalogNumber, normalizeReleaseDate } from '../lib/dateUtils';
-import { normalizeSingleTag, normalizeTagList } from '../lib/tagNormalizer';
+import { normalizeSingleTag, normalizeTagList, applyGenreRuleFilter } from '../lib/tagNormalizer';
 import { toHankakuCode, formatToYYYYMMDD, formatToHankakuDuration } from '../utils/formatUtils';
 import { enhanceImageWithCanvas, convertImageUrlToBase64 } from '../utils/imageEnhancer';
-import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2, BookOpen, Tag, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Save, Music, Disc, Info, Layers, Upload, ChevronLeft, ChevronRight, CheckCircle2, Check, Sparkles, Trash2, Loader2, Link2, BookOpen, Tag, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 
 interface CDDetailModalProps {
   cd: CDMetadata | null;
@@ -195,7 +195,10 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
               vinylRecordReleaseDate,
               vinylRecordFormat,
               vinylRecordCatalogNumber,
-              tracks: tracks.slice(0, 10),
+              barcode,
+              country,
+              format,
+              tracks: tracks.slice(0, 12),
               genre,
               existingTags,
               notes,
@@ -231,23 +234,56 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
         const cleanedExisting = newDecadeTag
           ? normalizedExisting.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
           : normalizedExisting;
-        const mergedTags = normalizeTagList([...cleanedExisting, ...normalizedSuggested]);
-        setTagsInput(mergedTags.join(', '));
-        const unifiedGenre = normalizeSingleTag(item.genre || genre);
+        const mergedCandidateTags = normalizeTagList([...cleanedExisting, ...normalizedSuggested]);
+
+        const clientRuleFiltered = applyGenreRuleFilter(
+          {
+            title,
+            artist,
+            catalogNumber,
+            label,
+            releaseDate,
+            vinylRecordReleaseDate,
+            vinylRecordFormat,
+            vinylRecordCatalogNumber,
+            barcode,
+            country,
+            format,
+            tracks,
+            genre,
+            notes,
+          },
+          mergedCandidateTags,
+          normalizeSingleTag(item.genre || genre),
+          item.subGenre ? normalizeSingleTag(item.subGenre) : undefined,
+          item.reasoning,
+          item.tagEvidence || []
+        );
+
+        const combinedAdjustments = [...(item.ruleAdjustments || [])];
+        for (const adj of clientRuleFiltered.ruleAdjustments) {
+          if (!combinedAdjustments.includes(adj)) {
+            combinedAdjustments.push(adj);
+          }
+        }
+
+        setTagsInput(clientRuleFiltered.suggestedTags.join(', '));
+        const unifiedGenre = clientRuleFiltered.genre || normalizeSingleTag(item.genre || genre);
         if (unifiedGenre) setGenre(unifiedGenre);
 
         const newAnalysis: AITagAnalysisMetadata = {
           genre: unifiedGenre,
-          subGenre: item.subGenre ? normalizeSingleTag(item.subGenre) : undefined,
+          subGenre: clientRuleFiltered.subGenre,
           mood: item.mood,
           era: item.era,
           reasoning: item.reasoning,
-          tagEvidence: item.tagEvidence,
+          tagEvidence: clientRuleFiltered.tagEvidence,
+          ruleAdjustments: combinedAdjustments,
           analyzedAt: getJSTISOString(),
         };
         setAiTagAnalysis(newAnalysis);
         setShowTagEvidenceDetails(true);
-        setSaveSuccessMessage('AIによる自動タグ付けと分類根拠の生成が完了しました！「保存」を押すとDBに永続保存されます。');
+        setSaveSuccessMessage('AIによる自動タグ付けと複合メタデータ検証が完了しました！「保存」を押すとDBに永続保存されます。');
         setTimeout(() => setSaveSuccessMessage(null), 4500);
       }
     } catch (err) {
@@ -1383,6 +1419,21 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                           💡 ジャンル選定理由・音楽的特徴の要約:
                         </span>
                         <p>{aiTagAnalysis.reasoning}</p>
+                      </div>
+                    )}
+
+                    {/* Rule-based False Positive Filter Adjustments */}
+                    {aiTagAnalysis.ruleAdjustments && aiTagAnalysis.ruleAdjustments.length > 0 && (
+                      <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-lg p-2.5 text-xs text-emerald-100 space-y-1">
+                        <div className="font-bold text-emerald-300 flex items-center gap-1 text-[11px]">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                          <span>ルールベース誤判定防止フィルター検証済 ({aiTagAnalysis.ruleAdjustments.length}件):</span>
+                        </div>
+                        <ul className="list-disc list-inside space-y-0.5 text-[11px] text-emerald-100/90">
+                          {aiTagAnalysis.ruleAdjustments.map((adj, adjIdx) => (
+                            <li key={adjIdx}>{adj}</li>
+                          ))}
+                        </ul>
                       </div>
                     )}
 

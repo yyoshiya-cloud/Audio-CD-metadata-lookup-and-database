@@ -1,4 +1,5 @@
 import { createGeminiClient, generateContentWithFallback } from './geminiFallback.js';
+import { runGenreRulePrecheck, applyGenreRuleFilter } from '../src/lib/genreRuleFilter.js';
 
 export interface CDTagAnalysisInput {
   id: string;
@@ -10,7 +11,10 @@ export interface CDTagAnalysisInput {
   vinylRecordReleaseDate?: string;
   vinylRecordFormat?: string;
   vinylRecordCatalogNumber?: string;
-  tracks?: { trackNumber: number; title: string }[];
+  barcode?: string;
+  country?: string;
+  format?: string;
+  tracks?: { trackNumber: number; title: string; duration?: string }[];
   genre?: string;
   existingTags?: string[];
   notes?: string;
@@ -32,6 +36,7 @@ export interface CDTagAnalysisResult {
   suggestedTags: string[];
   reasoning?: string;
   tagEvidence?: TagEvidenceItem[];
+  ruleAdjustments?: string[];
 }
 
 export interface AITaggingOptions {
@@ -210,22 +215,58 @@ export async function analyzeCDTagsWithGemini(
         ? 'LP/EP発売年月日'
         : 'CD発売年月日';
 
+      const precheck = runGenreRulePrecheck({
+        id: cd.id,
+        title: cd.title,
+        artist: cd.artist,
+        catalogNumber: cd.catalogNumber,
+        label: cd.label,
+        releaseDate: cd.releaseDate,
+        vinylRecordReleaseDate: cd.vinylRecordReleaseDate,
+        vinylRecordFormat: cd.vinylRecordFormat,
+        vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber,
+        barcode: cd.barcode,
+        country: cd.country,
+        format: cd.format,
+        tracks: cd.tracks,
+        genre: cd.genre,
+        existingTags: cd.existingTags,
+        notes: cd.notes,
+      });
+
       return {
         id: cd.id,
         title: cd.title,
         artist: cd.artist,
         catalogNumber: cd.catalogNumber || '',
         label: cd.label || '',
+        barcode: cd.barcode || '',
+        country: cd.country || 'JP',
+        format: cd.format || 'CD',
         cdReleaseDate: cd.releaseDate || '',
         vinylRecordReleaseDate: cd.vinylRecordReleaseDate || '',
         vinylRecordFormat: cd.vinylRecordFormat || '',
+        vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber || '',
         effectiveReleaseDateForEraTag: effectiveDateForEra,
         effectiveDateSourceForEraTag: effectiveDateSource,
         requiredEraTag: deriveEraTagFromDate(effectiveDateForEra),
-        trackListSample: (cd.tracks || []).slice(0, 10).map((t) => t.title).join(', '),
+        trackCount: cd.tracks ? cd.tracks.length : 0,
+        trackDurationStats: precheck.trackDurationStats,
+        trackListSample: (cd.tracks || [])
+          .slice(0, 10)
+          .map((t) => (t.duration ? `${t.title} (${t.duration})` : t.title))
+          .join(', '),
         existingGenre: cd.genre || '',
         existingTags: cd.existingTags || [],
         notes: cd.notes || '',
+        ruleBasedFilterHints: {
+          enforcedPrimaryGenre: precheck.enforcedPrimaryGenre || null,
+          enforcedTags: precheck.enforcedTags.map((e) => e.tag),
+          blockedTags: precheck.blockedTags.map((b) => ({ tag: b.tag, reason: b.reason })),
+          isPreJPopEra: precheck.isPreJPopEra,
+          isWesternOrigin: precheck.isWesternOrigin,
+          hasPositiveIdolSignal: precheck.hasPositiveIdolSignal,
+        },
       };
     });
 
@@ -236,8 +277,18 @@ Crucially, you must explicitly provide the objective/analytical BASIS (根拠) f
 
 CRITICAL ERA TAG RULE (年代タグ生成の最優先ルール):
 - If an album has BOTH "cdReleaseDate" (CD発売年月日) and "vinylRecordReleaseDate" (同タイトルLP/EP発売年月日) — or whenever "vinylRecordReleaseDate" is present — you MUST generate the era/decade tag ("era" and the decade tag inside "suggestedTags") from "vinylRecordReleaseDate" (i.e. "effectiveReleaseDateForEraTag" / "requiredEraTag"), NOT from "cdReleaseDate".
-- For example, if a CD reissue was released in 2005 ("cdReleaseDate": "2005-09-21") but its original LP/EP record was released in 1982 ("vinylRecordReleaseDate": "1982-05-21"), the era tag MUST be "1980年代" (derived from the LP/EP release date 1982-05-21), and its "tagEvidence" must state that the era tag was generated from the LP/EP release date ("LP/EP発売年月日") because both CD and LP/EP dates exist.
 - Only use "cdReleaseDate" for the era tag when "vinylRecordReleaseDate" is empty.
+
+CRITICAL MULTI-METADATA RULE-BASED GENRE FILTER (誤判定防止・多重メタデータ検証ルール):
+Do NOT classify genres (especially "アイドル" and "J-Pop") based solely on artist names or cute-sounding song titles! You MUST inspect all metadata fields ("catalogNumber", "label", "vinylRecordReleaseDate", "cdReleaseDate", "vinylRecordFormat", "barcode", "country", "format", "trackDurationStats", "notes", and "ruleBasedFilterHints"):
+1. RESPECT "ruleBasedFilterHints.blockedTags": Never output any tag listed in "blockedTags" for that CD.
+2. RESPECT "ruleBasedFilterHints.enforcedPrimaryGenre" & "enforcedTags": Include any "enforcedTags" and use "enforcedPrimaryGenre" when provided.
+3. STRICT "アイドル" VERIFICATION:
+   - NEVER assign "アイドル" to Singer-Songwriters (シンガーソングライター), New Music (ニューミュージック), City Pop (シティポップ), Folk (フォーク), Rock bands (ロック), R&B vocalists, Voice Actor/Anime releases without idol context, Jazz, Classical, or Enka artists.
+   - Only assign "アイドル" when corroborated by label (e.g. Johnny's, J Storm, AKS, N46Div, Up-Front, 70s/80s Idol labels), notes, catalog number, or verified idol group/solo idol career.
+4. STRICT "J-Pop" VERIFICATION:
+   - NEVER assign "J-Pop" to Classical (UCCG/SICC/DG/Decca), Jazz/Fusion (UCCU/TOCJ/Blue Note/Verve), Western Music (洋楽: non-JP barcode/country or UICY/SICP/WPCR international catalog prefix), Soundtracks (劇伴/サントラ), or Enka.
+   - For pre-1988 releases ("isPreJPopEra": true, released before the term J-Pop was coined in 1988), prioritize period-accurate genres ("ニューミュージック", "昭和歌謡", "フォーク", "シティポップ", "アイドル", "ロック", "テクノポップ") over "J-Pop".
 
 Options requested:
 - Include Musical Genre/Sub-genre: ${options.includeGenre !== false ? 'Yes' : 'No'}
@@ -255,19 +306,19 @@ Instructions & STRICT TAG UNIFICATION RULES (表記ゆれ防止・タグ統一�
    - Use "アイドル" (NEVER "Aidol" or "Idol")
    - Use "アニソン" (NEVER "Anime", "アニメ", or "アニメソング")
    - Use "CMソング" (NEVER "CM-Song" or "CM曲")
-   - Use "シンガーソングライター", "ニューミュージック", "フォーク", "シティポップ", "昭和歌謡", "ロック", "ハードロック", "パンク", "ジャズ", "フュージョン", "クラシック", "R&B", "ヒップホップ", "テクノポップ", "AOR", "バラード", "アコースティック", "サウンドトラック", "ベスト盤", "ライブ盤", "お笑い・バラエティ"
+   - Use "シンガーソングライター", "ニューミュージック", "フォーク", "シティポップ", "昭和歌謡", "演歌", "ロック", "ハードロック", "パンク", "ジャズ", "フュージョン", "クラシック", "R&B", "ヒップホップ", "テクノポップ", "AOR", "バラード", "アコースティック", "サウンドトラック", "ゲーム音楽", "ベスト盤", "ライブ盤", "お笑い・バラエティ"
    - Era tags MUST be strictly one of: "1950年代", "1960年代", "1970年代", "1980年代", "1990年代", "2000年代", "2010年代", "2020年代" (NEVER "70年代", "80年代", "90年代", or "80s").
-2. "genre": The primary music genre using ONLY a single unified canonical name from rule 1 (e.g., "J-Pop", "ニューミュージック", "シティポップ", "ロック", "アニソン", "ジャズ", "昭和歌謡", "フォーク", "R&B", "ヒップホップ", "アイドル", "クラシック").
-3. "subGenre": Sub-genre or musical style using unified Japanese terms (e.g., "シンガーソングライター", "バラード", "アコースティック", "AOR", "テクノポップ", "ベスト盤", "ライブ盤").
+2. "genre": The primary music genre using ONLY a single unified canonical name from rule 1.
+3. "subGenre": Sub-genre or musical style using unified Japanese terms.
 4. "mood": Atmosphere & emotional feel keywords in Japanese (e.g., "爽快・疾走感", "切ない・哀愁", "メロウ・チル", "エモーショナル", "叙情的・優しさ", "ダンサブル").
 5. "era": Era/decade classification derived strictly from "effectiveReleaseDateForEraTag" ("vinylRecordReleaseDate" when present, otherwise "cdReleaseDate").
-6. "suggestedTags": Array of 3 to 5 concise, unified Japanese tags following Rule 1. When Include Era/Decade is Yes and "requiredEraTag" is non-empty, "suggestedTags" MUST include that exact "requiredEraTag" and MUST NOT include a conflicting decade tag.
-7. "reasoning": A clear 1-2 sentence Japanese explanation summarizing the overall musical characteristics and why these tags fit this album (mentioning the LP/EP original release date when present).
+6. "suggestedTags": Array of 3 to 5 concise, unified Japanese tags following Rule 1 and the Multi-Metadata Rule-Based Genre Filter.
+7. "reasoning": A clear 1-2 sentence Japanese explanation summarizing the overall musical characteristics and citing the metadata used (label, catalog prefix, LP/EP release date, track durations, notes, etc.).
 8. "tagEvidence": An array corresponding to each tag in "suggestedTags", explaining the concrete basis (根拠):
    - "tag": The exact unified tag string matching "suggestedTags".
    - "category": One of "genre" | "mood" | "era" | "style".
    - "evidence": Specific Japanese explanation of why this tag was chosen.
-   - "sourceFields": Array of input fields used as evidence in Japanese (e.g., ["LP/EP発売年月日"], ["アーティスト名", "収録曲リスト"], ["CD発売年月日"], ["規格品番・レーベル", "タイトル"]).
+   - "sourceFields": Array of input fields used as evidence in Japanese (e.g., ["LP/EP発売年月日"], ["規格品番", "レーベル"], ["収録曲数・演奏時間"], ["タイトル", "備考"], ["アーティスト名", "収録曲リスト"]).
 
 Return ONLY a valid JSON object matching this schema with no markdown backticks:
 {
@@ -285,7 +336,7 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
           "tag": "tag1",
           "category": "genre",
           "evidence": "...",
-          "sourceFields": ["アーティスト名", "収録曲リスト"]
+          "sourceFields": ["規格品番", "レーベル"]
         }
       ]
     }
@@ -313,16 +364,17 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
       const parsed = JSON.parse(cleanJson);
 
       if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
-        // Post-process each result to deterministically enforce unified tags and the LP/EP release date era rule
+        // Post-process each result to deterministically enforce unified tags, multi-metadata rule filter, and the LP/EP release date era rule
         for (const item of parsed.results as CDTagAnalysisResult[]) {
-          item.genre = normalizeServerTag(item.genre) || 'J-Pop';
-          if (item.subGenre) {
-            item.subGenre = normalizeServerTag(item.subGenre);
-          }
-          item.suggestedTags = normalizeServerTagList(item.suggestedTags);
+          const origCd = chunk.find((c) => c.id === item.id);
+          const rawNormalizedGenre = normalizeServerTag(item.genre);
+          const rawNormalizedSubGenre = item.subGenre ? normalizeServerTag(item.subGenre) : undefined;
+          const rawNormalizedTags = normalizeServerTagList(item.suggestedTags);
+
+          let normalizedEvList: TagEvidenceItem[] = [];
           if (Array.isArray(item.tagEvidence)) {
             const seenEv = new Set<string>();
-            item.tagEvidence = item.tagEvidence
+            normalizedEvList = item.tagEvidence
               .map((ev) => ({
                 ...ev,
                 tag: normalizeServerTag(ev.tag),
@@ -334,7 +386,46 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
               });
           }
 
-          const origCd = chunk.find((c) => c.id === item.id);
+          // Run deterministic multi-metadata rule-based genre & false-positive filter
+          if (origCd) {
+            const ruleFiltered = applyGenreRuleFilter(
+              {
+                id: origCd.id,
+                title: origCd.title,
+                artist: origCd.artist,
+                catalogNumber: origCd.catalogNumber,
+                label: origCd.label,
+                releaseDate: origCd.releaseDate,
+                vinylRecordReleaseDate: origCd.vinylRecordReleaseDate,
+                vinylRecordFormat: origCd.vinylRecordFormat,
+                vinylRecordCatalogNumber: origCd.vinylRecordCatalogNumber,
+                barcode: origCd.barcode,
+                country: origCd.country,
+                format: origCd.format,
+                tracks: origCd.tracks,
+                genre: origCd.genre,
+                existingTags: origCd.existingTags,
+                notes: origCd.notes,
+              },
+              rawNormalizedTags,
+              rawNormalizedGenre,
+              rawNormalizedSubGenre,
+              item.reasoning,
+              normalizedEvList
+            );
+
+            item.genre = ruleFiltered.genre;
+            item.subGenre = ruleFiltered.subGenre;
+            item.suggestedTags = ruleFiltered.suggestedTags;
+            item.tagEvidence = ruleFiltered.tagEvidence;
+            item.ruleAdjustments = ruleFiltered.ruleAdjustments;
+          } else {
+            item.genre = rawNormalizedGenre || 'J-Pop';
+            item.subGenre = rawNormalizedSubGenre;
+            item.suggestedTags = rawNormalizedTags;
+            item.tagEvidence = normalizedEvList;
+          }
+
           if (origCd && options.includeEra !== false) {
             const hasVinyl = Boolean(origCd.vinylRecordReleaseDate && origCd.vinylRecordReleaseDate.trim());
             const hasCd = Boolean(origCd.releaseDate && origCd.releaseDate.trim());
@@ -381,7 +472,7 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
       }
     } catch (err: any) {
       console.error(`Error in Gemini AI tagging chunk ${i}:`, err);
-      // Fallback: generate deterministic tags prioritizing vinylRecordReleaseDate over releaseDate
+      // Fallback: generate deterministic tags using multi-metadata rule filter and prioritizing vinylRecordReleaseDate over releaseDate
       chunk.forEach((cd) => {
         const hasVinyl = Boolean(cd.vinylRecordReleaseDate && cd.vinylRecordReleaseDate.trim());
         const hasCd = Boolean(cd.releaseDate && cd.releaseDate.trim());
@@ -395,21 +486,54 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
             ? `同タイトルのLP/EP発売年月日(${cd.vinylRecordReleaseDate})から「${era}」タグを生成`
             : `CD発売年月日(${cd.releaseDate})から「${era}」タグを生成`;
 
-        const canonicalGenre = normalizeServerTag(cd.genre) || 'J-Pop';
-        const suggested = normalizeServerTagList([era, canonicalGenre, '邦楽'].filter(Boolean));
+        const initialGenre = normalizeServerTag(cd.genre);
+        const initialTags = normalizeServerTagList(
+          [era, initialGenre, ...(cd.existingTags || []), '邦楽'].filter(Boolean)
+        );
+
+        const ruleFiltered = applyGenreRuleFilter(
+          {
+            id: cd.id,
+            title: cd.title,
+            artist: cd.artist,
+            catalogNumber: cd.catalogNumber,
+            label: cd.label,
+            releaseDate: cd.releaseDate,
+            vinylRecordReleaseDate: cd.vinylRecordReleaseDate,
+            vinylRecordFormat: cd.vinylRecordFormat,
+            vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber,
+            barcode: cd.barcode,
+            country: cd.country,
+            format: cd.format,
+            tracks: cd.tracks,
+            genre: cd.genre,
+            existingTags: cd.existingTags,
+            notes: cd.notes,
+          },
+          initialTags,
+          initialGenre
+        );
+
+        const finalTags = era
+          ? [era, ...ruleFiltered.suggestedTags.filter((t) => !DECADE_TAG_REGEX.test(t))]
+          : ruleFiltered.suggestedTags;
+
         allResults.push({
           id: cd.id,
-          genre: canonicalGenre,
+          genre: ruleFiltered.genre,
+          subGenre: ruleFiltered.subGenre,
           mood: 'ポップ・メロディアス',
-          era: era || '邦楽',
-          suggestedTags: suggested,
+          era: era || (ruleFiltered.suggestedTags.includes('洋楽') ? '洋楽' : '邦楽'),
+          suggestedTags: finalTags,
           reasoning: `アーティスト「${cd.artist}」・タイトル「${cd.title}」${
+            cd.label ? `・レーベル(${cd.label})` : ''
+          }${cd.catalogNumber ? `・規格品番(${cd.catalogNumber})` : ''}${
             hasVinyl
               ? `・同タイトルLP/EP発売日(${cd.vinylRecordReleaseDate}${hasCd ? ` ※CD発売日:${cd.releaseDate}より優先` : ''})`
               : hasCd
               ? `・CD発売日(${cd.releaseDate})`
               : ''
-          }のメタデータに基づく自動分類`,
+          }の複合メタデータ規則に基づく分類`,
           tagEvidence: [
             ...(era
               ? [
@@ -421,13 +545,9 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
                   },
                 ]
               : []),
-            {
-              tag: canonicalGenre,
-              category: 'genre' as const,
-              evidence: `アーティスト「${cd.artist}」およびレーベル（${cd.label || '国内盤規格'}）の傾向から判定`,
-              sourceFields: ['アーティスト名', 'レーベル'],
-            },
+            ...ruleFiltered.tagEvidence.filter((ev) => !DECADE_TAG_REGEX.test(ev.tag)),
           ],
+          ruleAdjustments: ruleFiltered.ruleAdjustments,
         });
       });
     }
