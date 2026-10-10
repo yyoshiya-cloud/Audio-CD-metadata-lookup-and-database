@@ -657,31 +657,6 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
               </span>
             </button>
           )}
-
-          {/* PDF Catalog / Analog Sleeve Export Button */}
-          {onOpenPDFCatalog && (
-            <button
-              type="button"
-              onClick={() => onOpenPDFCatalog(filteredCDs)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white border border-amber-400/40 shadow-md transition-all cursor-pointer"
-              title="現在表示中のCDコレクションを印刷用CDカタログ / LPアナログジャケット風PDFとして出力"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-amber-100" />
-              <span>アナログジャケット・PDFカタログ出力 ({filteredCDs.length}件)</span>
-            </button>
-          )}
-
-          {/* Spreadsheet View Navigation Button */}
-          {onNavigateToSpreadsheet && (
-            <button
-              type="button"
-              onClick={onNavigateToSpreadsheet}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-              <span>表形式表示</span>
-            </button>
-          )}
         </div>
 
       </div>
