@@ -1,11 +1,19 @@
 import React from 'react';
 import { X, Disc, Sparkles, Database, ShieldCheck, ExternalLink, Code2, FileSpreadsheet } from 'lucide-react';
+import { AppInfoConfig, DEFAULT_APP_INFO_CONFIG } from '../lib/db';
 
 interface AppInfoModalProps {
   onClose: () => void;
+  appInfoConfig?: AppInfoConfig;
 }
 
-export const AppInfoModal: React.FC<AppInfoModalProps> = ({ onClose }) => {
+export const AppInfoModal: React.FC<AppInfoModalProps> = ({
+  onClose,
+  appInfoConfig = DEFAULT_APP_INFO_CONFIG,
+}) => {
+  const versionText = appInfoConfig.version || DEFAULT_APP_INFO_CONFIG.version;
+  const lastUpdatedText = appInfoConfig.lastUpdated || DEFAULT_APP_INFO_CONFIG.lastUpdated;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
       <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-3xl flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -17,16 +25,16 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({ onClose }) => {
               <Disc className="w-6 h-6 text-white animate-spin-slow" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+              <div className="flex items-center gap-2.5 flex-nowrap overflow-x-auto scrollbar-none">
+                <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight whitespace-nowrap">
                   CDメタデータ検索＆データベース
                 </h2>
-                <span className="text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                  Version 1.1.0
+                <span className="text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 whitespace-nowrap flex-shrink-0">
+                  Version {versionText}
                 </span>
-                <span className="text-[11px] font-medium text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  最終更新日: 2026年10月7日
+                <span className="text-[11px] font-medium text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1 whitespace-nowrap flex-shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                  最終更新日: {lastUpdatedText}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">

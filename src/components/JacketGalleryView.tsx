@@ -415,23 +415,23 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
       )}
 
       {/* Header Controls Bar */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-center justify-between gap-3">
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl px-3.5 py-2 shadow-xl flex flex-col md:flex-row items-center justify-between gap-2.5">
         
         {/* Title & Stats */}
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 ring-1 ring-white/20">
-            <Disc className="w-5 h-5 animate-spin-slow" />
+        <div className="flex items-center gap-2.5 w-full md:w-auto">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 ring-1 ring-white/20 flex-shrink-0">
+            <Disc className="w-4 h-4 animate-spin-slow" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm sm:text-base font-extrabold text-white tracking-tight">
+            <div className="flex items-center gap-2 leading-tight">
+              <h2 className="text-sm font-extrabold text-white tracking-tight">
                 ジャケットギャラリー ビュー
               </h2>
-              <span className="text-[11px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full">
+              <span className="text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.2 rounded-full">
                 {filteredCDs.length} / {cds.length} 件
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
               レコードスリーブ・3D回転アニメーション付きインタラクティブギャラリー
             </p>
           </div>

@@ -448,7 +448,7 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
   };
 
   return (
-    <div className="space-y-5 animate-in fade-in duration-200">
+    <div className="space-y-3 animate-in fade-in duration-200">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-indigo-500/60 text-indigo-200 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2 text-xs font-bold">
@@ -458,32 +458,32 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
       )}
 
       {/* Top Summary Banner */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-lg shadow-emerald-600/30 ring-1 ring-white/20">
-            <ListMusic className="w-5 h-5" />
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl px-3.5 py-2 shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-lg shadow-emerald-600/30 ring-1 ring-white/20 flex-shrink-0">
+            <ListMusic className="w-4 h-4" />
           </div>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-sm sm:text-base font-extrabold text-white tracking-tight">
+            <div className="flex items-center gap-2 flex-wrap leading-tight">
+              <h2 className="text-sm font-extrabold text-white tracking-tight">
                 全CD横断「収録曲（トラック名）検索」＆ カスタムセットリスト作成
               </h2>
-              <span className="text-[11px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+              <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/30 px-2 py-0.2 rounded-full">
                 全 {allFlattenedTracks.length} 曲 ({cds.length} アルバム)
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
               「あの曲はどのアルバムに入っていたか？」を横断検索し、同名曲の収録盤比較やカセットテープ/MD/CD-R用の仮想セットリスト・録音時間計算が行えます
             </p>
           </div>
         </div>
 
         {/* Filter Mode Tabs */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setFilterMode('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
               filterMode === 'all'
                 ? 'bg-indigo-600 text-white border-indigo-400 shadow'
                 : 'bg-slate-950 text-slate-300 border-slate-800 hover:bg-slate-800'
@@ -496,7 +496,7 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
           <button
             type="button"
             onClick={() => setFilterMode('favorites')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
               filterMode === 'favorites'
                 ? 'bg-rose-600 text-white border-rose-400 shadow'
                 : 'bg-slate-950 text-rose-300 border-rose-500/30 hover:bg-rose-950/60'
@@ -509,7 +509,7 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
           <button
             type="button"
             onClick={() => setFilterMode('multiVersion')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
               filterMode === 'multiVersion'
                 ? 'bg-amber-600 text-white border-amber-400 shadow'
                 : 'bg-slate-950 text-amber-300 border-amber-500/30 hover:bg-amber-950/60'
@@ -524,7 +524,7 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
 
       {/* Missing Tracklist Notice Banner (if some CDs in library have 0 tracks) */}
       {cdsWithoutTracks.length > 0 && (
-        <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl px-3.5 py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="text-xs text-amber-200">
             <span className="font-bold">⚠️ 収録曲（トラック情報）が未登録のCDが {cdsWithoutTracks.length} 枚あります。</span>
             <span className="text-amber-300/80 ml-1.5">
@@ -536,7 +536,7 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
               type="button"
               onClick={handleBackfillMissingTracks}
               disabled={isBackfillingTracks}
-              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow"
+              className="px-3 py-1 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>
@@ -550,25 +550,25 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
       )}
 
       {/* Main 2-Column Layout: Left Track Cross-Search Table / Right Custom Setlist Builder */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_440px] gap-5 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_440px] gap-4 items-start">
         {/* LEFT COLUMN: Cross-CD Track Search & Version Comparison */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
           {/* Search & Artist Filter Bar */}
-          <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="px-3.5 py-2.5 border-b border-slate-800 bg-slate-950/60 flex flex-col sm:flex-row items-center justify-between gap-2.5">
             <div className="relative flex-1 w-full">
-              <Search className="w-4 h-4 text-emerald-400 absolute left-3.5 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-emerald-400 absolute left-3 top-2" />
               <input
                 type="text"
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
                 placeholder="曲名（トラック名）・アーティスト名・収録アルバム名・規格品番で横断検索..."
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 pl-10 pr-8 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl py-1.5 pl-9 pr-8 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
               />
               {searchKeyword && (
                 <button
                   type="button"
                   onClick={() => setSearchKeyword('')}
-                  className="absolute right-3 top-2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                  className="absolute right-2.5 top-1.5 text-slate-400 hover:text-white text-xs cursor-pointer"
                 >
                   ✕
                 </button>
@@ -579,7 +579,7 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
               <select
                 value={selectedArtistFilter}
                 onChange={(e) => setSelectedArtistFilter(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none cursor-pointer max-w-[220px]"
+                className="bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none cursor-pointer max-w-[220px]"
               >
                 <option value="all">すべてのアーティスト ({artistList.length}組)</option>
                 {artistList.map((art) => (
@@ -589,7 +589,7 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
                 ))}
               </select>
 
-              <span className="text-xs font-mono font-bold text-emerald-300 bg-emerald-950/70 border border-emerald-500/30 px-2.5 py-1.5 rounded-xl whitespace-nowrap">
+              <span className="text-xs font-mono font-bold text-emerald-300 bg-emerald-950/70 border border-emerald-500/30 px-2.5 py-1 rounded-xl whitespace-nowrap">
                 該当 {filteredTracks.length} 曲
               </span>
             </div>
@@ -597,16 +597,16 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
 
           {/* Track Search Results Table */}
           {filteredTracks.length > 0 ? (
-            <div className="overflow-x-auto max-h-[680px] overflow-y-auto">
+            <div className="overflow-x-auto max-h-[700px] overflow-y-auto">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="sticky top-0 z-10 bg-slate-950 text-slate-400 text-[10px] uppercase tracking-wider border-b border-slate-800 shadow-sm">
                   <tr>
-                    <th className="py-2.5 px-3 w-10 text-center">★</th>
-                    <th className="py-2.5 px-3">曲名 (トラックタイトル)</th>
-                    <th className="py-2.5 px-2 w-16 text-center">時間</th>
-                    <th className="py-2.5 px-3">収録アルバム / 規格品番 / 発売日</th>
-                    <th className="py-2.5 px-2 w-14 text-center">曲順</th>
-                    <th className="py-2.5 px-3 w-28 text-center">セットリスト</th>
+                    <th className="py-2 px-3 w-10 text-center">★</th>
+                    <th className="py-2 px-3">曲名 (トラックタイトル)</th>
+                    <th className="py-2 px-2 w-16 text-center">時間</th>
+                    <th className="py-2 px-3">収録アルバム / 規格品番 / 発売日</th>
+                    <th className="py-2 px-2 w-14 text-center">曲順</th>
+                    <th className="py-2 px-3 w-28 text-center">セットリスト</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/70">
@@ -621,7 +621,7 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
                         className="hover:bg-slate-800/50 transition-colors group"
                       >
                         {/* Favorite Heart */}
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-1.5 px-3 text-center">
                           <button
                             type="button"
                             onClick={() => toggleFavoriteTrack(row.key, row.trackTitle)}
@@ -632,13 +632,13 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
                             }`}
                             title={isFav ? 'お気に入り解除' : 'お気に入り曲に登録'}
                           >
-                            <Heart className={`w-4 h-4 ${isFav ? 'fill-current' : ''}`} />
+                            <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-current' : ''}`} />
                           </button>
                         </td>
 
                         {/* Track Title & Same-Song Version Comparison Badge */}
-                        <td className="py-2.5 px-3">
-                          <div className="flex items-center gap-2 flex-wrap">
+                        <td className="py-1.5 px-3">
+                          <div className="flex items-center gap-2 flex-wrap leading-snug">
                             <span className="font-extrabold text-white text-xs">
                               {row.trackTitle}
                             </span>
@@ -646,31 +646,31 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
                               <button
                                 type="button"
                                 onClick={() => setSearchKeyword(row.trackTitle)}
-                                className="text-[10px] font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded-md cursor-pointer transition-colors"
+                                className="text-[10px] font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-500/40 px-1.5 py-0 rounded-md cursor-pointer transition-colors leading-tight"
                                 title="クリックしてこの曲名が収録されている全アルバムを抽出比較"
                               >
                                 全{sameTitleCount}盤に収録
                               </button>
                             )}
                           </div>
-                          <div className="text-[11px] text-slate-400 truncate">
+                          <div className="text-[10px] text-slate-400 truncate leading-tight">
                             {row.trackArtist}
                           </div>
                         </td>
 
                         {/* Duration */}
-                        <td className="py-2.5 px-2 text-center font-mono text-slate-300">
+                        <td className="py-1.5 px-2 text-center font-mono text-slate-300">
                           {row.duration || '--:--'}
                         </td>
 
                         {/* Album Info (Clickable to open CDDetailModal) */}
-                        <td className="py-2.5 px-3">
+                        <td className="py-1.5 px-3">
                           <div
                             onClick={() => onSelectCD(row.cd, cds)}
-                            className="flex items-center gap-2.5 cursor-pointer group/album"
+                            className="flex items-center gap-2 cursor-pointer group/album"
                             title={`クリックしてアルバム「${row.cd.title}」の詳細を開く`}
                           >
-                            <div className="w-9 h-9 rounded-lg bg-slate-950 border border-slate-700 overflow-hidden flex-shrink-0 flex items-center justify-center group-hover/album:border-indigo-400 transition-colors">
+                            <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-700 overflow-hidden flex-shrink-0 flex items-center justify-center group-hover/album:border-indigo-400 transition-colors">
                               {row.cd.coverUrl ? (
                                 <img
                                   src={row.cd.coverUrl}
@@ -682,11 +682,11 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
                                 <Disc className="w-4 h-4 text-slate-600" />
                               )}
                             </div>
-                            <div className="min-w-0">
+                            <div className="min-w-0 leading-tight">
                               <div className="font-bold text-indigo-200 group-hover/album:text-indigo-300 group-hover/album:underline truncate max-w-[260px]">
                                 {row.cd.title}
                               </div>
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
+                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono mt-0.5">
                                 <span className="text-indigo-400 font-semibold">
                                   {row.cd.catalogNumber || '型番未設定'}
                                 </span>
@@ -702,18 +702,18 @@ export const TrackSearchAndSetlistView: React.FC<TrackSearchAndSetlistViewProps>
                         </td>
 
                         {/* Track Number */}
-                        <td className="py-2.5 px-2 text-center font-mono">
-                          <span className="bg-slate-800 border border-slate-700 text-slate-200 px-2 py-0.5 rounded text-[11px] font-bold">
+                        <td className="py-1.5 px-2 text-center font-mono">
+                          <span className="bg-slate-800 border border-slate-700 text-slate-200 px-1.5 py-0.5 rounded text-[11px] font-bold">
                             Tr.{String(row.trackNumber).padStart(2, '0')}
                           </span>
                         </td>
 
                         {/* Add to Setlist Action */}
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-1.5 px-3 text-center">
                           <button
                             type="button"
                             onClick={() => handleAddTrackToSetlist(row)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+                            className="px-2 py-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-sm transition-all cursor-pointer"
                             title={`現在のセットリスト「${activeSetlist?.name || ''}」にこの曲を追加`}
                           >
                             <Plus className="w-3 h-3" />

@@ -247,27 +247,27 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-130px)] space-y-3 pb-1">
+    <div className="flex flex-col h-[calc(100vh-105px)] space-y-2 pb-1">
       
       {/* 1. Control Bar (Fixed at top): Filters, Search & Action Buttons */}
-      <div className="bg-slate-800/80 rounded-2xl border border-slate-700/80 p-4 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 flex-shrink-0">
+      <div className="bg-slate-800/80 rounded-2xl border border-slate-700/80 px-3.5 py-2 shadow-xl flex flex-col md:flex-row items-center justify-between gap-2.5 flex-shrink-0">
         
         {/* Search Input & Synced Filter */}
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1">
-          <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto flex-1">
+          <div className="relative w-full sm:w-72">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2" />
             <input
               type="text"
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               placeholder="型番、タイトル、歌手名、曲名、タグで検索..."
-              className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl py-2 pl-9 pr-8 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none transition-all shadow-inner"
+              className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl py-1.5 pl-8 pr-7 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none transition-all shadow-inner"
             />
             {searchKeyword && (
               <button
                 type="button"
                 onClick={() => setSearchKeyword('')}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white p-0.5 rounded-full hover:bg-slate-800 transition-colors"
+                className="absolute right-2 top-1.5 text-slate-400 hover:text-white p-0.5 rounded-full hover:bg-slate-800 transition-colors"
                 title="検索条件をクリア"
               >
                 ✕
@@ -275,12 +275,12 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-700/80 text-xs w-full sm:w-auto shadow-inner">
+          <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-xl border border-slate-700/80 text-xs w-full sm:w-auto shadow-inner">
             <Filter className="w-3.5 h-3.5 text-slate-400 ml-1.5 mr-0.5" />
             <button
               type="button"
               onClick={() => setFilterSynced('all')}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 filterSynced === 'all'
                   ? 'bg-indigo-600 text-white shadow'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -291,7 +291,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             <button
               type="button"
               onClick={() => setFilterSynced('synced')}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 filterSynced === 'synced'
                   ? 'bg-emerald-600 text-white shadow'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -302,7 +302,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             <button
               type="button"
               onClick={() => setFilterSynced('notSynced')}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 filterSynced === 'notSynced'
                   ? 'bg-indigo-600 text-white shadow'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -314,12 +314,12 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+        <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto justify-end">
           {onBatchUpdateCDs && (
             <button
               type="button"
               onClick={() => setIsSpreadsheetMode(!isSpreadsheetMode)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border shadow-sm ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border shadow-sm ${
                 isSpreadsheetMode
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 ring-2 ring-emerald-500/50 shadow-emerald-900/40'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border-slate-700 hover:border-slate-600'
@@ -334,7 +334,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
           {onOpenManualAdd && (
             <button
               onClick={onOpenManualAdd}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/30 border border-indigo-400/30 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/30 border border-indigo-400/30 transition-all cursor-pointer"
               title="新しいCDを手動で追加登録"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -345,7 +345,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
           {onOpenBatchModal && (
             <button
               onClick={onOpenBatchModal}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 hover:border-slate-600 transition-all cursor-pointer shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 hover:border-slate-600 transition-all cursor-pointer shadow-sm"
               title="型番の一括連続自動取得"
             >
               <PlusCircle className="w-3.5 h-3.5 text-emerald-400" />
@@ -358,7 +358,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
               type="button"
               onClick={() => handleBatchLookupVinylReleaseDates(selectedIds.length > 0 ? selectedCDs : filteredCDs)}
               disabled={isLookingUpVinylBatch || filteredCDs.length === 0}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-200 border border-amber-500/40 hover:border-amber-400 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-200 border border-amber-500/40 hover:border-amber-400 transition-all cursor-pointer shadow-sm disabled:opacity-50"
               title="登録しているCDに同タイトルのLP・EPレコードがある場合、API（MusicBrainz・Discogs・NDL・Gemini）からLP/EP発売年月日を一括取得します"
             >
               {isLookingUpVinylBatch ? (
@@ -380,7 +380,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             <button
               type="button"
               onClick={() => setIsBatchEditModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/30 border border-indigo-400/40 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/30 border border-indigo-400/40 transition-all cursor-pointer"
               title="選択したCDのタグ（アイドル・J-Pop等）や備考を一括編集"
             >
               <Tag className="w-3.5 h-3.5 text-indigo-100" />
@@ -392,7 +392,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             <button
               type="button"
               onClick={onOpenTagManager}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-indigo-200 hover:text-white border border-slate-700 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-indigo-200 hover:text-white border border-slate-700 transition-all cursor-pointer"
               title="新しいタグ名称の追加や、既存タグ名称の一括変更（リネーム）・削除を行います"
             >
               <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
@@ -403,7 +403,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
           {onOpenAITagging && (
             <button
               onClick={() => onOpenAITagging(selectedCDs)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-md shadow-purple-900/30 border border-purple-400/30 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-md shadow-purple-900/30 border border-purple-400/30 transition-all cursor-pointer"
               title="Gemini AIでジャンル・雰囲気・年代を自動分析しタグを一括付与"
             >
               <Sparkles className="w-3.5 h-3.5 text-purple-200" />
@@ -415,7 +415,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             <button
               type="button"
               onClick={() => onOpenPDFCatalog(selectedIds.length > 0 ? selectedCDs : cds)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-md shadow-amber-900/30 border border-amber-400/40 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-md shadow-amber-900/30 border border-amber-400/40 transition-all cursor-pointer"
               title="印刷用CDカタログ・LPアナログジャケット風ライナーノーツ・CDケース差し込みカードのPDF出力"
             >
               <BookOpen className="w-3.5 h-3.5 text-amber-100" />
@@ -425,12 +425,12 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
 
           <button
             onClick={() => onOpenExportSheetsModal(selectedIds.length > 0 ? selectedCDs : cds)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/30 transition-all cursor-pointer border border-emerald-500/40"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/30 transition-all cursor-pointer border border-emerald-500/40"
             title="Googleスプレッドシート・Excel・CSV・JSONの双方向連携・書き出し"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
             <span>{selectedIds.length > 0 ? `データ連携・書き出し (${selectedIds.length}件)` : 'データ連携・書き出し'}</span>
-            <span className="text-[10px] bg-emerald-950/80 text-emerald-200 px-1.5 py-0.5 rounded-full border border-emerald-400/40 font-mono font-bold">
+            <span className="text-[10px] bg-emerald-950/80 text-emerald-200 px-1.5 py-0.2 rounded-full border border-emerald-400/40 font-mono font-bold">
               {selectedIds.length > 0 ? selectedIds.length : cds.length}
             </span>
           </button>
@@ -552,7 +552,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="sticky top-0 z-20 bg-slate-900 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-700 select-none shadow-md">
                 <tr>
-                  <th className="py-3 px-3 w-10 text-center whitespace-nowrap bg-slate-900">
+                  <th className="py-2 px-3 w-10 text-center whitespace-nowrap bg-slate-900">
                     <input
                       type="checkbox"
                       checked={selectedIds.length === filteredCDs.length && filteredCDs.length > 0}
@@ -562,13 +562,13 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                   </th>
                   
                   {/* Jacket Header */}
-                  <th className="py-3 px-2 w-12 text-center font-mono text-slate-400 text-[11px] bg-slate-900 whitespace-nowrap">No.</th>
-                  <th className="py-3 px-3 w-16 text-center whitespace-nowrap bg-slate-900">ジャケット</th>
+                  <th className="py-2 px-2 w-12 text-center font-mono text-slate-400 text-[11px] bg-slate-900 whitespace-nowrap">No.</th>
+                  <th className="py-2 px-3 w-14 text-center whitespace-nowrap bg-slate-900">ジャケット</th>
 
                   {/* Sortable Column: Catalog Number */}
                   <th
                     onClick={() => handleSort('catalogNumber')}
-                    className="py-3 px-3 w-32 cursor-pointer hover:text-white hover:bg-slate-800 transition-colors whitespace-nowrap bg-slate-900"
+                    className="py-2 px-3 w-32 cursor-pointer hover:text-white hover:bg-slate-800 transition-colors whitespace-nowrap bg-slate-900"
                     title="型番で並べ替え"
                   >
                     <div className="flex items-center gap-1">
@@ -582,7 +582,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                   {/* Sortable Column: Title (Click title in rows to edit details) */}
                   <th
                     onClick={() => handleSort('title')}
-                    className="py-3 px-4 min-w-[280px] cursor-pointer hover:text-white hover:bg-slate-800 transition-colors bg-slate-900"
+                    className="py-2 px-4 min-w-[280px] cursor-pointer hover:text-white hover:bg-slate-800 transition-colors bg-slate-900"
                     title="CDタイトルで並べ替え"
                   >
                     <div className="flex items-center gap-1.5">
@@ -596,7 +596,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                   {/* Sortable Column: Artist */}
                   <th
                     onClick={() => handleSort('artist')}
-                    className="py-3 px-4 min-w-[180px] cursor-pointer hover:text-white hover:bg-slate-800 transition-colors bg-slate-900"
+                    className="py-2 px-4 min-w-[180px] cursor-pointer hover:text-white hover:bg-slate-800 transition-colors bg-slate-900"
                     title="歌手 / アーティストで並べ替え"
                   >
                     <div className="flex items-center gap-1.5">
@@ -610,7 +610,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                   {/* Sortable Column: Label */}
                   <th
                     onClick={() => handleSort('label')}
-                    className="py-3 px-3 min-w-[140px] cursor-pointer hover:text-white hover:bg-slate-800 transition-colors bg-slate-900"
+                    className="py-2 px-3 min-w-[140px] cursor-pointer hover:text-white hover:bg-slate-800 transition-colors bg-slate-900"
                     title="レーベルで並べ替え"
                   >
                     <div className="flex items-center gap-1.5">
@@ -624,7 +624,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                   {/* Sortable Column: Release Date */}
                   <th
                     onClick={() => handleSort('releaseDate')}
-                    className="py-3 px-3 w-28 cursor-pointer hover:text-white hover:bg-slate-800 transition-colors whitespace-nowrap bg-slate-900"
+                    className="py-2 px-3 w-28 cursor-pointer hover:text-white hover:bg-slate-800 transition-colors whitespace-nowrap bg-slate-900"
                     title="CD発売年月日などで並べ替え"
                   >
                     <div className="flex items-center gap-1">
@@ -638,7 +638,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                   {/* Sortable Column: Same-Title LP/EP Vinyl Release Date */}
                   <th
                     onClick={() => handleSort('vinylRecordReleaseDate')}
-                    className="py-3 px-3 w-36 cursor-pointer hover:text-amber-200 hover:bg-slate-800 transition-colors whitespace-nowrap bg-slate-900 text-amber-300/90"
+                    className="py-2 px-3 w-36 cursor-pointer hover:text-amber-200 hover:bg-slate-800 transition-colors whitespace-nowrap bg-slate-900 text-amber-300/90"
                     title="同タイトルのLP・EPレコード発売年月日で並べ替え"
                   >
                     <div className="flex items-center gap-1">
@@ -649,8 +649,8 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                     </div>
                   </th>
 
-                  <th className="py-3 px-3 text-center whitespace-nowrap bg-slate-900">収録曲</th>
-                  <th className="py-3 px-3 text-center whitespace-nowrap bg-slate-900">スプレッドシート</th>
+                  <th className="py-2 px-3 text-center whitespace-nowrap bg-slate-900">収録曲</th>
+                  <th className="py-2 px-3 text-center whitespace-nowrap bg-slate-900">スプレッドシート</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-sans">
@@ -661,7 +661,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                   return (
                     <React.Fragment key={cd.id}>
                       <tr className={`hover:bg-slate-700/30 transition-colors ${isChecked ? 'bg-indigo-950/20' : ''}`}>
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-1.5 px-3 text-center">
                           <input
                             type="checkbox"
                             checked={isChecked}
@@ -671,17 +671,17 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                         </td>
 
                         {/* Sequential Index Number */}
-                        <td className="py-3 px-2 text-center font-mono text-xs font-bold text-slate-300 whitespace-nowrap">
+                        <td className="py-1.5 px-2 text-center font-mono text-xs font-bold text-slate-300 whitespace-nowrap">
                           <span className="bg-slate-900/90 border border-slate-700 text-indigo-300 px-2 py-0.5 rounded-md font-mono text-[11px] shadow-xs">
                             #{index + 1}
                           </span>
                         </td>
 
                         {/* Jacket Image */}
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-1.5 px-3 text-center">
                           <div
                             onClick={() => onSelectCD(cd, sortedCDs)}
-                            className="w-10 h-10 rounded-lg bg-slate-900 overflow-hidden border border-slate-700 mx-auto flex items-center justify-center cursor-pointer hover:border-indigo-400 transition-colors"
+                            className="w-9 h-9 rounded-lg bg-slate-900 overflow-hidden border border-slate-700 mx-auto flex items-center justify-center cursor-pointer hover:border-indigo-400 transition-colors"
                             title="クリックして詳細・曲順を確認"
                           >
                             {cd.coverUrl ? (
@@ -702,22 +702,22 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                                 }}
                               />
                             ) : (
-                              <Disc className="w-5 h-5 text-slate-600" />
+                              <Disc className="w-4 h-4 text-slate-600" />
                             )}
                           </div>
                         </td>
 
                         {/* Catalog Number */}
-                        <td className="py-3 px-3 font-mono font-bold text-indigo-300">
+                        <td className="py-1.5 px-3 font-mono font-bold text-indigo-300">
                           {cd.catalogNumber || '-'}
                         </td>
 
                         {/* Title (Clickable to open Detail Modal) */}
-                        <td className="py-3 px-4 max-w-[280px]">
+                        <td className="py-1.5 px-4 max-w-[280px]">
                           <button
                             type="button"
                             onClick={() => onSelectCD(cd, sortedCDs)}
-                            className="text-left font-bold text-white hover:text-indigo-300 hover:underline transition-colors block truncate w-full cursor-pointer focus:outline-none"
+                            className="text-left font-bold text-white hover:text-indigo-300 hover:underline transition-colors block truncate w-full cursor-pointer focus:outline-none leading-snug"
                             title={`「${cd.title}」をクリックして詳細・曲順を編集`}
                           >
                             {cd.title}
@@ -726,7 +726,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                             const matchedTrs = getMatchedTracksForQuery(cd, searchKeyword);
                             if (matchedTrs.length === 0) return null;
                             return (
-                              <div className="flex items-center gap-1 flex-wrap mt-1">
+                              <div className="flex items-center gap-1 flex-wrap mt-0.5">
                                 {matchedTrs.slice(0, 2).map((tr, mIdx) => (
                                   <span
                                     key={mIdx}
@@ -734,7 +734,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                                       e.stopPropagation();
                                       setExpandedTracklistId(isExpanded ? null : cd.id);
                                     }}
-                                    className="text-[10px] font-bold bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded inline-flex items-center gap-1 cursor-pointer"
+                                    className="text-[10px] font-bold bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/40 px-1.5 py-0 rounded inline-flex items-center gap-1 cursor-pointer leading-tight"
                                     title="クリックしてトラックリストを展開"
                                   >
                                     <Music className="w-2.5 h-2.5 text-emerald-400" />
@@ -750,7 +750,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                             );
                           })()}
                           {cd.tags && cd.tags.length > 0 && (
-                            <div className="flex items-center gap-1 flex-wrap mt-1">
+                            <div className="flex items-center gap-1 flex-wrap mt-0.5">
                               {cd.tags.slice(0, 3).map((t, idx) => (
                                 <span
                                   key={idx}
@@ -758,7 +758,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                                     e.stopPropagation();
                                     setSearchKeyword(t);
                                   }}
-                                  className="text-[10px] bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 px-1.5 py-0.2 rounded cursor-pointer transition-colors"
+                                  className="text-[10px] bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 px-1.5 py-0 rounded cursor-pointer transition-colors leading-tight"
                                   title={`タグ「${t}」で絞り込み`}
                                 >
                                   #{t}
@@ -772,24 +772,24 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                         </td>
 
                         {/* Artist */}
-                        <td className="py-3 px-4 font-medium text-slate-200 max-w-[160px] truncate" title={cd.artist}>
+                        <td className="py-1.5 px-4 font-medium text-slate-200 max-w-[160px] truncate" title={cd.artist}>
                           {cd.artist}
                         </td>
 
                         {/* Label */}
-                        <td className="py-3 px-3 text-slate-400 max-w-[120px] truncate">
+                        <td className="py-1.5 px-3 text-slate-400 max-w-[120px] truncate">
                           {cd.label || '-'}
                         </td>
 
                         {/* Release Date */}
-                        <td className="py-3 px-3 text-slate-400 font-mono whitespace-nowrap">
+                        <td className="py-1.5 px-3 text-slate-400 font-mono whitespace-nowrap">
                           {cd.releaseDate || '-'}
                         </td>
 
                         {/* Same-Title LP/EP Vinyl Release Date */}
-                        <td className="py-3 px-3 font-mono whitespace-nowrap">
+                        <td className="py-1.5 px-3 font-mono whitespace-nowrap">
                           {cd.vinylRecordReleaseDate ? (
-                            <div className="flex flex-col">
+                            <div className="flex flex-col leading-tight">
                               <span className="text-amber-300 font-bold text-xs">
                                 {cd.vinylRecordReleaseDate}
                               </span>
@@ -804,7 +804,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                         </td>
 
                         {/* Track Count & Drawer Toggle */}
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-1.5 px-3 text-center">
                           <button
                             onClick={() => setExpandedTracklistId(isExpanded ? null : cd.id)}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900 text-indigo-300 border border-slate-700 hover:border-indigo-500 text-[11px]"
@@ -815,7 +815,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                         </td>
 
                         {/* Synced Status Badge */}
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-1.5 px-3 text-center">
                           {cd.syncedToSheets ? (
                             <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30">
                               <CheckCircle2 className="w-3 h-3" />

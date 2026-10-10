@@ -931,7 +931,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl h-[92vh] max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Top Header (Fixed) */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-800 bg-slate-800/80 flex-shrink-0 gap-3">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 border-b border-slate-800 bg-slate-800/80 flex-shrink-0 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center flex-shrink-0">
               <Disc className="w-5 h-5 text-indigo-400" />
@@ -940,9 +940,6 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
               <h2 className="text-sm sm:text-base font-bold text-white leading-tight truncate">
                 CD メタデータ詳細
               </h2>
-              <p className="text-xs text-slate-400 truncate">
-                規格品番: <span className="font-mono text-indigo-300 font-bold">{catalogNumber || '未設定'}</span>
-              </p>
             </div>
           </div>
 
@@ -1006,12 +1003,12 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
         </div>
 
         {/* Fixed Top Section (Red Box): Cover Artwork + Metadata Summary + Navigation Tabs */}
-        <div className="px-6 pt-4 pb-2 flex-shrink-0 border-b border-slate-800 bg-slate-900 space-y-3">
+        <div className="px-6 pt-3 pb-2 flex-shrink-0 border-b border-slate-800 bg-slate-900 space-y-2.5">
           
           {/* Hero Card */}
-          <div className="flex flex-col sm:flex-row gap-4 bg-slate-800/40 p-4 rounded-xl border border-slate-800">
+          <div className="flex flex-col sm:flex-row gap-4 bg-slate-800/40 p-3.5 rounded-xl border border-slate-800">
             {/* High Res Jacket Image & Multi-Image Switcher Actions */}
-            <div className="flex flex-col gap-1.5 w-full sm:w-40 md:w-44 flex-shrink-0">
+            <div className="flex flex-col gap-1.5 w-full sm:w-44 md:w-48 flex-shrink-0">
               {(() => {
                 const activeSub =
                   activeImageSlot !== 'front'
@@ -1133,47 +1130,6 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     <span>＋追加</span>
                   </button>
                 </div>
-
-                {coverUrl && !coverUrl.startsWith('data:image/') && (
-                  <button
-                    type="button"
-                    onClick={handleConvertLinkToBase64}
-                    disabled={isConvertingBase64}
-                    className="text-[11px] text-emerald-300 hover:text-emerald-200 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 rounded-lg py-1 text-center flex items-center justify-center gap-1 transition-all cursor-pointer font-semibold shadow-sm"
-                    title="外部リンクのジャケット画像を取得してBASE64形式に変換し、オフラインでも消えないように保存します"
-                  >
-                    {isConvertingBase64 ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-emerald-300" />
-                    ) : (
-                      <Link2 className="w-3 h-3 text-emerald-300" />
-                    )}
-                    <span>{isConvertingBase64 ? 'BASE64変換中...' : '🔗 リンクをBASE64化'}</span>
-                  </button>
-                )}
-
-                {coverUrl && coverUrl.startsWith('data:image/') && (
-                  <div className="text-[10px] text-emerald-300 bg-emerald-950/60 border border-emerald-500/30 rounded-lg py-0.5 px-2 text-center flex items-center justify-center gap-1 font-semibold">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    <span>BASE64変換済</span>
-                  </div>
-                )}
-
-                {coverUrl && (
-                  <button
-                    type="button"
-                    onClick={handleUpscaleJacketInModal}
-                    disabled={isUpscaling}
-                    className="text-[11px] text-purple-300 hover:text-purple-200 bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 rounded-lg py-1 text-center flex items-center justify-center gap-1 transition-all cursor-pointer font-semibold shadow-sm"
-                    title="Gemini AIで低画質ジャケット画像を1K高画質化・ノイズ除去"
-                  >
-                    {isUpscaling ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-purple-300" />
-                    ) : (
-                      <Sparkles className="w-3 h-3 text-purple-300" />
-                    )}
-                    <span>{isUpscaling ? 'AI高画質化中...' : '✨ AI高画質化'}</span>
-                  </button>
-                )}
               </div>
 
               <input
@@ -1216,6 +1172,47 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                       Gemini検証済
                     </span>
                   )}
+
+                  {coverUrl && !coverUrl.startsWith('data:image/') && (
+                    <button
+                      type="button"
+                      onClick={handleConvertLinkToBase64}
+                      disabled={isConvertingBase64}
+                      className="text-[10px] text-emerald-300 hover:text-emerald-200 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 rounded-full px-2 py-0.5 flex items-center gap-1 transition-all cursor-pointer font-bold shadow-sm"
+                      title="外部リンクのジャケット画像を取得してBASE64形式に変換し、オフラインでも消えないように保存します"
+                    >
+                      {isConvertingBase64 ? (
+                        <Loader2 className="w-2.5 h-2.5 animate-spin text-emerald-300" />
+                      ) : (
+                        <Link2 className="w-2.5 h-2.5 text-emerald-300" />
+                      )}
+                      <span>{isConvertingBase64 ? 'BASE64変換中...' : '🔗 リンクをBASE64化'}</span>
+                    </button>
+                  )}
+
+                  {coverUrl && coverUrl.startsWith('data:image/') && (
+                    <span className="text-[10px] font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-500/40 rounded-full px-2 py-0.5 flex items-center gap-1 shadow-sm">
+                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                      <span>BASE64変換済</span>
+                    </span>
+                  )}
+
+                  {coverUrl && (
+                    <button
+                      type="button"
+                      onClick={handleUpscaleJacketInModal}
+                      disabled={isUpscaling}
+                      className="text-[10px] text-purple-300 hover:text-purple-200 bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 rounded-full px-2 py-0.5 flex items-center gap-1 transition-all cursor-pointer font-bold shadow-sm"
+                      title="Gemini AIで低画質ジャケット画像を1K高画質化・ノイズ除去"
+                    >
+                      {isUpscaling ? (
+                        <Loader2 className="w-2.5 h-2.5 animate-spin text-purple-300" />
+                      ) : (
+                        <Sparkles className="w-2.5 h-2.5 text-purple-300" />
+                      )}
+                      <span>{isUpscaling ? 'AI高画質化中...' : '✨ AI高画質化'}</span>
+                    </button>
+                  )}
                 </div>
                 <h3 className="text-base sm:text-lg font-bold text-white truncate" title={title}>
                   {title}
@@ -1225,14 +1222,14 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                 </p>
 
                 {cd.aiVerificationSummary && (
-                  <div className="bg-purple-950/30 border border-purple-800/40 rounded-lg p-2 text-[11px] text-purple-200 mt-2 flex items-start gap-1.5 leading-snug">
+                  <div className="bg-purple-950/30 border border-purple-800/40 rounded-lg p-2 text-[11px] text-purple-200 mt-1.5 flex items-start gap-1.5 leading-snug">
                     <Sparkles className="w-3.5 h-3.5 text-purple-400 flex-shrink-0 mt-0.5" />
                     <span>{cd.aiVerificationSummary}</span>
                   </div>
                 )}
 
                 {aiTagAnalysis?.reasoning && (
-                  <div className="bg-indigo-950/40 border border-indigo-500/40 rounded-lg p-2 text-[11px] text-indigo-200 mt-2 flex items-start gap-1.5 leading-snug">
+                  <div className="bg-indigo-950/40 border border-indigo-500/40 rounded-lg p-2 text-[11px] text-indigo-200 mt-1.5 flex items-start gap-1.5 leading-snug">
                     <Tag className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0 mt-0.5" />
                     <div>
                       <span className="font-bold text-indigo-300 mr-1">AIタグ分類根拠・音楽的特徴:</span>
@@ -1242,35 +1239,37 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
-                <div>
-                  <span className="text-slate-400 block text-[10px]">レーベル / 発売元</span>
-                  <span className="font-medium text-slate-200 truncate block">{label || '-'}</span>
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-300">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">レーベル / 発売元</span>
+                    <span className="font-medium text-slate-200 truncate block">{label || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">CD発売年月日</span>
+                    <span className="font-medium text-slate-200 font-mono block">{normalizeReleaseDate(releaseDate) || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-amber-300/90 block text-[10px] font-semibold">同タイトルLP/EP発売日</span>
+                    <span className="font-bold text-amber-300 font-mono block">
+                      {vinylRecordReleaseDate
+                        ? `${normalizeReleaseDate(vinylRecordReleaseDate)} (${vinylRecordFormat || 'LP'}${vinylRecordCatalogNumber ? `:${vinylRecordCatalogNumber}` : ''})`
+                        : '未設定'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">バーコード (JAN)</span>
+                    <span className="font-mono text-slate-200 block">{barcode || '-'}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px]">CD発売年月日</span>
-                  <span className="font-medium text-slate-200 font-mono block">{normalizeReleaseDate(releaseDate) || '-'}</span>
-                </div>
-                <div>
-                  <span className="text-amber-300/90 block text-[10px] font-semibold">同タイトルLP/EP発売日</span>
-                  <span className="font-bold text-amber-300 font-mono block">
-                    {vinylRecordReleaseDate
-                      ? `${normalizeReleaseDate(vinylRecordReleaseDate)} (${vinylRecordFormat || 'LP'}${vinylRecordCatalogNumber ? `:${vinylRecordCatalogNumber}` : ''})`
-                      : '未設定'}
+
+                {/* Primary Source Badge positioned at the bottom row directly to the right of the jacket photo addition controls */}
+                <div className="flex items-center gap-2 pt-0.5 text-xs text-slate-400">
+                  <span>主要取得ソース:</span>
+                  <span className="font-semibold text-indigo-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700 text-[11px]">
+                    {sourceNames[cd.source] || cd.source}
                   </span>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px]">バーコード (JAN)</span>
-                  <span className="font-mono text-slate-200 block">{barcode || '-'}</span>
-                </div>
-              </div>
-
-              {/* Primary Source Badge */}
-              <div className="flex items-center gap-2 pt-0.5 text-xs text-slate-400">
-                <span>主要取得ソース:</span>
-                <span className="font-semibold text-indigo-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700 text-[11px]">
-                  {sourceNames[cd.source] || cd.source}
-                </span>
               </div>
             </div>
           </div>

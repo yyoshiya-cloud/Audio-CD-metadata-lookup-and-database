@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { initAuth, googleSignIn, logout, getAccessToken } from './lib/firebase';
-import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, markCDsAsSynced, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage } from './lib/db';
+import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, markCDsAsSynced, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage, loadAppInfoConfigDB, saveAppInfoConfigDB, DEFAULT_APP_INFO_CONFIG, AppInfoConfig } from './lib/db';
 import { CDMetadata, SearchQuery, SearchResponse, APICredentials } from './types/cd';
 import { getJSTISOString } from './lib/dateUtils';
 import { Header } from './components/Header';
@@ -15,6 +15,7 @@ import { BatchImportModal } from './components/BatchImportModal';
 import { APISettingsModal } from './components/APISettingsModal';
 import { AITaggingModal } from './components/AITaggingModal';
 import { AppInfoModal } from './components/AppInfoModal';
+import { AdminModeModal } from './components/AdminModeModal';
 import { DashboardView } from './components/DashboardView';
 import { DuplicateCheckView } from './components/DuplicateCheckView';
 import { JacketGalleryView } from './components/JacketGalleryView';
@@ -78,6 +79,8 @@ export default function App() {
   const [isPDFCatalogOpen, setIsPDFCatalogOpen] = useState(false);
   const [pdfCatalogSelectedCDs, setPdfCatalogSelectedCDs] = useState<CDMetadata[]>([]);
   const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
+  const [isAdminModeOpen, setIsAdminModeOpen] = useState(false);
+  const [appInfoConfig, setAppInfoConfig] = useState<AppInfoConfig>(DEFAULT_APP_INFO_CONFIG);
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -89,6 +92,8 @@ export default function App() {
       await loadLocalLibrary();
       const creds = await loadApiCredentialsDB();
       setApiCredentials(creds);
+      const loadedAppInfo = await loadAppInfoConfigDB();
+      setAppInfoConfig(loadedAppInfo);
 
       initAuth(
         async (u, token) => {
@@ -423,6 +428,7 @@ export default function App() {
         duplicateCount={duplicateGroupsCount}
         onOpenAPISettings={() => setIsAPISettingsOpen(true)}
         onOpenAppInfo={() => setIsAppInfoOpen(true)}
+        onOpenAdminMode={() => setIsAdminModeOpen(true)}
         onLogin={handleLogin}
         onLogout={handleLogout}
         activeTab={activeTab}
@@ -430,7 +436,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-[1800px] w-full mx-auto px-3 sm:px-6 py-6">
+      <main className="flex-1 max-w-[1800px] w-full mx-auto px-3 sm:px-6 py-3">
         
         {/* Toast Banner */}
         {toastMessage && (
@@ -549,7 +555,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 bg-slate-950 py-6 px-4 text-center text-xs text-slate-500">
+      <footer className="border-t border-slate-800 bg-slate-950 py-3 px-4 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <p>© CD メタデータ検索＆データベース - Googleスプレッドシート連携システム</p>
           <p className="flex items-center gap-2 font-mono text-[11px] text-slate-400">
@@ -648,9 +654,23 @@ export default function App() {
       {/* App Info Modal */}
       {isAppInfoOpen && (
         <AppInfoModal
+          appInfoConfig={appInfoConfig}
           onClose={() => setIsAppInfoOpen(false)}
         />
       )}
+
+      {/* Admin Mode Modal (Triggered by 3 left-clicks on "CD メタデータ DB") */}
+      <AdminModeModal
+        isOpen={isAdminModeOpen}
+        config={appInfoConfig}
+        onSaveConfig={async (newCfg) => {
+          const saved = await saveAppInfoConfigDB(newCfg);
+          setAppInfoConfig(saved);
+          showToast(`アプリ情報を更新しました (Version ${saved.version} / 最終更新日: ${saved.lastUpdated})`);
+        }}
+        onClose={() => setIsAdminModeOpen(false)}
+        onOpenAppInfo={() => setIsAppInfoOpen(true)}
+      />
 
       {/* Tag Name Add / Rename / Manager Modal */}
       <TagManagerModal

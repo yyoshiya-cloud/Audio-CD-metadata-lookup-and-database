@@ -821,44 +821,44 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-130px)] space-y-3 animate-in fade-in duration-200">
+    <div className="flex flex-col h-[calc(100vh-105px)] space-y-2 animate-in fade-in duration-200">
       
       {/* 1. Top Toolbar */}
-      <div className="bg-slate-800/90 rounded-2xl border border-slate-700/80 p-3.5 shadow-xl flex flex-col md:flex-row items-center justify-between gap-3 flex-shrink-0">
+      <div className="bg-slate-800/90 rounded-2xl border border-slate-700/80 px-3.5 py-2 shadow-xl flex flex-col md:flex-row items-center justify-between gap-2.5 flex-shrink-0">
         
         {/* Left: Title, Counter & Search */}
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto flex-1">
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto flex-1">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-              <FileSpreadsheet className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+              <FileSpreadsheet className="w-3.5 h-3.5" />
             </div>
             <div>
               <h3 className="text-xs font-bold text-white flex items-center gap-1.5 leading-none">
                 <span>スプレッドシート形式エディタ</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                <span className="text-[10px] font-mono px-2 py-0.2 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30">
                   全 {gridRows.length} 行
                 </span>
               </h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">
+              <p className="text-[10px] text-slate-400 mt-0.5 leading-none">
                 各項目名クリックでソート／境界ドラッグで列幅調整／画像クリックで詳細表示
               </p>
             </div>
           </div>
 
           <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
             <input
               type="text"
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               placeholder="表内を検索..."
-              className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl py-1.5 pl-8 pr-7 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+              className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl py-1 pl-8 pr-7 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
             />
             {searchKeyword && (
               <button
                 type="button"
                 onClick={() => setSearchKeyword('')}
-                className="absolute right-2 top-2 text-slate-400 hover:text-white text-xs"
+                className="absolute right-2 top-1.5 text-slate-400 hover:text-white text-xs"
               >
                 ✕
               </button>
@@ -1231,7 +1231,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                       className={`divide-x divide-slate-800/80 transition-colors ${rowBgClass}`}
                     >
                       {/* Checkbox Cell (Sticky left-0) */}
-                      <td className={`sticky left-0 z-10 py-1.5 px-2 text-center transition-colors ${fixedCellBgClass}`}>
+                      <td className={`sticky left-0 z-10 py-1 px-2 text-center transition-colors ${fixedCellBgClass}`}>
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -1241,7 +1241,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                       </td>
 
                       {/* Row Index & Dirty Dot (Sticky left-36px) */}
-                      <td className={`sticky left-[36px] z-10 py-1.5 px-1.5 text-center font-mono text-[11px] relative transition-colors ${fixedCellBgClass}`}>
+                      <td className={`sticky left-[36px] z-10 py-1 px-1.5 text-center font-mono text-[11px] relative transition-colors ${fixedCellBgClass}`}>
                         {isDirty && (
                           <span
                             className="absolute left-0.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/80 animate-pulse"
@@ -1252,10 +1252,10 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                       </td>
 
                       {/* Jacket Thumbnail (Sticky left-76px with right drop shadow) */}
-                      <td className={`sticky left-[76px] z-10 py-1 px-1 text-center transition-colors ${fixedCellBgClass} border-r-2 border-slate-800/90 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.6)]`}>
+                      <td className={`sticky left-[76px] z-10 py-0.5 px-1 text-center transition-colors ${fixedCellBgClass} border-r-2 border-slate-800/90 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.6)]`}>
                         <div
                           onClick={() => onSelectCD && onSelectCD(row, gridRows)}
-                          className={`w-10 h-10 rounded-lg bg-slate-950 overflow-hidden mx-auto border flex items-center justify-center relative group cursor-pointer hover:scale-105 transition-all shadow-sm ${
+                          className={`w-8 h-8 rounded-lg bg-slate-950 overflow-hidden mx-auto border flex items-center justify-center relative group cursor-pointer hover:scale-105 transition-all shadow-sm ${
                             brokenImageRowIds.has(row.id)
                               ? 'border-rose-500/80 ring-2 ring-rose-500/50'
                               : 'border-slate-800 hover:border-indigo-400'
@@ -1292,11 +1292,11 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                       </td>
 
                       {/* Track Count & Expand Button (Moved to right of Jacket) */}
-                      <td className="py-1 px-2 text-center" style={{ width: `${columnWidths.trackCount || DEFAULT_COLUMN_WIDTHS.trackCount}px` }}>
+                      <td className="py-0.5 px-2 text-center" style={{ width: `${columnWidths.trackCount || DEFAULT_COLUMN_WIDTHS.trackCount}px` }}>
                         <button
                           type="button"
                           onClick={() => setExpandedTracksRowId(isExpanded ? null : row.id)}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
                             trackCount > 0
                               ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/30'
                               : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700'
@@ -1317,7 +1317,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={getDisplayValue(row.catalogNumber)}
                           onChange={(e) => handleCellChange(row.id, 'catalogNumber', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs font-mono text-indigo-300 font-bold focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors uppercase"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs font-mono text-indigo-300 font-bold focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors uppercase"
                           style={{ imeMode: 'disabled' }}
                           title="型番 (半角入力のみ)"
                         />
@@ -1330,7 +1330,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={getDisplayValue(row.title)}
                           onChange={(e) => handleCellChange(row.id, 'title', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs font-bold text-white focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs font-bold text-white focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                         />
                       </td>
 
@@ -1341,7 +1341,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={getDisplayValue(row.artist)}
                           onChange={(e) => handleCellChange(row.id, 'artist', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs text-slate-200 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs text-slate-200 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                         />
                       </td>
 
@@ -1352,7 +1352,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={getDisplayValue(row.label)}
                           onChange={(e) => handleCellChange(row.id, 'label', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                         />
                       </td>
 
@@ -1372,7 +1372,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                             }
                           }}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs font-mono text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs font-mono text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                           style={{ imeMode: 'disabled' }}
                           title="CD発売年月日 (半角数字のみ YYYY-MM-DD)"
                         />
@@ -1394,7 +1394,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                             }
                           }}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs font-mono text-amber-300 font-bold focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs font-mono text-amber-300 font-bold focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500 rounded transition-colors"
                           style={{ imeMode: 'disabled' }}
                           title="同タイトルのLP・EPレコード発売年月日 (半角数字のみ YYYY-MM-DD)"
                         />
@@ -1408,7 +1408,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={getDisplayValue(row.barcode)}
                           onChange={(e) => handleCellChange(row.id, 'barcode', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs font-mono text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs font-mono text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                           style={{ imeMode: 'disabled' }}
                           title="JANコード (半角数字のみ)"
                         />
@@ -1421,7 +1421,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={getDisplayValue(row.format)}
                           onChange={(e) => handleCellChange(row.id, 'format', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                         />
                       </td>
 
@@ -1432,7 +1432,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={getDisplayValue(row.genre)}
                           onChange={(e) => handleCellChange(row.id, 'genre', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs text-slate-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                         />
                       </td>
 
@@ -1443,7 +1443,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={tagsStr}
                           onChange={(e) => handleCellChange(row.id, 'tagsStr', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs text-purple-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs text-purple-300 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                         />
                       </td>
 
@@ -1454,7 +1454,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
                           value={getDisplayValue(row.notes)}
                           onChange={(e) => handleCellChange(row.id, 'notes', e.target.value)}
                           placeholder=""
-                          className="w-full h-full bg-transparent px-2.5 py-2 text-xs text-slate-400 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
+                          className="w-full h-full bg-transparent px-2.5 py-1.5 text-xs text-slate-400 focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded transition-colors"
                         />
                       </td>
                     </tr>

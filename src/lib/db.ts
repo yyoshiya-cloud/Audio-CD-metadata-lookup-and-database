@@ -472,3 +472,63 @@ export async function saveFavoriteTrackKeysDB(keys: string[]): Promise<void> {
   } catch {}
 }
 
+export interface AppInfoConfig {
+  version: string;
+  lastUpdated: string;
+}
+
+export const DEFAULT_APP_INFO_CONFIG: AppInfoConfig = {
+  version: '1.1.0',
+  lastUpdated: '2026年10月7日',
+};
+
+/**
+ * Load custom App Info (Version & Last Updated Date) from Dexie settings table (or localStorage fallback)
+ */
+export async function loadAppInfoConfigDB(): Promise<AppInfoConfig> {
+  try {
+    const record = await db.settings.get('appInfoConfig');
+    if (record && record.value && typeof record.value.version === 'string') {
+      return {
+        version: record.value.version || DEFAULT_APP_INFO_CONFIG.version,
+        lastUpdated: record.value.lastUpdated || DEFAULT_APP_INFO_CONFIG.lastUpdated,
+      };
+    }
+  } catch {}
+  try {
+    const saved = localStorage.getItem('cd_app_info_config');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed.version === 'string') {
+        return {
+          version: parsed.version || DEFAULT_APP_INFO_CONFIG.version,
+          lastUpdated: parsed.lastUpdated || DEFAULT_APP_INFO_CONFIG.lastUpdated,
+        };
+      }
+    }
+  } catch {}
+  return DEFAULT_APP_INFO_CONFIG;
+}
+
+/**
+ * Save custom App Info (Version & Last Updated Date) to Dexie settings table and localStorage
+ */
+export async function saveAppInfoConfigDB(config: AppInfoConfig): Promise<AppInfoConfig> {
+  const cleaned: AppInfoConfig = {
+    version: (config.version || '').trim().replace(/^Version\s+/i, '') || DEFAULT_APP_INFO_CONFIG.version,
+    lastUpdated: (config.lastUpdated || '').trim().replace(/^最終更新日[:：]\s*/, '') || DEFAULT_APP_INFO_CONFIG.lastUpdated,
+  };
+  try {
+    await db.settings.put({
+      key: 'appInfoConfig',
+      value: cleaned,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {}
+  try {
+    localStorage.setItem('cd_app_info_config', JSON.stringify(cleaned));
+  } catch {}
+  return cleaned;
+}
+
+
