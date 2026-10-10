@@ -942,7 +942,7 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
                         </p>
                         {!isCompact && cd.tags && cd.tags.length > 0 && (
                           <div className="flex items-center gap-1 flex-wrap pt-0.5">
-                            {normalizeTagList(cd.tags, { preserveCustomName: true }).slice(0, 3).map((tagItem, tIdx) => (
+                            {normalizeTagList(cd.tags, { preserveCustomName: true }).slice(0, 5).map((tagItem, tIdx) => (
                               <span
                                 key={tIdx}
                                 onClick={(e) => {
@@ -959,8 +959,8 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
                                 #{tagItem}
                               </span>
                             ))}
-                            {cd.tags.length > 3 && (
-                              <span className="text-[9px] text-slate-500 font-mono">+{cd.tags.length - 3}</span>
+                            {cd.tags.length > 5 && (
+                              <span className="text-[9px] text-slate-500 font-mono">+{cd.tags.length - 5}</span>
                             )}
                           </div>
                         )}

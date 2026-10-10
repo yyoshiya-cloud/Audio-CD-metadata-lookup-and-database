@@ -751,7 +751,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                           })()}
                           {cd.tags && cd.tags.length > 0 && (
                             <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                              {cd.tags.slice(0, 3).map((t, idx) => (
+                              {cd.tags.slice(0, 5).map((t, idx) => (
                                 <span
                                   key={idx}
                                   onClick={(e) => {
@@ -764,8 +764,8 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                                   #{t}
                                 </span>
                               ))}
-                              {cd.tags.length > 3 && (
-                                <span className="text-[10px] text-slate-500 font-mono">+{cd.tags.length - 3}</span>
+                              {cd.tags.length > 5 && (
+                                <span className="text-[10px] text-slate-500 font-mono">+{cd.tags.length - 5}</span>
                               )}
                             </div>
                           )}

@@ -275,25 +275,110 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }));
   }, [cds, totalCDs]);
 
-  // 2. Genre Distribution
+  // 2. Genre Distribution (Excludes era/decade tags like 1980年代/昭和/平成 and format tags like アルバム/シングル)
   const genreData = useMemo(() => {
     const map: Record<string, number> = {};
 
+    // Helper: returns true if a tag/genre string represents an era/decade or release format rather than a music genre/style
+    const isEraOrFormatTag = (raw: string): boolean => {
+      const t = raw.trim();
+      if (!t) return true;
+      const lower = t.toLowerCase();
+
+      // Era / Decade patterns (e.g., 1970年代, 1980年代, 90年代, 80s, 昭和, 平成, 令和, etc.)
+      if (/(?:19|20)?\d{2}年代/.test(t)) return true;
+      if (/^(?:19|20)?\d{2}'?s$/i.test(t)) return true;
+      if (/^(昭和|平成|令和|年代未分類)$/.test(t)) return true;
+      if (t.includes('年代')) return true;
+
+      // Format / Edition /Broad Country tags (e.g., アルバム, シングル, ベスト盤, ライブ盤, LP, CD, etc.)
+      const excludedFormatSet = new Set([
+        'アルバム',
+        'フルアルバム',
+        'ミニアルバム',
+        'シングル',
+        'マキシシングル',
+        '8cmシングル',
+        'ベスト盤',
+        'ベスト',
+        'ベストアルバム',
+        'ベスト・アルバム',
+        'ライブ盤',
+        'ライブ',
+        'ライブアルバム',
+        'ライブ・アルバム',
+        'コンピレーション',
+        'オムニバス',
+        'カバー盤',
+        'リマスター盤',
+        '初回限定盤',
+        '通常盤',
+        'アナログ盤',
+        'レコード',
+        'cd',
+        'lp',
+        'ep',
+        'album',
+        'single',
+        'best',
+        'best album',
+        'live',
+        'live album',
+        'compilation',
+        'omnibus',
+        '邦楽',
+        '洋楽',
+        '未分類',
+      ]);
+      if (excludedFormatSet.has(lower) || excludedFormatSet.has(t)) return true;
+      if (/(アルバム|シングル|ベスト盤|ライブ盤|限定盤|通常盤|アナログ盤|コンピレーション)$/.test(t)) return true;
+
+      return false;
+    };
+
+    // Normalize common English/variant genre names into clean display labels
+    const normalizeGenreLabel = (raw: string): string => {
+      const t = raw.trim();
+      const lower = t.toLowerCase();
+      if (lower === 'j-pop' || lower === 'jpop' || lower === 'j pop' || t === 'J-POP') return 'J-Pop';
+      return t;
+    };
+
+    // Broad umbrella genres: if a CD has both "J-Pop" and a more specific style/genre tag (e.g., シティポップ, 昭和歌謡, アニソン, ロック, アイドル),
+    // prefer the specific genre tag(s) so that everything doesn't collapse into "J-Pop".
+    const UMBRELLA_GENRES = new Set(['J-Pop', 'ポップス', 'ポップ', 'Pop', 'Pops']);
+
     cds.forEach((cd) => {
-      let g = '';
+      // Collect candidate tags from cd.tags and cd.genre
+      const rawCandidates: string[] = [];
       if (cd.tags && cd.tags.length > 0) {
-        // Look for common genre in tags first so removed tags in cd.genre don't skew stats
-        const genreTag = cd.tags.find((t) =>
-          ['J-Pop', 'J-POP', 'シティポップ', 'ロック', '昭和歌謡', '歌謡曲', 'ニューミュージック', 'ジャズ', 'アニソン', 'アニメソング', 'アイドル', 'R&B', 'ヒップホップ', 'クラシック', 'フォーク', 'AOR', 'シンガーソングライター'].includes(t)
-        );
-        if (genreTag) g = genreTag === 'J-POP' ? 'J-Pop' : genreTag;
+        rawCandidates.push(...cd.tags);
       }
-      if (!g && cd.genre?.trim()) {
-        g = cd.genre.trim() === 'J-POP' ? 'J-Pop' : cd.genre.trim();
+      if (cd.genre && cd.genre.trim()) {
+        // Split slash-separated genres if any
+        const parts = cd.genre.split(/\s*[/／,、]\s*/);
+        rawCandidates.push(...parts);
       }
 
-      const finalGenre = g || '未分類 / その他';
-      map[finalGenre] = (map[finalGenre] || 0) + 1;
+      // Filter to pure music genre/style tags only
+      const pureGenreTags = Array.from(
+        new Set(
+          rawCandidates
+            .map((c) => normalizeGenreLabel(c))
+            .filter((c) => c && !isEraOrFormatTag(c))
+        )
+      );
+
+      if (pureGenreTags.length === 0) {
+        map['未分類 / その他'] = (map['未分類 / その他'] || 0) + 1;
+        return;
+      }
+
+      // If the CD has specific genre/style tags alongside a broad umbrella tag like "J-Pop", prioritize the specific genre(s)
+      const specificGenres = pureGenreTags.filter((g) => !UMBRELLA_GENRES.has(g));
+      const selectedGenre = specificGenres.length > 0 ? specificGenres[0] : pureGenreTags[0];
+
+      map[selectedGenre] = (map[selectedGenre] || 0) + 1;
     });
 
     const entries = Object.entries(map).map(([name, value]) => ({
@@ -302,17 +387,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       percentage: totalCDs > 0 ? Math.round((value / totalCDs) * 100) : 0,
     }));
 
-    // Sort descending and keep top 7, group rest as "その他"
+    // Sort descending and keep top 8, group rest as "その他"
     entries.sort((a, b) => b.value - a.value);
-    if (entries.length > 7) {
-      const top7 = entries.slice(0, 6);
-      const otherCount = entries.slice(6).reduce((sum, item) => sum + item.value, 0);
-      top7.push({
+    if (entries.length > 8) {
+      const top8 = entries.slice(0, 7);
+      const otherCount = entries.slice(7).reduce((sum, item) => sum + item.value, 0);
+      top8.push({
         name: 'その他',
         value: otherCount,
         percentage: totalCDs > 0 ? Math.round((otherCount / totalCDs) * 100) : 0,
       });
-      return top7;
+      return top8;
     }
     return entries;
   }, [cds, totalCDs]);
