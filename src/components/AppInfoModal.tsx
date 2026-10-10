@@ -111,7 +111,7 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({
                 <span>Dexie.js (IndexedDB) 高速DB & 各種データ連携</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Dexie.jsによるオフライン対応・無制限ローカルIndexedDBストレージ。Googleスプレッドシート（自動更新）/ Excel(.xlsx) / CSV / JSONバックアップの双方向データ交換に対応。
+                Dexie.jsによるオフライン対応・無制限ローカルIndexedDBストレージ。Googleスプレッドシート / Excel(.xlsx) / CSV / JSONバックアップの双方向データ交換に対応。
               </p>
             </div>
 
