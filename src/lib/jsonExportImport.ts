@@ -1,4 +1,4 @@
-import { CDMetadata, APISource } from '../types/cd';
+import { CDMetadata, APISource, CDSubImage, SubImageType } from '../types/cd';
 import { normalizeCatalogNumber, normalizeReleaseDate, formatJSTTimestampCompact, getJSTISOString } from './dateUtils';
 
 export interface JSONExportData {
@@ -9,6 +9,108 @@ export interface JSONExportData {
   cds: CDMetadata[];
 }
 
+const SUB_IMAGE_DEFAULT_LABELS: Record<SubImageType, string> = {
+  back: '裏ジャケット (バックインレイ)',
+  obi: '帯 (オビ)',
+  disc: '盤面 (ディスク・レーベル面)',
+  booklet: '歌詞カード・ブックレット',
+  other: 'その他付属画像',
+};
+
+function normalizeSubImageType(rawType?: string, rawLabel?: string): SubImageType {
+  const t = String(rawType || '').trim().toLowerCase();
+  if (t === 'back' || t === 'obi' || t === 'disc' || t === 'booklet' || t === 'other') {
+    return t;
+  }
+  const l = String(rawLabel || '').trim().toLowerCase();
+  if (l.includes('裏') || l.includes('back') || l.includes('インレイ')) return 'back';
+  if (l.includes('帯') || l.includes('オビ') || l.includes('obi')) return 'obi';
+  if (l.includes('盤') || l.includes('disc') || l.includes('disk') || l.includes('レーベル面')) return 'disc';
+  if (l.includes('歌詞') || l.includes('ブックレット') || l.includes('冊子') || l.includes('booklet')) return 'booklet';
+  return 'other';
+}
+
+function splitSerializedImageCell(val: any): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) {
+    return val.map((v) => String(v || '').trim()).filter(Boolean);
+  }
+  const s = String(val).trim();
+  if (!s) return [];
+  return s
+    .split(/\s*\|\|\s*|\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+export function extractSubImagesFromRawItem(item: any): CDSubImage[] | undefined {
+  const result: CDSubImage[] = [];
+  const seenUrls = new Set<string>();
+
+  const pushSubImage = (type: SubImageType, imageUrl: string, customLabel?: string, customId?: string) => {
+    const cleanUrl = String(imageUrl || '').trim();
+    if (!cleanUrl || cleanUrl === '[添付画像あり(端末ローカル)]') return;
+    const dedupeKey = `${type}::${cleanUrl}`;
+    if (seenUrls.has(dedupeKey)) return;
+    seenUrls.add(dedupeKey);
+    result.push({
+      id: customId || `subimg_${type}_${Date.now()}_${result.length}_${Math.random().toString(36).slice(2, 6)}`,
+      type,
+      label: customLabel?.trim() || SUB_IMAGE_DEFAULT_LABELS[type],
+      imageUrl: cleanUrl,
+    });
+  };
+
+  const rawArray = item.subImages || item.sub_images;
+  if (Array.isArray(rawArray)) {
+    rawArray.forEach((sub: any) => {
+      if (!sub) return;
+      if (typeof sub === 'string') {
+        pushSubImage('other', sub);
+      } else if (typeof sub === 'object') {
+        const imgUrl = sub.imageUrl || sub.image_url || sub.url || sub.src || '';
+        const type = normalizeSubImageType(sub.type, sub.label);
+        pushSubImage(type, imgUrl, sub.label, sub.id);
+      }
+    });
+  } else if (typeof rawArray === 'string' && rawArray.trim().startsWith('[')) {
+    try {
+      const parsedArr = JSON.parse(rawArray);
+      if (Array.isArray(parsedArr)) {
+        parsedArr.forEach((sub: any) => {
+          if (sub && typeof sub === 'object') {
+            const imgUrl = sub.imageUrl || sub.image_url || sub.url || sub.src || '';
+            const type = normalizeSubImageType(sub.type, sub.label);
+            pushSubImage(type, imgUrl, sub.label, sub.id);
+          }
+        });
+      }
+    } catch {}
+  }
+
+  // Also check explicit per-type fields if provided in JSON/object
+  const backCandidates = splitSerializedImageCell(item.backCoverUrl || item.back_cover_url || item['裏ジャケット'] || item['裏ジャケット画像URL']);
+  backCandidates.forEach((u) => pushSubImage('back', u));
+
+  const obiCandidates = splitSerializedImageCell(item.obiUrl || item.obi_url || item['帯'] || item['帯画像URL']);
+  obiCandidates.forEach((u) => pushSubImage('obi', u));
+
+  const discCandidates = splitSerializedImageCell(item.discUrl || item.disc_url || item['盤面'] || item['盤面画像URL']);
+  discCandidates.forEach((u) => pushSubImage('disc', u));
+
+  const bookletCandidates = splitSerializedImageCell(
+    item.bookletUrl || item.booklet_url || item['歌詞カード・ブックレット'] || item['歌詞カード・ブックレット画像URL']
+  );
+  bookletCandidates.forEach((u) => pushSubImage('booklet', u));
+
+  const otherCandidates = splitSerializedImageCell(
+    item.otherSubImagesUrl || item.other_sub_images_url || item['その他付属画像'] || item['その他付属画像URL']
+  );
+  otherCandidates.forEach((u) => pushSubImage('other', u));
+
+  return result.length > 0 ? result : undefined;
+}
+
 /**
  * Export CD Metadata collection to formatted JSON file download
  */
@@ -17,12 +119,27 @@ export function exportCDsToJSON(
   fileName?: string,
   prettyPrint: boolean = true
 ): { fileName: string; count: number; jsonString: string } {
-  const normalizedCds: CDMetadata[] = items.map((cd) => ({
-    ...cd,
-    vinylRecordReleaseDate: cd.vinylRecordReleaseDate ? normalizeReleaseDate(cd.vinylRecordReleaseDate) : '',
-    vinylRecordFormat: cd.vinylRecordFormat || '',
-    vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber ? normalizeCatalogNumber(cd.vinylRecordCatalogNumber) : '',
-  }));
+  const normalizedCds = items.map((cd) => {
+    const subs = Array.isArray(cd.subImages) ? cd.subImages : [];
+    const getByType = (t: SubImageType) =>
+      subs
+        .filter((s) => s && s.type === t && s.imageUrl)
+        .map((s) => s.imageUrl)
+        .join(' || ');
+
+    return {
+      ...cd,
+      vinylRecordReleaseDate: cd.vinylRecordReleaseDate ? normalizeReleaseDate(cd.vinylRecordReleaseDate) : '',
+      vinylRecordFormat: cd.vinylRecordFormat || '',
+      vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber ? normalizeCatalogNumber(cd.vinylRecordCatalogNumber) : '',
+      subImages: subs,
+      backCoverUrl: getByType('back'),
+      obiUrl: getByType('obi'),
+      discUrl: getByType('disc'),
+      bookletUrl: getByType('booklet'),
+      otherSubImagesUrl: getByType('other'),
+    };
+  });
 
   const exportPayload: JSONExportData = {
     app: 'CDCollectionManager',
@@ -147,6 +264,8 @@ export function parseJSONToCDs(jsonText: string): {
       const rawSource = String(item.source || '').toLowerCase() as APISource;
       const source: APISource = validSources.includes(rawSource) ? rawSource : 'gemini';
 
+      const subImages = extractSubImagesFromRawItem(item);
+
       return {
         id: item.id || `json_import_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
         title: String(item.title || item.album || '無題').trim(),
@@ -162,12 +281,13 @@ export function parseJSONToCDs(jsonText: string): {
         format: item.format ? String(item.format).trim() : 'CD',
         genre: item.genre ? String(item.genre).trim() : undefined,
         coverUrl: item.coverUrl || item.cover_url || item.image || item.jacketUrl || undefined,
+        subImages,
         source,
         sourceDetails: item.sourceDetails || undefined,
         rawSources: item.rawSources || undefined,
         confidenceScore: typeof item.confidenceScore === 'number' ? item.confidenceScore : undefined,
         tags,
-        tagBasis: item.tagBasis || undefined,
+        aiTagAnalysis: item.aiTagAnalysis || item.tagBasis || undefined,
         notes: item.notes ? String(item.notes) : undefined,
         verifiedByAI: Boolean(item.verifiedByAI),
         aiVerificationSummary: item.aiVerificationSummary || undefined,

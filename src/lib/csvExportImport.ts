@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { CDMetadata, TrackInfo } from '../types/cd';
 import { normalizeCatalogNumber, normalizeReleaseDate } from './dateUtils';
-import { parseSpreadsheetRowsToCDs } from './googleSheets';
+import { parseSpreadsheetRowsToCDs, getSerializedSubImagesByType } from './googleSheets';
 
 /**
  * Sanitize a string against CSV / Spreadsheet Formula Injection (OWASP CSV Injection defense).
@@ -42,6 +42,11 @@ export function generateAlbumsCSVContent(cds: CDMetadata[]): string {
     '収録曲数',
     'タグ',
     'ジャケット画像URL',
+    '裏ジャケット',
+    '帯',
+    '盤面',
+    '歌詞カード・ブックレット',
+    'その他付属画像',
     'メモ・状態記録',
     'データ取得元',
     '登録日時',
@@ -60,6 +65,11 @@ export function generateAlbumsCSVContent(cds: CDMetadata[]): string {
     cd.tracks ? cd.tracks.length : 0,
     escapeCSV((cd.tags || []).join(', ')),
     escapeCSV(cd.coverUrl || ''),
+    escapeCSV(getSerializedSubImagesByType(cd, 'back', 'raw')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'obi', 'raw')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'disc', 'raw')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'booklet', 'raw')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'other', 'raw')),
     escapeCSV(cd.notes || ''),
     escapeCSV(cd.source || ''),
     escapeCSV(cd.createdAt || ''),
@@ -120,11 +130,22 @@ export function generateCombinedCSVContent(cds: CDMetadata[]): string {
     '演奏時間',
     'タグ',
     'ジャケット画像URL',
+    '裏ジャケット',
+    '帯',
+    '盤面',
+    '歌詞カード・ブックレット',
+    'その他付属画像',
     'メモ',
   ];
 
   const rows: string[][] = [];
   cds.forEach((cd) => {
+    const backStr = escapeCSV(getSerializedSubImagesByType(cd, 'back', 'raw'));
+    const obiStr = escapeCSV(getSerializedSubImagesByType(cd, 'obi', 'raw'));
+    const discStr = escapeCSV(getSerializedSubImagesByType(cd, 'disc', 'raw'));
+    const bookletStr = escapeCSV(getSerializedSubImagesByType(cd, 'booklet', 'raw'));
+    const otherStr = escapeCSV(getSerializedSubImagesByType(cd, 'other', 'raw'));
+
     if (cd.tracks && cd.tracks.length > 0) {
       cd.tracks.forEach((tr) => {
         rows.push([
@@ -142,6 +163,11 @@ export function generateCombinedCSVContent(cds: CDMetadata[]): string {
           escapeCSV(tr.duration || ''),
           escapeCSV((cd.tags || []).join(', ')),
           escapeCSV(cd.coverUrl || ''),
+          backStr,
+          obiStr,
+          discStr,
+          bookletStr,
+          otherStr,
           escapeCSV(cd.notes || ''),
         ]);
       });
@@ -161,6 +187,11 @@ export function generateCombinedCSVContent(cds: CDMetadata[]): string {
         escapeCSV(''),
         escapeCSV((cd.tags || []).join(', ')),
         escapeCSV(cd.coverUrl || ''),
+        backStr,
+        obiStr,
+        discStr,
+        bookletStr,
+        otherStr,
         escapeCSV(cd.notes || ''),
       ]);
     }

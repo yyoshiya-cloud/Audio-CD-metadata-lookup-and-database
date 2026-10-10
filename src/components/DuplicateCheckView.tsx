@@ -79,6 +79,24 @@ export const DuplicateCheckView: React.FC<DuplicateCheckViewProps> = ({
         const tagSet = new Set<string>();
         items.forEach((i) => (i.tags || []).forEach((t) => tagSet.add(t)));
 
+        const mergedSubImages = (() => {
+          const allSubs: NonNullable<CDMetadata['subImages']> = [];
+          const seen = new Set<string>();
+          items.forEach((cdItem) => {
+            if (Array.isArray(cdItem.subImages)) {
+              cdItem.subImages.forEach((sub) => {
+                if (!sub || !sub.imageUrl) return;
+                const key = `${sub.type}::${sub.imageUrl}`;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  allSubs.push(sub);
+                }
+              });
+            }
+          });
+          return allSubs.length > 0 ? allSubs : undefined;
+        })();
+
         const proposedMerged: CDMetadata = {
           ...first,
           title,
@@ -87,6 +105,7 @@ export const DuplicateCheckView: React.FC<DuplicateCheckViewProps> = ({
           label,
           releaseDate,
           coverUrl,
+          subImages: mergedSubImages,
           barcode,
           tracks,
           tags: Array.from(tagSet),

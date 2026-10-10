@@ -68,6 +68,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
       ...cd,
       tags: cd.tags ? [...cd.tags] : [],
       tracks: cd.tracks ? cd.tracks.map((t) => ({ ...t })) : [],
+      subImages: cd.subImages ? cd.subImages.map((s) => ({ ...s })) : undefined,
     }));
   });
 
@@ -86,6 +87,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
           ...cd,
           tags: cd.tags ? [...cd.tags] : [],
           tracks: cd.tracks ? cd.tracks.map((t) => ({ ...t })) : [],
+          subImages: cd.subImages ? cd.subImages.map((s) => ({ ...s })) : undefined,
         };
       });
     });

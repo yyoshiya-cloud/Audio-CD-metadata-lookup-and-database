@@ -160,7 +160,15 @@ export interface SpreadsheetInfo {
 }
 
 export interface ExportColumnConfig {
-  key: keyof CDMetadata | 'trackListText' | 'index';
+  key:
+    | keyof CDMetadata
+    | 'trackListText'
+    | 'index'
+    | 'backCoverUrl'
+    | 'obiUrl'
+    | 'discUrl'
+    | 'bookletUrl'
+    | 'otherSubImagesUrl';
   label: string;
   enabled: boolean;
 }

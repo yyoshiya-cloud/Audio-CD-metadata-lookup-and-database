@@ -27,7 +27,7 @@ export function exportCDsToExcel(
   // 1. Build Album Master rows
   const albumRows: any[][] = [albumHeaders];
   items.forEach((cd) => {
-    albumRows.push(formatCDToRowValues(cd, columns));
+    albumRows.push(formatCDToRowValues(cd, columns, { forGoogleSheetsFormula: false }));
   });
 
   // 2. Build Tracklist rows

@@ -174,17 +174,51 @@ export async function convertImageUrlToBase64(
 }
 
 /**
- * Ensure a CDMetadata record has its coverUrl converted to Base64 if it is an external http/https link.
+ * Ensure a CDMetadata record has its coverUrl and any subImages converted to Base64 if they are external http/https links.
  */
-export async function ensureCDCoverBase64<T extends { coverUrl?: string }>(cd: T): Promise<T> {
-  if (!cd.coverUrl || !cd.coverUrl.trim()) return cd;
-  const trimmed = cd.coverUrl.trim();
-  if (trimmed.startsWith('data:image/')) return cd;
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    const base64 = await convertImageUrlToBase64(trimmed);
-    if (base64 && base64.startsWith('data:image/')) {
-      return { ...cd, coverUrl: base64 };
+export async function ensureCDCoverBase64<T extends { coverUrl?: string; subImages?: { id: string; type: any; label: string; imageUrl: string }[] }>(cd: T): Promise<T> {
+  let updatedCoverUrl = cd.coverUrl;
+  let coverChanged = false;
+
+  if (cd.coverUrl && cd.coverUrl.trim()) {
+    const trimmed = cd.coverUrl.trim();
+    if (!trimmed.startsWith('data:image/') && (trimmed.startsWith('http://') || trimmed.startsWith('https://'))) {
+      const base64 = await convertImageUrlToBase64(trimmed);
+      if (base64 && base64.startsWith('data:image/')) {
+        updatedCoverUrl = base64;
+        coverChanged = true;
+      }
     }
+  }
+
+  let updatedSubImages = cd.subImages;
+  let subImagesChanged = false;
+  if (Array.isArray(cd.subImages) && cd.subImages.length > 0) {
+    const nextSubs = await Promise.all(
+      cd.subImages.map(async (sub) => {
+        if (!sub || !sub.imageUrl || !sub.imageUrl.trim()) return sub;
+        const trimmedSub = sub.imageUrl.trim();
+        if (!trimmedSub.startsWith('data:image/') && (trimmedSub.startsWith('http://') || trimmedSub.startsWith('https://'))) {
+          const base64Sub = await convertImageUrlToBase64(trimmedSub, 750, 0.84);
+          if (base64Sub && base64Sub.startsWith('data:image/')) {
+            subImagesChanged = true;
+            return { ...sub, imageUrl: base64Sub };
+          }
+        }
+        return sub;
+      })
+    );
+    if (subImagesChanged) {
+      updatedSubImages = nextSubs;
+    }
+  }
+
+  if (coverChanged || subImagesChanged) {
+    return {
+      ...cd,
+      ...(coverChanged ? { coverUrl: updatedCoverUrl } : {}),
+      ...(subImagesChanged ? { subImages: updatedSubImages } : {}),
+    };
   }
   return cd;
 }

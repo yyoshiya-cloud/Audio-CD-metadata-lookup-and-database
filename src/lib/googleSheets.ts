@@ -1,4 +1,4 @@
-import { CDMetadata, ExportColumnConfig, SpreadsheetInfo, APISource, TrackInfo } from '../types/cd';
+import { CDMetadata, ExportColumnConfig, SpreadsheetInfo, APISource, TrackInfo, CDSubImage, SubImageType } from '../types/cd';
 import { formatJSTDateTime, getJSTISOString, normalizeReleaseDate, normalizeCatalogNumber } from './dateUtils';
 
 export const DEFAULT_COLUMN_CONFIG: ExportColumnConfig[] = [
@@ -15,6 +15,11 @@ export const DEFAULT_COLUMN_CONFIG: ExportColumnConfig[] = [
   { key: 'format', label: 'フォーマット', enabled: true },
   { key: 'tags', label: 'タグ', enabled: true },
   { key: 'coverUrl', label: 'ジャケット画像URL', enabled: true },
+  { key: 'backCoverUrl', label: '裏ジャケット', enabled: true },
+  { key: 'obiUrl', label: '帯', enabled: true },
+  { key: 'discUrl', label: '盤面', enabled: true },
+  { key: 'bookletUrl', label: '歌詞カード・ブックレット', enabled: true },
+  { key: 'otherSubImagesUrl', label: 'その他付属画像', enabled: true },
   { key: 'source', label: '取得データ元', enabled: true },
   { key: 'notes', label: 'メモ', enabled: true },
   { key: 'createdAt', label: '登録日時', enabled: true },
@@ -385,11 +390,63 @@ export async function uploadBase64ImageToDrive(
   return `https://drive.google.com/thumbnail?id=${file.id}&sz=w800`;
 }
 
+const SUB_IMAGE_TYPE_MAP: Record<
+  'backCoverUrl' | 'obiUrl' | 'discUrl' | 'bookletUrl' | 'otherSubImagesUrl',
+  SubImageType
+> = {
+  backCoverUrl: 'back',
+  obiUrl: 'obi',
+  discUrl: 'disc',
+  bookletUrl: 'booklet',
+  otherSubImagesUrl: 'other',
+};
+
+const SUB_IMAGE_DEFAULT_LABELS: Record<SubImageType, string> = {
+  back: '裏ジャケット (バックインレイ)',
+  obi: '帯 (オビ)',
+  disc: '盤面 (ディスク・レーベル面)',
+  booklet: '歌詞カード・ブックレット',
+  other: 'その他付属画像',
+};
+
+export function getSerializedSubImagesByType(
+  cd: CDMetadata,
+  type: SubImageType,
+  mode: 'raw' | 'sheets' = 'raw'
+): string {
+  const subs = (cd.subImages || []).filter((s) => s && s.type === type && s.imageUrl && s.imageUrl.trim());
+  if (subs.length === 0) return '';
+
+  if (mode === 'sheets') {
+    // If single HTTP/HTTPS URL, we can use =IFERROR(IMAGE(...)) just like coverUrl
+    if (subs.length === 1 && !subs[0].imageUrl.startsWith('data:')) {
+      const safeUrl = subs[0].imageUrl.trim().replace(/"/g, '%22');
+      return `=IFERROR(IMAGE("${safeUrl}"), "${safeUrl}")`;
+    }
+    return subs
+      .map((s) => {
+        const u = s.imageUrl.trim();
+        if (u.startsWith('data:') && u.length > MAX_CELL_CHARACTERS) {
+          return '[添付画像あり(端末ローカル)]';
+        }
+        return u;
+      })
+      .join(' || ');
+  }
+
+  return subs.map((s) => s.imageUrl.trim()).join(' || ');
+}
+
 /**
  * Format CD metadata item into export row based on column config for Album Master Sheet
  */
-export function formatCDToRowValues(cd: CDMetadata, columns: ExportColumnConfig[]): any[] {
+export function formatCDToRowValues(
+  cd: CDMetadata,
+  columns: ExportColumnConfig[],
+  options?: { forGoogleSheetsFormula?: boolean }
+): any[] {
   const activeCols = columns.filter((c) => c.enabled);
+  const forSheetsFormula = options?.forGoogleSheetsFormula ?? true;
 
   return activeCols.map((col) => {
     let cellValue: any = '';
@@ -415,13 +472,36 @@ export function formatCDToRowValues(cd: CDMetadata, columns: ExportColumnConfig[
       if (!cd.coverUrl) {
         cellValue = '';
       } else if (cd.coverUrl.startsWith('data:')) {
-        cellValue = '[添付画像あり(端末ローカル)]';
-      } else {
+        if (!forSheetsFormula || cd.coverUrl.length <= MAX_CELL_CHARACTERS) {
+          cellValue = cd.coverUrl;
+        } else {
+          cellValue = '[添付画像あり(端末ローカル)]';
+        }
+      } else if (forSheetsFormula) {
         // Safely escape any double quotes in URL before embedding into =IFERROR(IMAGE(...))
         const safeUrl = cd.coverUrl.replace(/"/g, '%22');
         cellValue = `=IFERROR(IMAGE("${safeUrl}"), "${safeUrl}")`;
         return sanitizeCellValue(cellValue, true);
+      } else {
+        cellValue = cd.coverUrl;
       }
+    } else if (
+      col.key === 'backCoverUrl' ||
+      col.key === 'obiUrl' ||
+      col.key === 'discUrl' ||
+      col.key === 'bookletUrl' ||
+      col.key === 'otherSubImagesUrl'
+    ) {
+      const subType = SUB_IMAGE_TYPE_MAP[col.key];
+      const serialized = getSerializedSubImagesByType(
+        cd,
+        subType,
+        forSheetsFormula ? 'sheets' : 'raw'
+      );
+      if (serialized.startsWith('=IFERROR(IMAGE(')) {
+        return sanitizeCellValue(serialized, true);
+      }
+      cellValue = serialized;
     } else if (col.key === 'createdAt' || col.key === 'updatedAt') {
       const val = cd[col.key as 'createdAt' | 'updatedAt'];
       cellValue = val ? formatJSTDateTime(val) : '';
@@ -592,24 +672,51 @@ export async function exportCDsToSpreadsheet(
   const activeCols = columns.filter((c) => c.enabled);
   const headerRow = activeCols.map((c) => c.label);
 
-  // Pre-process items: if any has a base64 coverUrl, upload it to Google Drive to obtain a real image URL
+  // Pre-process items: if any has a base64 coverUrl or subImages, upload it to Google Drive to obtain a real image URL
   const processedItems: CDMetadata[] = [];
   for (const cd of items) {
+    let nextCoverUrl = cd.coverUrl;
     if (cd.coverUrl && cd.coverUrl.startsWith('data:image/')) {
       try {
-        const driveUrl = await uploadBase64ImageToDrive(
+        nextCoverUrl = await uploadBase64ImageToDrive(
           accessToken,
           cd.coverUrl,
           `CD_Cover_${normalizeCatalogNumber(cd.catalogNumber) || cd.id || Date.now()}.jpg`
         );
-        processedItems.push({ ...cd, coverUrl: driveUrl });
       } catch (err) {
-        console.warn('Could not upload base64 to Drive, using fallback label:', err);
-        processedItems.push(cd);
+        console.warn('Could not upload base64 cover to Drive, using fallback:', err);
       }
-    } else {
-      processedItems.push(cd);
     }
+
+    let nextSubImages = cd.subImages;
+    if (Array.isArray(cd.subImages) && cd.subImages.length > 0) {
+      const uploadedSubs: CDSubImage[] = [];
+      for (let sIdx = 0; sIdx < cd.subImages.length; sIdx++) {
+        const sub = cd.subImages[sIdx];
+        if (sub && sub.imageUrl && sub.imageUrl.startsWith('data:image/')) {
+          try {
+            const subDriveUrl = await uploadBase64ImageToDrive(
+              accessToken,
+              sub.imageUrl,
+              `CD_${sub.type}_${normalizeCatalogNumber(cd.catalogNumber) || cd.id || Date.now()}_${sIdx + 1}.jpg`
+            );
+            uploadedSubs.push({ ...sub, imageUrl: subDriveUrl });
+          } catch (err) {
+            console.warn(`Could not upload base64 subImage (${sub.type}) to Drive:`, err);
+            uploadedSubs.push(sub);
+          }
+        } else if (sub) {
+          uploadedSubs.push(sub);
+        }
+      }
+      nextSubImages = uploadedSubs;
+    }
+
+    processedItems.push({
+      ...cd,
+      coverUrl: nextCoverUrl,
+      subImages: nextSubImages,
+    });
   }
 
   // 1. EXPORT SHEET 1: ALBUM MASTER
@@ -999,10 +1106,123 @@ export function parseSpreadsheetRowsToCDs(
   const singleTrackNumIdx = findColIndex('トラック番号', '曲順（トラック番号）', '曲順', 'tracknumber');
   const singleTrackTitleIdx = findColIndex('曲名（トラックタイトル）', '曲名', 'トラックタイトル', 'tracktitle');
   const singleTrackDurationIdx = findColIndex('演奏時間（分:秒）', '演奏時間', '再生時間', 'duration');
-  const coverIdx = findColIndex('ジャケット画像url', 'ジャケット画像', 'ジャケット', '画像url', 'coverurl', 'cover', 'image');
+  const coverIdx = findColIndex('ジャケット画像url', '表ジャケット画像url', '表ジャケット', 'ジャケット画像', 'ジャケット', '画像url', 'coverurl', 'cover', 'image');
+  const backCoverIdx = findColIndex('裏ジャケット画像url', '裏ジャケット', '裏ジャケ', 'バックインレイ', 'backcoverurl', 'backcover');
+  const obiIdx = findColIndex('帯画像url', '帯 (オビ)', '帯(オビ)', '帯', 'オビ', 'obiurl', 'obi');
+  const discIdx = findColIndex('盤面画像url', '盤面 (ディスク・レーベル面)', '盤面', 'ディスク面', 'レーベル面', 'discurl', 'disc');
+  const bookletIdx = findColIndex('歌詞カード・ブックレット画像url', '歌詞カード・ブックレット', '歌詞カード', 'ブックレット', '歌詞冊子', 'bookleturl', 'booklet');
+  const otherSubImagesIdx = findColIndex('その他付属画像url', 'その他付属画像', '付属画像', 'サブ画像', 'othersubimagesurl', 'subimages');
   const sourceIdx = findColIndex('取得データ元', 'データ取得元', 'データ元', '取得元', 'source');
   const notesIdx = findColIndex('メモ・状態記録', 'メモ', '備考', 'notes', 'memo');
   const createdAtIdx = findColIndex('登録日時', '作成日時', 'createdat', 'created');
+
+  const extractImageUrlsFromCell = (rawCell: string): string[] => {
+    if (!rawCell) return [];
+    const trimmed = rawCell.trim();
+    if (!trimmed || trimmed === '[添付画像あり(端末ローカル)]' || trimmed === 'なし' || trimmed === '-') {
+      return [];
+    }
+
+    // Check if JSON array of CDSubImage objects or strings
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((item: any) => (typeof item === 'string' ? item : item?.imageUrl || item?.url || ''))
+            .map((s: string) => String(s || '').trim())
+            .filter(Boolean);
+        }
+      } catch {}
+    }
+
+    // Split by " || " or newline if multiple images are stored in one cell
+    const parts = trimmed
+      .split(/\s*\|\|\s*|\r?\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    const extracted: string[] = [];
+    for (const part of parts) {
+      if (part.startsWith('data:image/')) {
+        extracted.push(part);
+      } else if (part.startsWith('=') && part.toUpperCase().includes('IMAGE')) {
+        const urlMatch = part.match(/https?:\/\/[^\s"',)]+/);
+        if (urlMatch) {
+          extracted.push(urlMatch[0]);
+        }
+      } else {
+        const urlMatch = part.match(/https?:\/\/[^\s"',)]+/);
+        if (urlMatch) {
+          extracted.push(urlMatch[0]);
+        }
+      }
+    }
+    return extracted;
+  };
+
+  const buildSubImagesFromRow = (getValFn: (idx: number) => string, rowIndex: number): CDSubImage[] | undefined => {
+    const subs: CDSubImage[] = [];
+    const seen = new Set<string>();
+
+    const addFromCol = (colIdx: number, type: SubImageType) => {
+      if (colIdx < 0) return;
+      const raw = getValFn(colIdx);
+      if (!raw) return;
+
+      // Also support JSON array with explicit types in otherSubImagesIdx
+      if (raw.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(raw.trim());
+          if (Array.isArray(parsed)) {
+            parsed.forEach((item: any, idx: number) => {
+              if (!item) return;
+              const imgUrl = typeof item === 'string' ? item : item.imageUrl || item.url || '';
+              const itemType: SubImageType =
+                item && typeof item === 'object' && ['back', 'obi', 'disc', 'booklet', 'other'].includes(item.type)
+                  ? item.type
+                  : type;
+              const itemLabel =
+                item && typeof item === 'object' && item.label
+                  ? String(item.label)
+                  : SUB_IMAGE_DEFAULT_LABELS[itemType];
+              if (imgUrl && !seen.has(`${itemType}::${imgUrl}`)) {
+                seen.add(`${itemType}::${imgUrl}`);
+                subs.push({
+                  id: (item && item.id) || `subimg_${itemType}_${Date.now()}_${rowIndex}_${ subs.length + idx }`,
+                  type: itemType,
+                  label: itemLabel,
+                  imageUrl: String(imgUrl).trim(),
+                });
+              }
+            });
+            return;
+          }
+        } catch {}
+      }
+
+      const urls = extractImageUrlsFromCell(raw);
+      urls.forEach((u, uIdx) => {
+        const key = `${type}::${u}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        subs.push({
+          id: `subimg_${type}_${Date.now()}_${rowIndex}_${subs.length}_${uIdx}`,
+          type,
+          label: SUB_IMAGE_DEFAULT_LABELS[type],
+          imageUrl: u,
+        });
+      });
+    };
+
+    addFromCol(backCoverIdx, 'back');
+    addFromCol(obiIdx, 'obi');
+    addFromCol(discIdx, 'disc');
+    addFromCol(bookletIdx, 'booklet');
+    addFromCol(otherSubImagesIdx, 'other');
+
+    return subs.length > 0 ? subs : undefined;
+  };
 
   // Parse relational Tracklist Sheet if provided
   // Key: normalized catalogNumber or lowercase albumTitle -> TrackInfo[]
@@ -1140,6 +1360,8 @@ export function parseSpreadsheetRowsToCDs(
       rawSource.includes('gemini') || rawSource.includes('ai') ? 'gemini' : 'ndl';
 
     // Handle Combined 1-row-per-track format by grouping rows into albums
+    const rowSubImages = buildSubImagesFromRow(getVal, rowIdx);
+
     if (isCombinedSingleFile) {
       const albumKey = catalogNumber ? `cat:${catalogNumber}` : `ta:${title.toLowerCase()}_${artist.toLowerCase()}`;
       const trTitle = getVal(singleTrackTitleIdx);
@@ -1156,6 +1378,9 @@ export function parseSpreadsheetRowsToCDs(
         }
         if (!existingAlbum.vinylRecordCatalogNumber && vinylRecordCatalogNumber) {
           existingAlbum.vinylRecordCatalogNumber = vinylRecordCatalogNumber;
+        }
+        if (!existingAlbum.subImages && rowSubImages) {
+          existingAlbum.subImages = rowSubImages;
         }
         if (trTitle) {
           existingAlbum.tracks.push({
@@ -1192,6 +1417,7 @@ export function parseSpreadsheetRowsToCDs(
         country: getVal(countryIdx) || undefined,
         format: getVal(formatIdx) || undefined,
         coverUrl: coverUrl || undefined,
+        subImages: rowSubImages,
         tags,
         tracks: initialTracks,
         source: validSource,
@@ -1248,6 +1474,7 @@ export function parseSpreadsheetRowsToCDs(
       country: getVal(countryIdx) || undefined,
       format: getVal(formatIdx) || undefined,
       coverUrl: coverUrl || undefined,
+      subImages: rowSubImages,
       tags,
       tracks,
       source: validSource,

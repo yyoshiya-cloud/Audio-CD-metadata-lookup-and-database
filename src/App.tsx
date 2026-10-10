@@ -336,6 +336,23 @@ export default function App() {
       }
 
       if (existingMatch) {
+        const mergedSubImages = (() => {
+          const incoming = Array.isArray(imported.subImages) ? imported.subImages : [];
+          const existing = Array.isArray(existingMatch.subImages) ? existingMatch.subImages : [];
+          if (incoming.length === 0) return existing.length > 0 ? existing : undefined;
+          if (existing.length === 0) return incoming;
+          const combined = [...incoming];
+          const seen = new Set(incoming.map((s) => `${s.type}::${s.imageUrl}`));
+          existing.forEach((s) => {
+            const key = `${s.type}::${s.imageUrl}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              combined.push(s);
+            }
+          });
+          return combined;
+        })();
+
         const mergedRecord: CDMetadata = {
           ...existingMatch,
           ...imported,
@@ -343,6 +360,7 @@ export default function App() {
           tracks: imported.tracks && imported.tracks.length > 0 ? imported.tracks : existingMatch.tracks,
           tags: imported.tags && imported.tags.length > 0 ? imported.tags : existingMatch.tags,
           coverUrl: imported.coverUrl || existingMatch.coverUrl,
+          subImages: mergedSubImages,
           label: imported.label || existingMatch.label,
           releaseDate: imported.releaseDate || existingMatch.releaseDate,
           vinylRecordReleaseDate: imported.vinylRecordReleaseDate || existingMatch.vinylRecordReleaseDate,
