@@ -772,8 +772,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     paddingAngle={3}
                     dataKey="value"
                     onClick={(entry) => {
-                      if (entry && entry.name && entry.name !== 'その他') {
-                        onNavigateToLibrary(entry.name);
+                      if (entry && entry.name && entry.name !== 'その他' && entry.name !== '未分類 / その他') {
+                        onNavigateToLibrary(`#${entry.name}`);
                       }
                     }}
                     cursor="pointer"
@@ -812,7 +812,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {genreData.map((item, idx) => (
                 <div
                   key={idx}
-                  onClick={() => item.name !== 'その他' && onNavigateToLibrary(item.name)}
+                  onClick={() => item.name !== 'その他' && item.name !== '未分類 / その他' && onNavigateToLibrary(`#${item.name}`)}
                   className="flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors text-xs"
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -976,7 +976,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {topTagsData.map((item, idx) => (
               <button
                 key={idx}
-                onClick={() => onNavigateToLibrary(item.tag)}
+                onClick={() => onNavigateToLibrary(`#${item.tag}`)}
                 className="group flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-purple-950/60 border border-slate-700 hover:border-purple-500/50 text-xs transition-all shadow-sm"
               >
                 <span className="text-purple-300 font-bold group-hover:text-purple-200">#{item.tag}</span>

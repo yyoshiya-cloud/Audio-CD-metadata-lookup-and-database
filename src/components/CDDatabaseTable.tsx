@@ -756,7 +756,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                                   key={idx}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setSearchKeyword(t);
+                                    setSearchKeyword(`#${t}`);
                                   }}
                                   className="text-[10px] bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 px-1.5 py-0 rounded cursor-pointer transition-colors leading-tight"
                                   title={`タグ「${t}」で絞り込み`}

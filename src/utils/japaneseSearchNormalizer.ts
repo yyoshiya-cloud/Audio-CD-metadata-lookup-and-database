@@ -266,7 +266,9 @@ export function matchesSearchToken(targetText: string | undefined | null, queryT
 
 /**
  * Checks if a CDMetadata record matches the given search query string (supports space-separated AND tokens).
- * Also searches inside `cd.tracks` (track titles & track artists) and `cd.notes` (which may contain tracklists).
+ * - If a token starts with `#` (e.g., `#Instrumental`, `#J-Pop`), it strictly matches ONLY against `cd.tags` and `cd.genre`
+ *   so that track titles like "〜 (Instrumental Version)" do not cause false positives when filtering by tag/genre.
+ * - Normal tokens search across all metadata fields including `cd.tracks` (track titles & track artists) and `cd.notes`.
  */
 export function matchesCDSearchQuery(cd: CDMetadata, searchQuery: string): boolean {
   const trimmed = searchQuery.trim();
@@ -287,16 +289,53 @@ export function matchesCDSearchQuery(cd: CDMetadata, searchQuery: string): boole
     cd.label || '',
     cd.barcode || '',
     cd.notes || '',
+    cd.genre || '',
     ...(cd.tags || []),
     ...(cd.tracks || []).map((tr) => `${tr.title || ''} ${tr.artist || ''}`),
   ];
 
   const combinedText = searchableFields.join(' ');
-  return tokens.every((tok) => matchesSearchToken(combinedText, tok));
+
+  return tokens.every((tok) => {
+    if (tok.startsWith('#')) {
+      const tagName = tok.replace(/^#+/, '').trim();
+      if (!tagName) return true;
+      const lowerTag = tagName.toLowerCase();
+      const basicTag = normalizeBasicSearchText(tagName);
+
+      // Check cd.tags for exact or normalized tag match
+      const hasMatchingTag = (cd.tags || []).some((t) => {
+        const cleanT = t.trim().replace(/^#+/, '');
+        if (!cleanT) return false;
+        if (cleanT.toLowerCase() === lowerTag) return true;
+        if (basicTag && normalizeBasicSearchText(cleanT) === basicTag) return true;
+        return false;
+      });
+      if (hasMatchingTag) return true;
+
+      // Also check cd.genre (in case the genre comes from cd.genre)
+      if (cd.genre) {
+        const genreParts = cd.genre.split(/\s*[/／,、]\s*/);
+        const hasMatchingGenre = genreParts.some((g) => {
+          const cleanG = g.trim();
+          if (!cleanG) return false;
+          if (cleanG.toLowerCase() === lowerTag) return true;
+          if (basicTag && normalizeBasicSearchText(cleanG) === basicTag) return true;
+          return false;
+        });
+        if (hasMatchingGenre) return true;
+      }
+
+      return false;
+    }
+
+    return matchesSearchToken(combinedText, tok);
+  });
 }
 
 /**
- * Returns all tracks on a CD that match the given search query (useful for highlighting matched tracks in UI)
+ * Returns all tracks on a CD that match the given search query (useful for highlighting matched tracks in UI).
+ * Ignores `#tag` tokens since tag filters target album tags rather than track titles.
  */
 export function getMatchedTracksForQuery(cd: CDMetadata, searchQuery: string): TrackInfo[] {
   const trimmed = searchQuery.trim();
@@ -304,8 +343,8 @@ export function getMatchedTracksForQuery(cd: CDMetadata, searchQuery: string): T
 
   const tokens = trimmed
     .split(/[\s　]+/)
-    .map((t) => t.trim().replace(/^#+/, ''))
-    .filter(Boolean);
+    .map((t) => t.trim())
+    .filter((t) => Boolean(t) && !t.startsWith('#'));
   if (tokens.length === 0) return [];
 
   return cd.tracks.filter((tr) => {
