@@ -644,11 +644,11 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   };
 
   const SUB_IMAGE_TYPE_LABELS: Record<SubImageType, string> = {
-    back: '裏ジャケット (バックインレイ)',
+    back: '裏ジャケット',
     obi: '帯 (オビ)',
-    disc: '盤面 (ディスク・レーベル面)',
-    booklet: '歌詞カード・ブックレット',
-    other: 'その他付属画像',
+    disc: '盤面 (ディスク)',
+    booklet: '歌詞カード',
+    other: 'その他付属',
   };
 
   const handleSubImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -673,6 +673,16 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
     } finally {
       e.target.value = '';
     }
+  };
+
+  const handleRemoveFrontCover = () => {
+    setIsDirty(true);
+    setCoverUrl('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setSaveSuccessMessage('表ジャケット写真を削除しました（「保存」または画面移動で反映されます）');
+    setTimeout(() => setSaveSuccessMessage(null), 3500);
   };
 
   const handleRemoveSubImage = (subId: string) => {
@@ -1015,7 +1025,9 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     ? subImages.find((s) => s.id === activeImageSlot)
                     : undefined;
                 const displayImgUrl = activeSub ? activeSub.imageUrl : coverUrl;
-                const displayImgLabel = activeSub ? activeSub.label : '表ジャケット';
+                const displayImgLabel = activeSub
+                  ? SUB_IMAGE_TYPE_LABELS[activeSub.type] || activeSub.label
+                  : '表ジャケット';
 
                 return (
                   <div className="w-full h-36 sm:h-40 rounded-xl bg-slate-900 overflow-hidden border border-slate-700 shadow-md relative group mx-auto">
@@ -1040,19 +1052,30 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                       </div>
                     )}
                     <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1 pointer-events-none">
-                      <span className="text-[9px] font-bold bg-slate-950/85 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded shadow truncate">
+                      <span className="text-[9px] font-bold bg-slate-950/90 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded shadow whitespace-nowrap">
                         {displayImgLabel}
                       </span>
-                      {activeSub && (
+                      {activeSub ? (
                         <button
                           type="button"
                           onClick={() => handleRemoveSubImage(activeSub.id)}
-                          className="pointer-events-auto text-[9px] bg-rose-950/90 hover:bg-rose-800 text-rose-200 border border-rose-500/50 px-1.5 py-0.5 rounded cursor-pointer font-bold"
+                          className="pointer-events-auto text-[9px] bg-rose-950/90 hover:bg-rose-800 text-rose-200 border border-rose-500/50 px-1.5 py-0.5 rounded cursor-pointer font-bold flex items-center gap-0.5 whitespace-nowrap flex-shrink-0"
                           title="このサブ画像を削除"
                         >
-                          削除
+                          <Trash2 className="w-2.5 h-2.5 flex-shrink-0" />
+                          <span>削除</span>
                         </button>
-                      )}
+                      ) : coverUrl ? (
+                        <button
+                          type="button"
+                          onClick={handleRemoveFrontCover}
+                          className="pointer-events-auto text-[9px] bg-rose-950/90 hover:bg-rose-800 text-rose-200 border border-rose-500/50 px-1.5 py-0.5 rounded cursor-pointer font-bold flex items-center gap-0.5 whitespace-nowrap flex-shrink-0"
+                          title="表ジャケット写真を削除"
+                        >
+                          <Trash2 className="w-2.5 h-2.5 flex-shrink-0" />
+                          <span>削除</span>
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -1569,7 +1592,10 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                   <input
                     type="text"
                     value={coverUrl}
-                    onChange={(e) => setCoverUrl(e.target.value)}
+                    onChange={(e) => {
+                      setIsDirty(true);
+                      setCoverUrl(e.target.value);
+                    }}
                     placeholder="https://... などの画像URLを入力するとBASE64形式に変換して保存できます"
                     className="flex-1 min-w-[200px] bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
                   />
@@ -1592,11 +1618,12 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                   {coverUrl && (
                     <button
                       type="button"
-                      onClick={() => setCoverUrl('')}
-                      className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 border border-slate-700 text-xs transition-colors cursor-pointer whitespace-nowrap"
-                      title="クリア"
+                      onClick={handleRemoveFrontCover}
+                      className="px-3 py-2 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 hover:text-rose-100 border border-rose-500/40 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+                      title="表ジャケット写真を削除"
                     >
-                      クリア
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>表ジャケ削除</span>
                     </button>
                   )}
                 </div>
