@@ -1,0 +1,8 @@
+{
+  "name": "CDメタデータ検索＆データベース",
+  "description": "CDの題名・型番（規格品番）からMusicBrainz、Discogs、iTunes Search、国立国会図書館(NDL)等を横断検索し、データベース化とGoogleスプレッドシートへの直接同期・書き出しを行うウェブアプリ",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
