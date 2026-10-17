@@ -15,6 +15,7 @@ import {
   createRateLimiter,
   securityHeadersMiddleware,
 } from './server/security.js';
+import { ImageCache } from './server/imageCache.js';
 
 dotenv.config();
 
@@ -56,6 +57,9 @@ const imageProxyRateLimiter = createRateLimiter({
   maxRequests: 240,
   message: '画像プロキシのリクエスト回数が上限に達しました。しばらく待ってから再試行してください。',
 });
+
+// ジャケット画像プロキシ用のメモリキャッシュ
+const coverImageCache = new ImageCache();
 
 const MAX_BATCH_ITEMS_PER_REQUEST = 50;
 
@@ -222,7 +226,10 @@ app.get('/api/image-proxy', imageProxyRateLimiter, async (req, res) => {
       return res.status(400).send('有効な画像URLを指定してください。');
     }
 
-    const { buffer, mimeType } = await fetchSafeExternalImage(imageUrl);
+    // キャッシュ・同時リクエストの集約付き。ジャケット用途なので上限サイズ・待ち時間は短めにする
+    const { buffer, mimeType } = await coverImageCache.getOrFetch(imageUrl, () =>
+      fetchSafeExternalImage(imageUrl, { maxBytes: 5 * 1024 * 1024, timeoutMs: 8000 })
+    );
 
     res.setHeader('Content-Type', mimeType);
     res.setHeader('X-Content-Type-Options', 'nosniff');

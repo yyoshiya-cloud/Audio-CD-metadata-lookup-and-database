@@ -21,7 +21,8 @@ const TEXT_PRIORITY: APISource[] = ['rakuten', 'ndl', 'musicbrainz', 'discogs', 
 const CATNO_PRIORITY: APISource[] = ['musicbrainz', 'discogs', 'ndl', 'rakuten'];
 const LABEL_PRIORITY: APISource[] = ['musicbrainz', 'ndl', 'rakuten', 'discogs'];
 const TRACK_PRIORITY: APISource[] = ['musicbrainz', 'itunes', 'spotify', 'ndl', 'rakuten', 'discogs'];
-const COVER_PRIORITY: APISource[] = ['itunes', 'spotify', 'rakuten', 'musicbrainz', 'discogs', 'ndl'];
+// MusicBrainz(Cover Art Archive)は画像が無いURLも返し、転送も遅いため最後に回す
+const COVER_PRIORITY: APISource[] = ['itunes', 'spotify', 'rakuten', 'discogs', 'musicbrainz', 'ndl'];
 const BARCODE_PRIORITY: APISource[] = ['rakuten', 'musicbrainz', 'discogs', 'ndl'];
 const FORMAT_PRIORITY: APISource[] = ['musicbrainz', 'rakuten', 'discogs', 'ndl'];
 const DATE_PRIORITY: APISource[] = ['musicbrainz', 'rakuten', 'ndl', 'discogs'];
@@ -234,7 +235,12 @@ function consolidateGroup(
       pickValue(groupItems, TEXT_PRIORITY, (i) => i.artist, (v) => !isPlaceholder(v as string)) || PLACEHOLDER_ARTIST;
   }
 
-  const coverUrl = pickValue(groupItems, COVER_PRIORITY, (i) => i.coverUrl, nonEmpty) || '';
+  // ジャケットURLは優先順に重複なく並べ、先頭を採用。残りは画面側で読み込み失敗時の代替にする
+  const coverCandidates: string[] = [];
+  for (const it of sortedByPriority(groupItems, COVER_PRIORITY)) {
+    if (it.coverUrl && !coverCandidates.includes(it.coverUrl)) coverCandidates.push(it.coverUrl);
+  }
+  const coverUrl = coverCandidates[0] || '';
 
   const reportedCat =
     pickValue(groupItems, CATNO_PRIORITY, (i) => i.catalogNumber, nonEmpty, false) ||
@@ -342,6 +348,7 @@ function consolidateGroup(
     releaseDate,
     barcode,
     coverUrl,
+    coverCandidates,
     country: 'JP',
     format,
     genre,

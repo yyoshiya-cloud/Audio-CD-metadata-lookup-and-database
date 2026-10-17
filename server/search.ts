@@ -13,6 +13,9 @@ type SourceOutcome = { source: APISource; items: CDMetadata[]; error?: string };
 
 const ALL_SOURCES: APISource[] = ['musicbrainz', 'discogs', 'itunes', 'ndl', 'spotify', 'rakuten'];
 
+// 1ソースが遅くても全体を待たせない。超過したソースは「結果なし(タイムアウト)」として扱う。
+const SOURCE_DEADLINE_MS = 12000;
+
 function runSource(source: APISource, q: any): Promise<SourceOutcome> {
   let p: Promise<CDMetadata[]>;
   switch (source) {
@@ -24,9 +27,19 @@ function runSource(source: APISource, q: any): Promise<SourceOutcome> {
     case 'spotify': p = searchSpotify(q); break;
     default: p = Promise.resolve([]);
   }
-  return p
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<SourceOutcome>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ source, items: [], error: `${source} の応答が${SOURCE_DEADLINE_MS / 1000}秒以内に返りませんでした` }),
+      SOURCE_DEADLINE_MS
+    );
+  });
+  const work = p
     .then((items): SourceOutcome => ({ source, items }))
     .catch((err): SourceOutcome => ({ source, items: [], error: err?.message || String(err) }));
+  return Promise.race([work, deadline]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 /**

@@ -23,6 +23,7 @@ import { mergeCDCandidates, pickAnchorItem } from '../server/searchMerge.ts';
 import { parseNDLXmlResponse } from '../server/ndl.ts';
 import { cleanDiscogsArtist, mapDiscogsResult, pickDiscogsBarcode } from '../server/discogs.ts';
 import { buildReleaseQueries, pickLabelInfo } from '../server/musicbrainz.ts';
+import { ImageCache } from '../server/imageCache.ts';
 
 let passed = 0;
 let failed = 0;
@@ -282,6 +283,76 @@ test('MusicBrainz: 複数 label-info から検索型番に一致するものを�
   assert.deepEqual(pickLabelInfo(li, 'SRCL1234'), { label: 'Sony', catalogNumber: 'SRCL-1234' });
   assert.deepEqual(pickLabelInfo([], 'SRCL1234'), { label: '', catalogNumber: '' });
 });
+
+
+console.log('ジャケット画像');
+test('ジャケット候補は優先順（iTunes→…→Discogs→MusicBrainz）で重複なく並ぶ', () => {
+  const r = mergeCDCandidates(
+    [
+      cd({ source: 'musicbrainz', catalogNumber: 'SRCL-1', title: 'A', artist: 'B', coverUrl: 'http://caa/mb' }),
+      cd({ source: 'discogs', catalogNumber: 'SRCL-1', title: 'A', artist: 'B', coverUrl: 'http://discogs/d' }),
+      cd({ source: 'itunes', title: 'A', artist: 'B', coverUrl: 'http://itunes/i' }),
+      cd({ source: 'rakuten', title: 'A', artist: 'B', coverUrl: 'http://itunes/i' }), // 重複URL
+    ],
+    { catalogNumber: 'SRCL-1' }
+  );
+  assert.deepEqual(r[0].cd.coverCandidates, ['http://itunes/i', 'http://discogs/d', 'http://caa/mb']);
+  assert.equal(r[0].cd.coverUrl, 'http://itunes/i');
+});
+test('MusicBrainz だけの候補でも coverUrl が空ならジャケット候補は空', () => {
+  const r = mergeCDCandidates([cd({ source: 'musicbrainz', catalogNumber: 'X-1', title: 'A', artist: 'B', coverUrl: '' })], { catalogNumber: 'X-1' });
+  assert.deepEqual(r[0].cd.coverCandidates, []);
+  assert.equal(r[0].cd.coverUrl, '');
+});
+
+console.log('画像キャッシュ');
+const img = (n: number) => ({ buffer: Buffer.alloc(n, 1), mimeType: 'image/jpeg' });
+async function asyncTests() {
+  let calls = 0;
+  const cache = new ImageCache(1024, 512, 1000, 500, () => clock);
+  let clock = 0;
+  const slow = async () => {
+    calls++;
+    await new Promise((r) => setTimeout(r, 20));
+    return img(100);
+  };
+  // 同時リクエストは1回の取得にまとめられる
+  const [a, b] = await Promise.all([cache.getOrFetch('u1', slow), cache.getOrFetch('u1', slow)]);
+  assert.equal(calls, 1);
+  assert.equal(a.buffer.byteLength, b.buffer.byteLength);
+  // 2回目以降はキャッシュから
+  await cache.getOrFetch('u1', slow);
+  assert.equal(calls, 1);
+  // 期限切れで再取得
+  clock = 1001;
+  await cache.getOrFetch('u1', slow);
+  assert.equal(calls, 2);
+  // 失敗は短時間キャッシュされ、同じエラーが返る（再取得しない）
+  let failCalls = 0;
+  const fail = async () => {
+    failCalls++;
+    throw new Error('HTTP 404');
+  };
+  await assert.rejects(() => cache.getOrFetch('bad', fail), /404/);
+  await assert.rejects(() => cache.getOrFetch('bad', fail), /404/);
+  assert.equal(failCalls, 1);
+  clock += 501; // 失敗キャッシュの期限後は再試行
+  await assert.rejects(() => cache.getOrFetch('bad', fail), /404/);
+  assert.equal(failCalls, 2);
+  // 容量超過で古いものから削除（合計1024バイト）
+  for (let i = 0; i < 12; i++) await cache.getOrFetch(`k${i}`, async () => img(100));
+  assert.ok(cache.size <= 11, `size=${cache.size}`);
+  // 1件あたりの上限超過はキャッシュしない
+  let big = 0;
+  await cache.getOrFetch('big', async () => (big++, img(600)));
+  await cache.getOrFetch('big', async () => (big++, img(600)));
+  assert.equal(big, 2);
+}
+
+await asyncTests().then(
+  () => { passed++; console.log('  ✓ ImageCache: 集約・キャッシュ・期限・失敗記憶・容量・サイズ上限'); },
+  (e: any) => { failed++; console.error(`  ✗ ImageCache\n      ${e.message}`); }
+);
 
 console.log(`\n結果: ${passed} 件成功 / ${failed} 件失敗`);
 process.exit(failed > 0 ? 1 : 0);

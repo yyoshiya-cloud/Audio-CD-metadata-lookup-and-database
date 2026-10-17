@@ -71,6 +71,7 @@ export interface CDMetadata {
   vinylRecordCatalogNumber?: string; // Original LP/EP catalog number if available
   barcode?: string; // JAN/EAN code (e.g. 4988001...)
   coverUrl?: string; // High-res artwork URL
+  coverCandidates?: string[]; // 検索で見つかった各ソースのジャケットURL（優先順）。読み込み失敗時の代替に使う
   subImages?: CDSubImage[]; // Additional images: Back cover (裏ジャケ), Obi (帯), Disc (盤面), Booklet (歌詞カード)
   country?: string; // Release country (e.g. JP)
   format?: string; // e.g. CD, 2xCD, SACD, Limited Edition

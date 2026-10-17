@@ -3,6 +3,9 @@ import { catnoBase, catnoVariants, digitsOnly, luceneQuote } from './searchUtils
 
 const MB_BASE = 'https://musicbrainz.org/ws/2';
 
+// トラックリスト取得は1件あたり1秒以上かかる(レート制限)ため、上位のみに絞る
+const MB_TRACKLIST_LIMIT = 3;
+
 // MusicBrainz は 1リクエスト/秒 (IP単位) の制限があるため、全リクエストを直列化して間隔を空ける
 const MB_MIN_INTERVAL_MS = 1100;
 let mbQueue: Promise<unknown> = Promise.resolve();
@@ -92,7 +95,13 @@ export function pickLabelInfo(
   };
 }
 
-function mapRelease(rel: any, tracks: TrackInfo[], fallbackArtist: string, targetCatno?: string): CDMetadata {
+function mapRelease(
+  rel: any,
+  tracks: TrackInfo[],
+  fallbackArtist: string,
+  targetCatno?: string,
+  hasFrontCover?: boolean
+): CDMetadata {
   const mbid = rel.id;
   const { label, catalogNumber } = pickLabelInfo(rel['label-info'], targetCatno);
   const now = new Date().toISOString();
@@ -107,7 +116,8 @@ function mapRelease(rel: any, tracks: TrackInfo[], fallbackArtist: string, targe
     barcode: rel.barcode || '',
     country: rel.country || 'JP',
     format: rel.media?.[0]?.format || 'CD',
-    coverUrl: `https://coverartarchive.org/release/${mbid}/front-500`,
+    // Cover Art Archive に表紙が無いと分かっている場合はURLを返さない（不明な場合のみURLを付ける）
+    coverUrl: hasFrontCover === false ? '' : `https://coverartarchive.org/release/${mbid}/front-500`,
     tracks,
     source: 'musicbrainz',
     sourceDetails: { musicbrainzId: mbid },
@@ -191,11 +201,16 @@ export async function searchMusicBrainz(query: {
           seenReleaseIds.add(mbid);
 
           let tracks: TrackInfo[] = [];
-          if (results.length < 3) tracks = await fetchMBTracklist(mbid, contact);
+          let hasFront: boolean | undefined;
+          if (results.length < MB_TRACKLIST_LIMIT) {
+            const detail = await fetchMBRelease(mbid, contact);
+            tracks = detail.tracks;
+            hasFront = detail.hasFront;
+          }
           if (tracks.length === 0 && rec.title) {
             tracks = [{ trackNumber: 1, title: rec.title, artist: recArtist, duration: formatDuration(rec.length) }];
           }
-          results.push(mapRelease(rel, tracks, recArtist));
+          results.push(mapRelease(rel, tracks, recArtist, undefined, hasFront));
           if (results.length >= 8) break;
         }
         if (results.length >= 8) break;
@@ -216,9 +231,15 @@ export async function searchMusicBrainz(query: {
 
     const results: CDMetadata[] = [];
     for (const rel of releases) {
-      // 上位3件のみトラックリストを取得（直列・1req/s制限あり）
-      const tracks = results.length < 3 ? await fetchMBTracklist(rel.id, contact) : [];
-      results.push(mapRelease(rel, tracks, 'Unknown Artist', query.catno));
+      // 上位のみトラックリストを取得（直列・1req/s制限あり）。同じ取得でジャケットの有無も分かる
+      let tracks: TrackInfo[] = [];
+      let hasFront: boolean | undefined;
+      if (results.length < MB_TRACKLIST_LIMIT) {
+        const detail = await fetchMBRelease(rel.id, contact);
+        tracks = detail.tracks;
+        hasFront = detail.hasFront;
+      }
+      results.push(mapRelease(rel, tracks, 'Unknown Artist', query.catno, hasFront));
     }
     return results;
   } catch (err: any) {
@@ -232,12 +253,16 @@ export async function searchMusicBrainz(query: {
 }
 
 /**
- * Fetch tracklist for a specific MusicBrainz release ID
+ * MusicBrainz のリリース詳細からトラックリストと表紙画像の有無を取得する。
+ * hasFront は `cover-art-archive` が応答に含まれる場合のみ値が入る（不明なら undefined）。
  */
-async function fetchMBTracklist(mbid: string, contact?: string): Promise<TrackInfo[]> {
+async function fetchMBRelease(
+  mbid: string,
+  contact?: string
+): Promise<{ tracks: TrackInfo[]; hasFront?: boolean }> {
   try {
     const data = await mbFetchJson(`${MB_BASE}/release/${mbid}?inc=recordings+media&fmt=json`, contact);
-    if (!data) return [];
+    if (!data) return { tracks: [] };
     const tracks: TrackInfo[] = [];
     let trackCounter = 1;
     for (const media of data.media || []) {
@@ -250,9 +275,10 @@ async function fetchMBTracklist(mbid: string, contact?: string): Promise<TrackIn
         trackCounter++;
       }
     }
-    return tracks;
+    const caa = data['cover-art-archive'];
+    const hasFront = caa && typeof caa.front === 'boolean' ? caa.front : undefined;
+    return { tracks, hasFront };
   } catch {
-    return [];
+    return { tracks: [] };
   }
 }
-

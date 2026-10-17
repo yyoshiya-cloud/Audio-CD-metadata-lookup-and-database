@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CDMetadata, SearchResponse, APISource } from '../types/cd';
+import { CoverImage, coverUrlsOf } from './CoverImage';
 import { Music, Calendar, Disc, Check, Plus, ShieldCheck, Layers, Layers2, Sparkles, Trash2, ChevronDown, ChevronUp, ListMusic, PanelRight, Maximize2 } from 'lucide-react';
 
 interface SearchResultsProps {
@@ -282,29 +283,12 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                       className="w-20 h-20 rounded-xl bg-slate-900 overflow-hidden flex-shrink-0 border border-slate-700/80 shadow-md relative group-hover:scale-[1.02] transition-transform cursor-pointer"
                       title="クリックしてプレビュー / 詳細表示"
                     >
-                      {cd.coverUrl ? (
-                        <img
-                          src={cd.coverUrl}
-                          alt={cd.title}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                          loading="lazy"
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            if (!target.dataset.triedProxy && cd.coverUrl && !cd.coverUrl.startsWith('data:')) {
-                              target.dataset.triedProxy = 'true';
-                              target.src = `/api/image-proxy?url=${encodeURIComponent(cd.coverUrl)}`;
-                            } else {
-                              target.style.display = 'none';
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-2 text-center">
-                          <Disc className="w-8 h-8 mb-1 opacity-50" />
-                          <span className="text-[10px]">No Artwork</span>
-                        </div>
-                      )}
+                      <CoverImage
+                        urls={coverUrlsOf(cd)}
+                        alt={cd.title}
+                        eager={idx < 9}
+                        placeholderLabel="No Artwork"
+                      />
                     </div>
                     </div>
 
@@ -583,25 +567,12 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                           className="w-10 h-10 rounded-lg bg-slate-900 overflow-hidden border border-slate-700 flex-shrink-0 cursor-pointer shadow-xs hover:scale-105 transition-transform"
                           title="クリックしてプレビュー / 詳細表示"
                         >
-                          {cd.coverUrl ? (
-                            <img
-                              src={cd.coverUrl}
-                              alt={cd.title}
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                              onError={(e) => {
-                                const target = e.currentTarget;
-                                if (!target.dataset.triedProxy && cd.coverUrl && !cd.coverUrl.startsWith('data:')) {
-                                  target.dataset.triedProxy = 'true';
-                                  target.src = `/api/image-proxy?url=${encodeURIComponent(cd.coverUrl)}`;
-                                } else {
-                                  target.style.display = 'none';
-                                }
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-slate-600 text-[9px]">No</div>
-                          )}
+                          <CoverImage
+                            urls={coverUrlsOf(cd)}
+                            alt={cd.title}
+                            eager={idx < 12}
+                            iconClassName="w-4 h-4"
+                          />
                         </div>
                       </td>
 
@@ -765,26 +736,13 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                         #{i + 1}
                       </div>
                       <div className="w-16 h-16 rounded-lg bg-slate-900 flex-shrink-0 overflow-hidden border border-slate-700">
-                        {item.coverUrl ? (
-                          <img 
-                            src={item.coverUrl} 
-                            alt={item.title} 
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                            loading="lazy"
-                            onError={(e) => {
-                              const target = e.currentTarget;
-                              if (!target.dataset.triedProxy && item.coverUrl && !item.coverUrl.startsWith('data:')) {
-                                target.dataset.triedProxy = 'true';
-                                target.src = `/api/image-proxy?url=${encodeURIComponent(item.coverUrl)}`;
-                              } else {
-                                target.style.display = 'none';
-                              }
-                            }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-600 text-[10px]">No Cover</div>
-                        )}
+                        <CoverImage
+                          urls={coverUrlsOf(item)}
+                          alt={item.title}
+                          eager={i < 6}
+                          placeholderLabel="No Cover"
+                          iconClassName="w-6 h-6"
+                        />
                       </div>
                       <div className="flex-1 min-w-0">
                         {item.catalogNumber && (

@@ -1,4 +1,5 @@
 import React from 'react';
+import { CoverImage, coverUrlsOf } from './CoverImage';
 import { CDMetadata } from '../types/cd';
 import { Disc, Music, Calendar, Tag, Plus, Check, Edit3, X, Sparkles, ExternalLink, ShieldCheck } from 'lucide-react';
 
@@ -50,25 +51,7 @@ export const CDInlinePreviewCard: React.FC<CDInlinePreviewCardProps> = ({
       <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start">
         {/* Cover Art */}
         <div className="w-32 h-32 sm:w-36 sm:h-36 rounded-xl bg-slate-950 overflow-hidden border border-slate-700/80 shadow-lg flex-shrink-0 flex items-center justify-center relative group">
-          {cd.coverUrl ? (
-            <img
-              src={cd.coverUrl}
-              alt={cd.title}
-              className="w-full h-full object-cover transition-transform group-hover:scale-105"
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (!target.dataset.triedProxy && cd.coverUrl && !cd.coverUrl.startsWith('data:')) {
-                  target.dataset.triedProxy = 'true';
-                  target.src = `/api/image-proxy?url=${encodeURIComponent(cd.coverUrl)}`;
-                } else {
-                  target.style.display = 'none';
-                }
-              }}
-            />
-          ) : (
-            <Disc className="w-10 h-10 text-slate-700" />
-          )}
+          <CoverImage urls={coverUrlsOf(cd)} alt={cd.title} eager iconClassName="w-10 h-10" />
           {cd.source && (
             <span className="absolute bottom-1 right-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/80 text-indigo-300 border border-indigo-500/40">
               {cd.source}
