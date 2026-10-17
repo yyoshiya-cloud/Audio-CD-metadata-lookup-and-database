@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { initAuth, googleSignIn, logout, getAccessToken } from './lib/firebase';
 import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, markCDsAsSynced, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage, loadAppInfoConfigDB, saveAppInfoConfigDB, DEFAULT_APP_INFO_CONFIG, AppInfoConfig } from './lib/db';
@@ -93,11 +93,32 @@ export default function App() {
     return 'inline';
   });
 
+  // 直近に詳細を開いた候補のID（モーダルを閉じた後に「モーダル表示」で同じ候補を開き直すため）
+  const lastViewedCDIdRef = useRef<string | null>(null);
+
   const handleToggleSearchPreviewMode = (mode: 'inline' | 'modal') => {
     setSearchPreviewMode(mode);
     try {
       localStorage.setItem('cd_search_preview_mode', mode);
     } catch {}
+
+    const candidates = searchResponse?.candidates?.map((c) => c.cd) || [];
+    if (candidates.length === 0) return;
+
+    const findLastViewed = () => candidates.find((c) => c.id === lastViewedCDIdRef.current);
+
+    if (mode === 'modal') {
+      // 「モーダル表示」は表示方式の切替だけでなく、押した時点でモーダルを開く
+      // （×で閉じた後に同じボタンを押しても開き直せるようにする）
+      const target =
+        (splitPreviewCD && candidates.find((c) => c.id === splitPreviewCD.id)) || findLastViewed() || candidates[0];
+      setSplitPreviewCD(null);
+      setSelectedCDForModal(target);
+      setModalCDList(candidates);
+    } else {
+      // 「スプリット表示」に戻したときは、プレビューが空にならないよう直近の候補を表示
+      setSplitPreviewCD((prev) => prev ?? findLastViewed() ?? candidates[0]);
+    }
   };
 
   const [splitPreviewCD, setSplitPreviewCD] = useState<CDMetadata | null>(null);
@@ -105,6 +126,9 @@ export default function App() {
   // Modal States
   const [selectedCDForModal, setSelectedCDForModal] = useState<CDMetadata | null>(null);
   const [modalCDList, setModalCDList] = useState<CDMetadata[]>([]);
+  useEffect(() => {
+    if (selectedCDForModal) lastViewedCDIdRef.current = selectedCDForModal.id;
+  }, [selectedCDForModal]);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [sheetsModalMode, setSheetsModalMode] = useState<'export' | 'import'>('export');
   const [itemsToExport, setItemsToExport] = useState<CDMetadata[]>([]);
@@ -770,8 +794,9 @@ export default function App() {
           }}
           onSaveCD={async (updatedCD) => {
             const saved = await handleSaveCDToDB(updatedCD);
-            setModalCDList((prev) => prev.map((c) => (c.id === saved.id ? saved : c)));
-            setSelectedCDForModal(saved);
+            setModalCDList((prev) => prev.map((c) => (c.id === saved.id || c.id === updatedCD.id ? saved : c)));
+            // 閉じる操作の自動保存が完了した後に、閉じたはずのモーダルが再び開かないようにする
+            setSelectedCDForModal((prev) => (prev && prev.id === updatedCD.id ? saved : prev));
           }}
           onOpenPDFCatalog={(singleCD) => {
             handleOpenPDFCatalog([singleCD]);

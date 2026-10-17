@@ -143,10 +143,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
   }
 
   return (
-    <div className="space-y-4">
+    // lg以上: 結果ブロックを画面内に固定し、ヘッダー行は常に表示、明細(下の領域)だけをスクロールさせる
+    <div className="flex flex-col gap-4 lg:sticky lg:top-[76px] lg:h-[calc(100vh-92px)]">
       
-      {/* Search Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+      {/* Search Header Bar (固定) */}
+      <div className="flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
         <div className="flex items-center gap-2.5 flex-wrap">
           <span className="text-sm font-bold text-white flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-indigo-400" />
@@ -249,6 +250,9 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
         </div>
       </div>
 
+      {/* 明細エリア: ここだけがスクロールする */}
+      <div className="flex-1 min-h-0 space-y-4 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
+
       {/* Mode 1: Aggregated Best Match View (3 Columns on Large Screens) */}
       {viewMode === 'aggregated' && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -260,22 +264,22 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
             return (
               <div
                 key={idx}
-                className={`bg-slate-800/90 hover:bg-slate-800 rounded-2xl border p-4 transition-all flex flex-col justify-between shadow-lg relative group ${
+                className={`bg-slate-800/90 hover:bg-slate-800 rounded-2xl border p-4 transition-all flex flex-col justify-between min-w-0 shadow-lg relative group ${
                   isCurrentPreview
                     ? 'border-indigo-400 ring-2 ring-indigo-500/70 shadow-indigo-900/40 bg-slate-800'
                     : 'border-slate-700/80 hover:border-indigo-500/50'
                 }`}
               >
-                <div className="overflow-hidden">
-                  {/* Floating Media Group: Index number & Artwork image for text wrap-around (文字の回り込み) */}
-                  <div className="float-left mr-3 mb-2 flex items-start gap-2">
-                    <div className="flex-shrink-0 font-mono text-xs font-bold text-indigo-300 bg-slate-900 border border-slate-700/80 px-2 py-1 rounded-md text-center min-w-[32px] h-fit mt-0.5 shadow-sm">
-                      #{idx + 1}
-                    </div>
-
+                <div className="min-w-0">
+                  {/* 1行目: 左=番号+ジャケット（固定幅） / 右=タイトル・アーティスト（全文表示・折り返し） */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
+                      <div className="font-mono text-xs font-bold text-indigo-300 bg-slate-900 border border-slate-700/80 px-2 py-0.5 rounded-md text-center min-w-[32px] shadow-sm">
+                        #{idx + 1}
+                      </div>
                     <div
                       onClick={() => onSelectCD(cd, candidates.map((c) => c.cd))}
-                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-900 overflow-hidden flex-shrink-0 border border-slate-700/80 shadow-md relative group-hover:scale-[1.02] transition-transform cursor-pointer"
+                      className="w-20 h-20 rounded-xl bg-slate-900 overflow-hidden flex-shrink-0 border border-slate-700/80 shadow-md relative group-hover:scale-[1.02] transition-transform cursor-pointer"
                       title="クリックしてプレビュー / 詳細表示"
                     >
                       {cd.coverUrl ? (
@@ -302,19 +306,41 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                         </div>
                       )}
                     </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h3
+                        className="text-sm sm:text-base font-bold text-white leading-snug whitespace-normal break-words [overflow-wrap:anywhere] hover:text-indigo-300 transition-colors cursor-pointer"
+                        onClick={() => onSelectCD(cd, candidates.map((c) => c.cd))}
+                        title={cd.title}
+                      >
+                        {cd.title}
+                      </h3>
+                      <p className="text-xs sm:text-sm font-medium text-slate-300 whitespace-normal break-words [overflow-wrap:anywhere] mt-1" title={cd.artist}>
+                        {cd.artist}
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Header Badges: wraps naturally with flex-wrap and max-w-full to prevent border overflow */}
-                  <div className="flex items-center justify-between gap-1.5 flex-wrap mb-1.5">
-                    <div className="flex items-center gap-1.5 flex-wrap min-w-0 max-w-full">
-                      {cd.catalogNumber ? (
-                        <span className="text-xs font-mono font-bold text-indigo-300 bg-indigo-950/80 border border-indigo-500/40 px-2 py-0.5 rounded-md">
-                          型番: {cd.catalogNumber}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400">型番未判定</span>
-                      )}
+                  {/* バッジ行1: 型番 + 一致率（一致率は常に型番の右隣に固定） */}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-3">
+                    {cd.catalogNumber ? (
+                      <span className="text-xs font-mono font-bold text-indigo-300 bg-indigo-950/80 border border-indigo-500/40 px-2 py-0.5 rounded-md">
+                        型番: {cd.catalogNumber}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400">型番未判定</span>
+                    )}
 
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      一致率 {cand.matchScore}%
+                    </span>
+                  </div>
+
+                  {/* バッジ行2: 完全一致 / Gemini検証済 */}
+                  {(cand.isExactMatch || cand.verifiedByAI || cd.verifiedByAI) && (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                       {cand.isExactMatch && (
                         <span className="text-[10px] font-bold text-amber-300 bg-amber-950/90 border border-amber-500/50 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
                           🎯 {cand.exactMatchTypes?.includes('barcode') && cand.exactMatchTypes?.includes('catalogNumber')
@@ -336,31 +362,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                         </span>
                       )}
                     </div>
-
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 flex-shrink-0 ml-auto">
-                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                      一致率 {cand.matchScore}%
-                    </span>
-                  </div>
-
-                  {/* Title & Artist: text wraps around the jacket, break-words so nothing overflows */}
-                  <h3
-                    className="text-sm sm:text-base font-bold text-white leading-snug break-words hover:text-indigo-300 transition-colors cursor-pointer line-clamp-2"
-                    onClick={() => {
-                      if (onTogglePreviewMode && previewMode === 'modal') {
-                        onSelectCD(cd, candidates.map((c) => c.cd));
-                      } else {
-                        onSelectCD(cd, candidates.map((c) => c.cd));
-                      }
-                    }}
-                    title={cd.title}
-                  >
-                    {cd.title}
-                  </h3>
-
-                  <p className="text-xs sm:text-sm font-medium text-slate-300 break-words mt-0.5 line-clamp-2" title={cd.artist}>
-                    {cd.artist}
-                  </p>
+                  )}
 
                   {/* Metadata line: Label, Date, Tracks */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 mt-2">
@@ -396,13 +398,12 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 
                   {/* Gemini AI Verification Summary Note: clear-both ensures it spans 100% width across the bottom */}
                   {(cand.aiVerificationSummary || cd.aiVerificationSummary) && (
-                    <div className="clear-both bg-purple-950/30 border border-purple-800/40 rounded-lg p-2.5 text-[11px] text-purple-200 mt-2.5 flex items-start gap-1.5 leading-relaxed break-words shadow-inner">
+                    <div className="bg-purple-950/30 border border-purple-800/40 rounded-lg p-2.5 text-[11px] text-purple-200 mt-2.5 flex items-start gap-1.5 leading-relaxed break-words shadow-inner">
                       <Sparkles className="w-3.5 h-3.5 text-purple-400 flex-shrink-0 mt-0.5" />
                       <span className="break-words leading-relaxed">{cand.aiVerificationSummary || cd.aiVerificationSummary}</span>
                     </div>
                   )}
 
-                  <div className="clear-both" />
                 </div>
 
                 {/* Bottom Actions */}
@@ -550,7 +551,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                 <tr>
                   <th className="py-2.5 px-3 w-12 text-center whitespace-nowrap">#</th>
                   <th className="py-2.5 px-3 w-16 text-center whitespace-nowrap">ジャケット</th>
-                  <th className="py-2.5 px-3 whitespace-nowrap">型番 / 一致率</th>
+                  <th className="py-2.5 px-3 whitespace-nowrap">型番・一致率</th>
                   <th className="py-2.5 px-3 whitespace-nowrap">タイトル / アーティスト</th>
                   <th className="py-2.5 px-3 whitespace-nowrap">レーベル / 発売日</th>
                   <th className="py-2.5 px-3 whitespace-nowrap">統合元</th>
@@ -607,24 +608,25 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                       {/* 型番 / 一致率 */}
                       <td className="py-2 px-3 align-middle whitespace-nowrap">
                         <div className="space-y-1">
-                          {cd.catalogNumber ? (
-                            <span className="font-mono text-xs font-bold text-indigo-300 bg-indigo-950/80 border border-indigo-500/40 px-2 py-0.5 rounded inline-block">
-                              型番: {cd.catalogNumber}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs">型番未判定</span>
-                          )}
-                          <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* 型番 + 一致率（一致率は常に型番の右隣） */}
+                          <div className="flex items-center gap-1.5">
+                            {cd.catalogNumber ? (
+                              <span className="font-mono text-xs font-bold text-indigo-300 bg-indigo-950/80 border border-indigo-500/40 px-2 py-0.5 rounded inline-block">
+                                型番: {cd.catalogNumber}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">型番未判定</span>
+                            )}
                             <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5">
                               <ShieldCheck className="w-3 h-3" />
                               一致率 {cand.matchScore}%
                             </span>
-                            {cand.isExactMatch && (
-                              <span className="text-[10px] font-bold text-amber-300 bg-amber-950/80 border border-amber-500/40 px-1.5 py-0.2 rounded">
-                                🎯 完全一致
-                              </span>
-                            )}
                           </div>
+                          {cand.isExactMatch && (
+                            <span className="text-[10px] font-bold text-amber-300 bg-amber-950/80 border border-amber-500/40 px-1.5 py-0.2 rounded inline-block">
+                              🎯 完全一致
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -866,6 +868,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
         </div>
       )}
 
+      </div>
     </div>
   );
 };
