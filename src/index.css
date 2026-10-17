@@ -1,0 +1,389 @@
+@import "tailwindcss";
+
+/* -------------------------------------------------------------
+ * 1. Smooth transitions for theme and container size switches
+ * ------------------------------------------------------------- */
+html {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* -------------------------------------------------------------
+ * 2. Calm, Eye-Friendly Subdued Light Theme (目に優しく落ち着いたおとなしい画面表示)
+ * ------------------------------------------------------------- */
+html.light-theme {
+  color-scheme: light;
+}
+
+/* Base Body: Muted, warm-slate paper tone without any stark white glare */
+html.light-theme body {
+  background-color: #d1d7de !important; /* 眩しさを完全に抑えた落ち着いたソフトスレート */
+  color: #162231 !important; /* ギラつきのない深みのあるチャコール */
+}
+
+/* Header & Top Bars (Anchored, calm structure) */
+html.light-theme header,
+html.light-theme .bg-slate-950,
+html.light-theme .bg-slate-950\/95,
+html.light-theme .bg-slate-950\/90,
+html.light-theme .bg-slate-950\/80,
+html.light-theme .bg-slate-950\/70,
+html.light-theme .bg-slate-950\/60,
+html.light-theme .bg-slate-950\/50,
+html.light-theme .bg-slate-950\/40,
+html.light-theme .bg-slate-950\/30 {
+  background-color: #c2c9d2 !important;
+}
+
+/* Main Containers, Tables, View Panes (Tranquil, comfortable reading ground) */
+html.light-theme .bg-slate-900,
+html.light-theme .bg-slate-900\/95,
+html.light-theme .bg-slate-900\/90,
+html.light-theme .bg-slate-900\/80,
+html.light-theme .bg-slate-900\/75,
+html.light-theme .bg-slate-900\/70,
+html.light-theme .bg-slate-900\/60,
+html.light-theme .bg-slate-900\/50,
+html.light-theme .bg-slate-900\/40,
+html.light-theme .bg-slate-900\/30 {
+  background-color: #d9dfe6 !important;
+}
+
+/* Cards, Modules, Elevated Panels & Buttons */
+html.light-theme .bg-slate-850,
+html.light-theme .bg-slate-800,
+html.light-theme .bg-slate-800\/95,
+html.light-theme .bg-slate-800\/90,
+html.light-theme .bg-slate-800\/80,
+html.light-theme .bg-slate-800\/70,
+html.light-theme .bg-slate-800\/60,
+html.light-theme .bg-slate-800\/50,
+html.light-theme .bg-slate-800\/40,
+html.light-theme .bg-slate-800\/30 {
+  background-color: #e1e7ed !important;
+}
+
+/* Sub-panels, Tertiary Backgrounds */
+html.light-theme .bg-slate-750,
+html.light-theme .bg-slate-700,
+html.light-theme .bg-slate-700\/90,
+html.light-theme .bg-slate-700\/80,
+html.light-theme .bg-slate-700\/60,
+html.light-theme .bg-slate-700\/50,
+html.light-theme .bg-slate-700\/40,
+html.light-theme .bg-slate-700\/30,
+html.light-theme .bg-slate-600 {
+  background-color: #c9d1da !important;
+}
+
+/* Soft, Clean, Defined Borders (Clean separation without harshness) */
+html.light-theme .border-slate-900,
+html.light-theme .border-slate-800,
+html.light-theme .border-slate-800\/90,
+html.light-theme .border-slate-800\/80,
+html.light-theme .border-slate-700,
+html.light-theme .border-slate-700\/95,
+html.light-theme .border-slate-700\/90,
+html.light-theme .border-slate-700\/80,
+html.light-theme .border-slate-700\/60,
+html.light-theme .border-slate-600 {
+  border-color: #98a7b8 !important;
+}
+
+/* Calm Typography (Deep slate charcoal, clear & glare-free) */
+html.light-theme .text-white,
+html.light-theme .text-slate-100 {
+  color: #162231 !important;
+}
+
+html.light-theme .text-slate-200,
+html.light-theme .text-slate-300 {
+  color: #2b3a4d !important;
+}
+
+html.light-theme .text-slate-400 {
+  color: #4a5c71 !important;
+}
+
+html.light-theme .text-slate-500 {
+  color: #65778b !important;
+}
+
+html.light-theme .text-slate-600 {
+  color: #7d8f9f !important;
+}
+
+/* Table Headers & Rows */
+html.light-theme thead,
+html.light-theme thead th,
+html.light-theme thead tr {
+  background-color: #c5cdd6 !important;
+  color: #162231 !important;
+  border-color: #98a7b8 !important;
+}
+
+html.light-theme tr:hover td {
+  background-color: #c8d1db !important;
+}
+
+html.light-theme .hover\:bg-slate-800\/60:hover,
+html.light-theme .hover\:bg-slate-800\/80:hover,
+html.light-theme .hover\:bg-slate-800:hover,
+html.light-theme .hover\:bg-slate-750:hover,
+html.light-theme .hover\:bg-slate-700:hover,
+html.light-theme .hover\:bg-slate-900:hover {
+  background-color: #c8d1db !important;
+}
+
+/* Selected Table Row or Batch Highlight */
+html.light-theme tr.bg-indigo-950\/40 td,
+html.light-theme tr.bg-indigo-900\/40 td,
+html.light-theme .bg-indigo-950\/40,
+html.light-theme .bg-indigo-900\/40 {
+  background-color: #cfd8e5 !important;
+}
+
+/* Inputs, Selects & Form Controls (Eye-friendly soft tone, never blinding white) */
+html.light-theme input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html.light-theme select,
+html.light-theme textarea {
+  background-color: #dfe5ec !important;
+  color: #162231 !important;
+  border-color: #94a5b6 !important;
+}
+
+html.light-theme input::placeholder,
+html.light-theme textarea::placeholder {
+  color: #63768b !important;
+}
+
+html.light-theme input:focus,
+html.light-theme select:focus,
+html.light-theme textarea:focus {
+  background-color: #eaeff5 !important; /* ソフトで目に優しいフォーカス色（純白を避けて刺激を抑制） */
+  border-color: #4f46e5 !important;
+  color: #162231 !important;
+}
+
+/* Subdued Badges, Chips & Pills (Muted pastels with legible high-contrast text) */
+html.light-theme .bg-indigo-950,
+html.light-theme .bg-indigo-950\/80,
+html.light-theme .bg-indigo-950\/90,
+html.light-theme .bg-indigo-950\/95,
+html.light-theme .bg-indigo-900\/40,
+html.light-theme .bg-indigo-900\/60,
+html.light-theme .bg-indigo-900\/80,
+html.light-theme .bg-indigo-500\/10,
+html.light-theme .bg-indigo-500\/20,
+html.light-theme .bg-indigo-500\/30 {
+  background-color: #d6e0f0 !important;
+}
+html.light-theme .text-indigo-200,
+html.light-theme .text-indigo-300,
+html.light-theme .text-indigo-400 {
+  color: #243a75 !important;
+}
+html.light-theme .border-indigo-500\/20,
+html.light-theme .border-indigo-500\/30,
+html.light-theme .border-indigo-500\/40,
+html.light-theme .border-indigo-500\/60 {
+  border-color: #9cb4d9 !important;
+}
+
+html.light-theme .bg-amber-950,
+html.light-theme .bg-amber-950\/80,
+html.light-theme .bg-amber-950\/90,
+html.light-theme .bg-amber-900\/40,
+html.light-theme .bg-amber-500\/10,
+html.light-theme .bg-amber-500\/20,
+html.light-theme .bg-amber-500\/30 {
+  background-color: #f4ecce !important;
+}
+html.light-theme .text-amber-200,
+html.light-theme .text-amber-300,
+html.light-theme .text-amber-400 {
+  color: #724208 !important;
+}
+html.light-theme .border-amber-500\/20,
+html.light-theme .border-amber-500\/30,
+html.light-theme .border-amber-500\/40,
+html.light-theme .border-amber-500\/50,
+html.light-theme .border-amber-500\/60 {
+  border-color: #d8c292 !important;
+}
+
+html.light-theme .bg-emerald-950,
+html.light-theme .bg-emerald-950\/80,
+html.light-theme .bg-emerald-900\/40,
+html.light-theme .bg-emerald-500\/10,
+html.light-theme .bg-emerald-500\/20,
+html.light-theme .bg-emerald-500\/30,
+html.light-theme .bg-green-500\/10,
+html.light-theme .bg-green-500\/20 {
+  background-color: #d5ede0 !important;
+}
+html.light-theme .text-emerald-200,
+html.light-theme .text-emerald-300,
+html.light-theme .text-emerald-400,
+html.light-theme .text-green-400 {
+  color: #11572c !important;
+}
+html.light-theme .border-emerald-500\/20,
+html.light-theme .border-emerald-500\/30,
+html.light-theme .border-emerald-500\/40,
+html.light-theme .border-emerald-400\/40 {
+  border-color: #94caa9 !important;
+}
+
+html.light-theme .bg-rose-950,
+html.light-theme .bg-rose-950\/80,
+html.light-theme .bg-rose-500\/10,
+html.light-theme .bg-rose-500\/20,
+html.light-theme .bg-red-500\/10,
+html.light-theme .bg-red-500\/20 {
+  background-color: #f6e0e3 !important;
+}
+html.light-theme .text-rose-200,
+html.light-theme .text-rose-300,
+html.light-theme .text-rose-400,
+html.light-theme .text-red-400 {
+  color: #871c2b !important;
+}
+html.light-theme .border-rose-500\/20,
+html.light-theme .border-rose-500\/30,
+html.light-theme .border-rose-500\/40 {
+  border-color: #dfa2aa !important;
+}
+
+html.light-theme .bg-purple-950,
+html.light-theme .bg-purple-950\/80,
+html.light-theme .bg-purple-950\/50,
+html.light-theme .bg-purple-500\/10,
+html.light-theme .bg-purple-500\/20,
+html.light-theme .bg-purple-500\/30 {
+  background-color: #eadff6 !important;
+}
+html.light-theme .text-purple-200,
+html.light-theme .text-purple-300,
+html.light-theme .text-purple-400 {
+  color: #531f8f !important;
+}
+html.light-theme .border-purple-500\/20,
+html.light-theme .border-purple-500\/30,
+html.light-theme .border-purple-500\/40 {
+  border-color: #c4a7e7 !important;
+}
+
+html.light-theme .bg-sky-500\/10,
+html.light-theme .bg-sky-500\/20 {
+  background-color: #d8ebf6 !important;
+}
+html.light-theme .text-sky-400 {
+  color: #075985 !important;
+}
+html.light-theme .border-sky-500\/20 {
+  border-color: #92c7e8 !important;
+}
+
+html.light-theme .bg-pink-500\/10,
+html.light-theme .bg-pink-500\/20 {
+  background-color: #f7e2eb !important;
+}
+html.light-theme .text-pink-400 {
+  color: #9d174d !important;
+}
+html.light-theme .border-pink-500\/20 {
+  border-color: #e5a4c0 !important;
+}
+
+/* Gentle, Matte Soft Shadows (No harsh dark halos) */
+html.light-theme .shadow-xl,
+html.light-theme .shadow-2xl,
+html.light-theme .shadow-lg,
+html.light-theme .shadow-md {
+  box-shadow: 0 3px 10px -2px rgba(22, 34, 49, 0.08), 0 1px 4px -1px rgba(22, 34, 49, 0.04) !important;
+}
+
+/* Preserve crisp white text on primary buttons */
+html.light-theme .bg-indigo-600,
+html.light-theme .bg-indigo-600 *,
+html.light-theme .bg-emerald-600,
+html.light-theme .bg-emerald-600 *,
+html.light-theme .bg-amber-600,
+html.light-theme .bg-amber-600 *,
+html.light-theme .bg-rose-600,
+html.light-theme .bg-rose-600 *,
+html.light-theme .bg-purple-600,
+html.light-theme .bg-purple-600 *,
+html.light-theme .bg-gradient-to-r,
+html.light-theme .bg-gradient-to-r *,
+html.light-theme .bg-gradient-to-tr,
+html.light-theme .bg-gradient-to-tr * {
+  color: #ffffff !important;
+}
+
+/* Modal Overlay & Containers in Light Mode */
+html.light-theme .bg-black\/80,
+html.light-theme .bg-black\/85,
+html.light-theme .bg-black\/90,
+html.light-theme .bg-slate-950\/80 {
+  background-color: rgba(18, 26, 38, 0.48) !important;
+}
+
+/* Soft Subdued Scrollbars */
+html.light-theme ::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+html.light-theme ::-webkit-scrollbar-track {
+  background: #cbd3dc;
+}
+html.light-theme ::-webkit-scrollbar-thumb {
+  background: #94a3b4;
+  border-radius: 4px;
+}
+html.light-theme ::-webkit-scrollbar-thumb:hover {
+  background: #7a8b9d;
+}
+
+/* -------------------------------------------------------------
+ * 3. Dynamic Height Adjustments for Compact Header Mode
+ * ------------------------------------------------------------- */
+html.compact-header .h-\[calc\(100vh-125px\)\] {
+  height: calc(100vh - 85px) !important;
+}
+
+html.compact-header .lg\:top-\[76px\] {
+  top: 50px !important;
+}
+
+/* -------------------------------------------------------------
+ * 4. Realistic Vinyl Record Simulation Styles
+ * ------------------------------------------------------------- */
+.vinyl-disc {
+  background: radial-gradient(
+    circle,
+    #111827 0%,
+    #1f2937 12%,
+    #111827 20%,
+    #1e293b 35%,
+    #0f172a 45%,
+    #1e293b 65%,
+    #0f172a 80%,
+    #1e293b 95%,
+    #0f172a 100%
+  );
+  box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2), 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.vinyl-sheen {
+  background: conic-gradient(
+    from 45deg,
+    transparent 0deg,
+    rgba(255, 255, 255, 0.12) 45deg,
+    transparent 90deg,
+    transparent 180deg,
+    rgba(255, 255, 255, 0.12) 225deg,
+    transparent 270deg,
+    transparent 360deg
+  );
+}
