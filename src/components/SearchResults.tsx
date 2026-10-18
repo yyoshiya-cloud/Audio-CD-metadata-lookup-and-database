@@ -13,7 +13,7 @@ interface SearchResultsProps {
   onManualAdd?: () => void;
   previewCDId?: string;
   previewMode?: 'inline' | 'modal';
-  onTogglePreviewMode?: (mode: 'inline' | 'modal', opts?: { openModal?: boolean }) => void;
+  onTogglePreviewMode?: (mode: 'inline' | 'modal') => void;
 }
 
 export const SearchResults: React.FC<SearchResultsProps> = ({
@@ -34,7 +34,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
   const isModalOnlyView = viewMode === 'tableList' || viewMode === 'rawBySource';
   useEffect(() => {
     if (isModalOnlyView && previewMode === 'inline') {
-      onTogglePreviewMode?.('modal', { openModal: false });
+      onTogglePreviewMode?.('modal');
     }
   }, [isModalOnlyView, previewMode, onTogglePreviewMode]);
 
@@ -42,7 +42,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
   const handleChangeViewMode = (mode: 'aggregated' | 'rawBySource' | 'tableList') => {
     setViewMode(mode);
     if ((mode === 'tableList' || mode === 'rawBySource') && previewMode === 'inline') {
-      onTogglePreviewMode?.('modal', { openModal: false });
+      onTogglePreviewMode?.('modal');
     }
   };
   const [tableDensity, setTableDensity] = useState<'compact' | 'normal'>('normal');
@@ -230,7 +230,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                     ? 'bg-indigo-600 text-white font-bold shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
-                title="全画面モーダルで開く"
+                title="モーダル表示（一覧のみ） [build: preview-mode-v3]"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
                 <span>モーダル表示</span>

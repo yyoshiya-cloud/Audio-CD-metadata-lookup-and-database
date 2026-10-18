@@ -2,8 +2,59 @@ import { CDMetadata, TrackInfo } from '../src/types/cd.js';
 import { catnoVariants, cqlQuote, decodeXmlEntities, digitsOnly, isValidBarcodeLength } from './searchUtils.js';
 
 /**
- * Search 国立国会図書館 (NDL) SRU API
+ * 資料種別（mediaType）で「録音資料（CD等）」に絞り込む。
+ * 値は NDL サーチ外部提供インタフェース仕様書 附録2（表3 資料種別）の `audio`。
+ * 図書・雑誌などの紙媒体資料を検索結果から除外する。
  */
+export const NDL_MEDIATYPE_AUDIO = 'audio';
+
+/**
+ * NDL サーチ SRU の CQL クエリを組み立てる。条件が何も無ければ空文字を返す。
+ *
+ * - 仕様上の索引名は `anywhere`（全項目）。`any` は OpenSearch 側の名称で SRU の索引ではない。
+ * - 検索語に "and" / "or" を含む語（例: "Original", "Sandy"）は、`=` の前後に空白が無いと
+ *   構文エラーになるため、`索引 = "値"` の形で空白を入れる。
+ */
+export function buildNDLQuery(query: {
+  catno?: string;
+  title?: string;
+  artist?: string;
+  trackTitle?: string;
+  barcode?: string;
+  freeText?: string;
+}): string {
+  const clause = (index: string, value: string) => `${index} = ${cqlQuote(value)}`;
+  const queryParts: string[] = [];
+
+  const cleanBarcode = digitsOnly(query.barcode);
+  const barcodePart = cleanBarcode
+    ? `(${clause('isbn', cleanBarcode)} OR ${clause('anywhere', cleanBarcode)})`
+    : '';
+  let catPart = '';
+  if (query.catno) {
+    // "SRCL-1234" / "SRCL1234" など表記揺れを OR で吸収
+    const variants = catnoVariants(query.catno);
+    catPart = `(${variants.flatMap((v) => [clause('anywhere', v), clause('title', v)]).join(' OR ')})`;
+  }
+
+  if (barcodePart || catPart) {
+    // JAN と型番の両方が指定されても、NDL のレコードに両方載っているとは限らないため OR で結ぶ
+    queryParts.push(barcodePart && catPart ? `(${barcodePart} OR ${catPart})` : barcodePart || catPart);
+  } else if (query.title || query.artist || query.trackTitle) {
+    if (query.title) queryParts.push(clause('title', query.title.trim()));
+    if (query.artist) queryParts.push(clause('creator', query.artist.trim()));
+    if (query.trackTitle) queryParts.push(clause('anywhere', query.trackTitle.trim()));
+  } else if (query.freeText) {
+    queryParts.push(clause('anywhere', query.freeText.trim()));
+  }
+
+  if (queryParts.length === 0) return '';
+
+  // 紙媒体資料（図書・雑誌など）を除外し、録音資料に限定する
+  queryParts.push(`mediatype = ${NDL_MEDIATYPE_AUDIO}`);
+  return queryParts.join(' AND ');
+}
+
 export async function searchNDL(query: {
   catno?: string;
   title?: string;
@@ -13,32 +64,10 @@ export async function searchNDL(query: {
   freeText?: string;
 }): Promise<CDMetadata[]> {
   try {
-    const queryParts: string[] = [];
-
-    const cleanBarcode = digitsOnly(query.barcode);
-    const barcodePart = cleanBarcode ? `(isbn=${cqlQuote(cleanBarcode)} OR any=${cqlQuote(cleanBarcode)})` : '';
-    let catPart = '';
-    if (query.catno) {
-      // "SRCL-1234" / "SRCL1234" など表記揺れを OR で吸収
-      const variants = catnoVariants(query.catno);
-      catPart = `(${variants.flatMap((v) => [`any=${cqlQuote(v)}`, `title=${cqlQuote(v)}`]).join(' OR ')})`;
-    }
-
-    if (barcodePart || catPart) {
-      // JAN と型番の両方が指定されても、NDL のレコードに両方載っているとは限らないため OR で結ぶ
-      queryParts.push(barcodePart && catPart ? `(${barcodePart} OR ${catPart})` : barcodePart || catPart);
-    } else if (query.title || query.artist || query.trackTitle) {
-      if (query.title) queryParts.push(`title=${cqlQuote(query.title.trim())}`);
-      if (query.artist) queryParts.push(`creator=${cqlQuote(query.artist.trim())}`);
-      if (query.trackTitle) queryParts.push(`any=${cqlQuote(query.trackTitle.trim())}`);
-    } else if (query.freeText) {
-      queryParts.push(`any=${cqlQuote(query.freeText.trim())}`);
-    }
-
-    if (queryParts.length === 0) return [];
+    const sruQuery = buildNDLQuery(query);
+    if (!sruQuery) return [];
 
     // NDL SRU API
-    const sruQuery = queryParts.join(' AND ');
     const url = `https://ndlsearch.ndl.go.jp/api/sru?operation=searchRetrieve&version=1.2&recordSchema=dcndl&maximumRecords=10&query=${encodeURIComponent(sruQuery)}`;
 
     const controller = new AbortController();

@@ -20,10 +20,11 @@ import {
   titleSimilarity,
 } from '../server/searchUtils.ts';
 import { mergeCDCandidates, pickAnchorItem } from '../server/searchMerge.ts';
-import { parseNDLXmlResponse } from '../server/ndl.ts';
+import { buildNDLQuery, parseNDLXmlResponse } from '../server/ndl.ts';
 import { cleanDiscogsArtist, mapDiscogsResult, pickDiscogsBarcode } from '../server/discogs.ts';
 import { buildReleaseQueries, pickLabelInfo } from '../server/musicbrainz.ts';
 import { ImageCache } from '../server/imageCache.ts';
+import { resolvePreviewToggle } from '../src/utils/searchPreviewMode.ts';
 
 let passed = 0;
 let failed = 0;
@@ -249,6 +250,18 @@ test('NDL: 実体参照のデコード・型番/JANの厳密抽出・スラッ�
   assert.equal(r.catalogNumber, 'SRCL-1234');
   assert.equal(r.barcode, '4988009012345');
 });
+test('NDL: 録音資料(mediatype = audio)に絞り込む / 索引は anywhere / = の前後に空白', () => {
+  const q = buildNDLQuery({ title: 'Original Love', artist: 'Sandy "S"' });
+  assert.equal(q, 'title = "Original Love" AND creator = "Sandy \\"S\\"" AND mediatype = audio');
+  assert.ok(!/\bany\s*=/.test(buildNDLQuery({ freeText: 'x' })));
+  assert.equal(buildNDLQuery({ freeText: 'さくら' }), 'anywhere = "さくら" AND mediatype = audio');
+  const cat = buildNDLQuery({ catno: 'SRCL1234' });
+  assert.ok(cat.startsWith('(anywhere = "SRCL1234" OR title = "SRCL1234" OR anywhere = "SRCL-1234"'));
+  assert.ok(cat.endsWith(' AND mediatype = audio'));
+  const both = buildNDLQuery({ catno: 'SRCL-1234', barcode: '4988009012345' });
+  assert.ok(both.includes('isbn = "4988009012345"') && both.endsWith(' AND mediatype = audio'));
+  assert.equal(buildNDLQuery({}), '');
+});
 test('NDL: 型番が無いレコードに検索型番を付けない', () => {
   const xml = `<recordData><dc:title>本のタイトル</dc:title><dc:identifier>JP20000001</dc:identifier></recordData>`;
   const [r] = parseNDLXmlResponse(xml);
@@ -284,6 +297,21 @@ test('MusicBrainz: 複数 label-info から検索型番に一致するものを�
   assert.deepEqual(pickLabelInfo([], 'SRCL1234'), { label: '', catalogNumber: '' });
 });
 
+
+
+console.log('検索結果の表示切替');
+test('スプリット→モーダル表示: プレビューを閉じるだけ（詳細モーダルを開く指示を返さない）', () => {
+  const r = resolvePreviewToggle('modal', { candidateIds: ['a', 'b'], splitId: 'b', lastViewedId: 'b' });
+  assert.deepEqual(r, { mode: 'modal', splitPreviewId: null });
+});
+test('モーダル→スプリット表示: フォーカス中のアルバムを右に表示', () => {
+  const ids = ['a', 'b', 'c'];
+  assert.equal(resolvePreviewToggle('inline', { candidateIds: ids, lastViewedId: 'c' }).splitPreviewId, 'c');
+  assert.equal(resolvePreviewToggle('inline', { candidateIds: ids, modalId: 'b', lastViewedId: 'c' }).splitPreviewId, 'b');
+  assert.equal(resolvePreviewToggle('inline', { candidateIds: ids }).splitPreviewId, 'a');
+  assert.equal(resolvePreviewToggle('inline', { candidateIds: ids, lastViewedId: 'zzz' }).splitPreviewId, 'a');
+  assert.equal(resolvePreviewToggle('inline', { candidateIds: [] }).splitPreviewId, null);
+});
 
 console.log('ジャケット画像');
 test('ジャケット候補は優先順（iTunes→…→Discogs→MusicBrainz）で重複なく並ぶ', () => {

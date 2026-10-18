@@ -7,6 +7,7 @@ import { getJSTISOString } from './lib/dateUtils';
 import { Header } from './components/Header';
 import { SearchPanel } from './components/SearchPanel';
 import { SearchResults } from './components/SearchResults';
+import { resolvePreviewToggle } from './utils/searchPreviewMode';
 import { CDDetailModal } from './components/CDDetailModal';
 import { CDDatabaseTable } from './components/CDDatabaseTable';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
@@ -92,37 +93,22 @@ export default function App() {
   const lastViewedCDIdRef = useRef<string | null>(null);
 
   /**
-   * 詳細表示方式の切替。
-   * - 'modal': スプリットのプレビューを閉じる。スプリット表示からの切替では詳細モーダルは開かない
-   *            （すでにモーダル表示のときに押した場合のみ、フォーカス中のアルバムを開く）
-   * - 'inline': フォーカス中のアルバムを右側のスプリット画面に表示する
-   * フォーカス中のアルバム = 開いているモーダル > スプリット表示中 > 直近に見たもの > 先頭の候補
+   * 詳細表示方式の切替（モーダル表示 ⇄ スプリット表示）。
+   * ここでは CD メタデータ詳細モーダルを開閉しない。詳細モーダルは、結果のクリックや
+   * プレビューの「詳細を開く」など明示的な操作でのみ開く。
+   * - 'modal'  : 右のプレビューを閉じて一覧のみのモーダル表示に戻す
+   * - 'inline' : フォーカス中のアルバム（開いているモーダル > プレビュー中 > 直近 > 先頭）を右に表示
    */
-  const handleToggleSearchPreviewMode = (mode: 'inline' | 'modal', opts?: { openModal?: boolean }) => {
-    setSearchPreviewMode(mode);
-
+  const handleToggleSearchPreviewMode = (mode: 'inline' | 'modal') => {
     const candidates = searchResponse?.candidates?.map((c) => c.cd) || [];
-    const inCandidates = (cd: CDMetadata | null | undefined) =>
-      cd ? candidates.find((c) => c.id === cd.id) : undefined;
-    const focused =
-      inCandidates(selectedCDForModal) ||
-      inCandidates(splitPreviewCD) ||
-      candidates.find((c) => c.id === lastViewedCDIdRef.current) ||
-      candidates[0];
-
-    if (mode === 'modal') {
-      setSplitPreviewCD(null);
-      // スプリット表示から戻すときは表示方式を切り替えるだけ（詳細モーダルは開かない）。
-      // すでにモーダル表示のときに「モーダル表示」を押した場合は、フォーカス中のアルバムを開く。
-      if (focused && (opts?.openModal ?? searchPreviewMode === 'modal')) {
-        setSelectedCDForModal(focused);
-        setModalCDList(candidates);
-      }
-    } else {
-      // スプリット表示へ: 開いているモーダルは閉じ、同じアルバムを右画面に表示する
-      setSelectedCDForModal(null);
-      setSplitPreviewCD(focused ?? null);
-    }
+    const result = resolvePreviewToggle(mode, {
+      candidateIds: candidates.map((c) => c.id),
+      modalId: selectedCDForModal?.id,
+      splitId: splitPreviewCD?.id,
+      lastViewedId: lastViewedCDIdRef.current,
+    });
+    setSearchPreviewMode(result.mode);
+    setSplitPreviewCD(candidates.find((c) => c.id === result.splitPreviewId) || null);
   };
 
   const [splitPreviewCD, setSplitPreviewCD] = useState<CDMetadata | null>(null);
@@ -698,7 +684,7 @@ export default function App() {
                     );
                   }}
                   // 右上の✕: 詳細モーダルは開かず、モーダル表示（一覧のみ）に戻す
-                  onClose={() => handleToggleSearchPreviewMode('modal', { openModal: false })}
+                  onClose={() => handleToggleSearchPreviewMode('modal')}
                 />
               </div>
             )}
