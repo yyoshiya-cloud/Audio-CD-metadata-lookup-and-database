@@ -596,8 +596,8 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   return (
     <div className="flex flex-col h-[calc(100vh-125px)] space-y-2 pb-1">
       
-      {/* 1. Control Bar (Fixed at top): Title, Filters, Search & Action Buttons on a single line */}
-      <div className="bg-slate-800/80 rounded-2xl border border-slate-700/80 px-3 py-2 shadow-xl flex flex-row items-center justify-between gap-2 flex-nowrap overflow-x-auto scrollbar-none flex-shrink-0">
+      {/* 1. Control Bar (Fixed at top): Title, Search & Action Buttons。幅が足りないときは右側のボタン群が次の行に折り返す（画面外に切れない） */}
+      <div className="bg-slate-800/80 rounded-2xl border border-slate-700/80 px-3 py-2 shadow-xl flex flex-row flex-wrap items-center justify-between gap-x-2 gap-y-2 flex-shrink-0">
         
         {/* Title, Search Input & Synced Filter */}
         <div className="flex items-center gap-2 flex-nowrap flex-shrink-0">
@@ -644,7 +644,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
         </div>
 
         {/* Action Buttons (Single Row) */}
-        <div className="flex flex-nowrap items-center gap-1.5 justify-end flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 justify-end min-w-0">
           {onBatchUpdateCDs && (
             <button
               type="button"
@@ -749,7 +749,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
               title="印刷用CDカタログ・LPアナログジャケット風ライナーノーツ・CDケース差し込みカードのPDF出力"
             >
               <BookOpen className="w-3.5 h-3.5 text-amber-100 flex-shrink-0" />
-              <span>PDFカタログ出力 ({selectedIds.length > 0 ? selectedIds.length : cds.length}件)</span>
+              <span>PDFカタログ出力</span>
             </button>
           )}
 
