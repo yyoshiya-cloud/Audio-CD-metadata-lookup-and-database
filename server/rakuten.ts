@@ -17,7 +17,9 @@ export async function searchRakutenBooks(query: {
   try {
     // アプリケーションIDはユーザー設定 または 環境変数 RAKUTEN_APP_ID から取得（ソースに埋め込まない）
     const appId = query.apiKeys?.rakutenAppId || process.env.RAKUTEN_APP_ID;
-    if (!appId) return [];
+    if (!appId) {
+      throw new Error('楽天ブックスのアプリケーションIDが未設定です。「API利用登録」で設定してください。');
+    }
 
     const params = new URLSearchParams({
       applicationId: appId,
@@ -55,8 +57,15 @@ export async function searchRakutenBooks(query: {
     }
 
     if (!res.ok) {
-      console.warn(`Rakuten Books API status: ${res.status}`);
-      return [];
+      // 楽天は JSON で { error, error_description } を返す（例: アプリIDが不正）
+      let detail = '';
+      try {
+        const err = await res.json();
+        detail = err.error_description || err.error || '';
+      } catch {
+        // ignore
+      }
+      throw new Error(`楽天ブックスAPIエラー (HTTP ${res.status}${detail ? `: ${detail}` : ''})。アプリケーションIDを確認してください。`);
     }
 
     const data = await res.json();
@@ -114,8 +123,10 @@ export async function searchRakutenBooks(query: {
     }
 
     return results;
-  } catch (err) {
-    console.error('Error searching Rakuten Books API:', err);
-    return [];
+  } catch (err: any) {
+    console.error('Error searching Rakuten Books API:', err?.message || err);
+    // 「API別データ比較」にエラー理由を表示できるよう、握りつぶさずに投げ直す
+    if (err?.name === 'AbortError') throw new Error('楽天ブックスAPIがタイムアウトしました (6秒)。');
+    throw err;
   }
 }

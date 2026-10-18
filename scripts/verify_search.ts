@@ -21,6 +21,7 @@ import {
 } from '../server/searchUtils.ts';
 import { mergeCDCandidates, pickAnchorItem } from '../server/searchMerge.ts';
 import { buildNDLQuery, parseNDLXmlResponse } from '../server/ndl.ts';
+import { describeSpotifyHttpError, searchSpotify } from '../server/spotify.ts';
 import { cleanDiscogsArtist, mapDiscogsResult, pickDiscogsBarcode } from '../server/discogs.ts';
 import { buildReleaseQueries, pickLabelInfo } from '../server/musicbrainz.ts';
 import { ImageCache } from '../server/imageCache.ts';
@@ -299,6 +300,14 @@ test('MusicBrainz: 複数 label-info から検索型番に一致するものを�
 
 
 
+console.log('Spotify');
+test('Spotify: HTTPエラーの説明（403はPremium要件、429は待機時間）', () => {
+  assert.ok(describeSpotifyHttpError(403).includes('Premium'));
+  assert.ok(describeSpotifyHttpError(429, '30').includes('30秒後'));
+  assert.ok(describeSpotifyHttpError(401).includes('401'));
+  assert.ok(describeSpotifyHttpError(500).includes('500'));
+});
+
 console.log('検索結果の表示切替');
 test('スプリット→モーダル表示: プレビューを閉じるだけ（詳細モーダルを開く指示を返さない）', () => {
   const r = resolvePreviewToggle('modal', { candidateIds: ['a', 'b'], splitId: 'b', lastViewedId: 'b' });
@@ -336,6 +345,15 @@ test('MusicBrainz だけの候補でも coverUrl が空ならジャケット候�
 console.log('画像キャッシュ');
 const img = (n: number) => ({ buffer: Buffer.alloc(n, 1), mimeType: 'image/jpeg' });
 async function asyncTests() {
+  // 認証情報が無いときは、空配列で黙らず理由つきのエラーになる
+  const savedId = process.env.SPOTIFY_CLIENT_ID;
+  const savedSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  delete process.env.SPOTIFY_CLIENT_ID;
+  delete process.env.SPOTIFY_CLIENT_SECRET;
+  await assert.rejects(() => searchSpotify({ artist: '伊藤つかさ' }), /未設定/);
+  if (savedId) process.env.SPOTIFY_CLIENT_ID = savedId;
+  if (savedSecret) process.env.SPOTIFY_CLIENT_SECRET = savedSecret;
+
   let calls = 0;
   const cache = new ImageCache(1024, 512, 1000, 500, () => clock);
   let clock = 0;

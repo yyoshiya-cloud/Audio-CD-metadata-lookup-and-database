@@ -54,7 +54,11 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
             apiKeys: { spotifyClientId, spotifyClientSecret },
           }),
         });
-        if (!res.ok) throw new Error('Spotify API認証エラー。Client ID / Secretを確認してください。');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Spotify APIエラー (HTTP ${res.status})`);
+        // 検索APIは常に200を返し、各ソースの失敗は sourceResults.<ソース>.error に入る
+        const spotifyResult = data.sourceResults?.spotify;
+        if (spotifyResult?.error) throw new Error(spotifyResult.error);
         setTestStatus((prev) => ({ ...prev, spotify: { loading: false, success: true, msg: '認証成功！' } }));
       } else if (apiName === 'discogs') {
         if (!discogsToken.trim()) throw new Error('Personal Access Token (または Key:Secret) を入力してください。');
@@ -88,7 +92,8 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
           },
         }));
       } else if (apiName === 'rakuten') {
-        const appId = rakutenAppId.trim() || '1019385920360682283';
+        const appId = rakutenAppId.trim();
+        if (!appId) throw new Error('アプリケーションIDを入力してください。');
         const res = await fetch('/api/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -98,7 +103,10 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
             apiKeys: { rakutenAppId: appId },
           }),
         });
-        if (!res.ok) throw new Error('楽天APIエラー。アプリIDを確認してください。');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `楽天APIエラー (HTTP ${res.status})`);
+        const rakutenResult = data.sourceResults?.rakuten;
+        if (rakutenResult?.error) throw new Error(rakutenResult.error);
         setTestStatus((prev) => ({ ...prev, rakuten: { loading: false, success: true, msg: '楽天API通信成功！' } }));
       }
     } catch (err: any) {

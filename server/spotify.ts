@@ -1,18 +1,19 @@
 import { CDMetadata, TrackInfo } from '../src/types/cd.js';
-import { digitsOnly, spotifyQuote } from './searchUtils.js';
+import { artistSimilarity, digitsOnly, spotifyQuote } from './searchUtils.js';
 
 // クライアントIDごとにトークンをキャッシュ（検索のたびに再取得しない）
 const spotifyTokenCache = new Map<string, { token: string; expiresAt: number }>();
 
 /**
  * Obtain Spotify Client Credentials Token
+ * 失敗時は理由が画面に出るよう、null を返さず説明付きの Error を投げる。
  */
-async function getSpotifyAccessToken(customClientId?: string, customClientSecret?: string): Promise<string | null> {
+async function getSpotifyAccessToken(customClientId?: string, customClientSecret?: string): Promise<string> {
   const clientId = customClientId || process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = customClientSecret || process.env.SPOTIFY_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
-    return null;
+    throw new Error('Spotify の Client ID / Client Secret が未設定です。「API利用登録」で設定してください。');
   }
 
   const cached = spotifyTokenCache.get(clientId);
@@ -35,23 +36,46 @@ async function getSpotifyAccessToken(customClientId?: string, customClientSecret
     });
 
     if (!res.ok) {
-      console.warn('Failed to fetch Spotify access token with provided client credentials');
-      return null;
+      let detail = '';
+      try {
+        const err = await res.json();
+        detail = err.error_description || err.error || '';
+      } catch {
+        // ignore
+      }
+      throw new Error(
+        `Spotify の認証に失敗しました (HTTP ${res.status}${detail ? `: ${detail}` : ''})。Client ID / Client Secret を確認してください。`
+      );
     }
 
     const data = await res.json();
-    if (data.access_token) {
-      // 期限の60秒前に失効扱いにして余裕を持たせる
-      const ttlSec = typeof data.expires_in === 'number' ? data.expires_in : 3600;
-      spotifyTokenCache.set(clientId, { token: data.access_token, expiresAt: Date.now() + Math.max(0, ttlSec - 60) * 1000 });
+    if (!data.access_token) {
+      throw new Error('Spotify の認証応答にアクセストークンが含まれていません。');
     }
+    // 期限の60秒前に失効扱いにして余裕を持たせる
+    const ttlSec = typeof data.expires_in === 'number' ? data.expires_in : 3600;
+    spotifyTokenCache.set(clientId, { token: data.access_token, expiresAt: Date.now() + Math.max(0, ttlSec - 60) * 1000 });
     return data.access_token;
-  } catch (err) {
-    console.error('Spotify Auth error:', err);
-    return null;
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Spotify の認証がタイムアウトしました (6秒)。');
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Spotify の HTTP エラーを、原因が分かる日本語メッセージにする */
+export function describeSpotifyHttpError(status: number, retryAfter?: string | null): string {
+  if (status === 401) return 'Spotify の認証トークンが無効です (HTTP 401)。';
+  if (status === 403) {
+    return 'Spotify API が拒否しました (HTTP 403)。開発モードのアプリは、アプリ所有者の Spotify Premium が有効である必要があります（2026年2月の仕様変更）。';
+  }
+  if (status === 429) {
+    return `Spotify API のリクエスト上限に達しました (HTTP 429)。${retryAfter ? `${retryAfter}秒後に` : 'しばらく待ってから'}再試行してください。`;
+  }
+  return `Spotify API エラー (HTTP ${status})。`;
 }
 
 /**
@@ -71,27 +95,30 @@ export async function searchSpotify(query: {
       query.apiKeys?.spotifyClientId,
       query.apiKeys?.spotifyClientSecret
     );
-    if (!token) {
-      // Spotify Credentials not set, return empty without breaking cross-search
-      return [];
-    }
 
     const cleanBarcode = digitsOnly(query.barcode);
     const hasTextQuery = Boolean(query.title || query.artist || query.trackTitle);
 
-    // 検索クエリの候補（厳密 → 緩和の順）。JAN(upc) で見つからない場合はタイトル/アーティストで再検索する。
-    const queries: string[] = [];
-    if (cleanBarcode) queries.push(`upc:${cleanBarcode}`);
+    // 検索クエリの候補（厳密 → 緩和の順）。
+    //  1. JAN(upc)  2. フィールド指定 (album:/artist:/track:)  3. 通常のキーワード検索（Spotifyアプリの検索と同じ）
+    // フィールド指定は日本語名で取りこぼすことがあるため、0件のときはキーワード検索に切り替える。
+    const queries: { q: string; plain?: boolean }[] = [];
+    if (cleanBarcode) queries.push({ q: `upc:${cleanBarcode}` });
     if (hasTextQuery) {
       const parts: string[] = [];
       if (query.title) parts.push(`album:${spotifyQuote(query.title)}`);
       if (query.artist) parts.push(`artist:${spotifyQuote(query.artist)}`);
       if (query.trackTitle) parts.push(`track:${spotifyQuote(query.trackTitle)}`);
-      queries.push(parts.join(' '));
+      queries.push({ q: parts.join(' ') });
+      const plain = [query.title, query.artist, query.trackTitle]
+        .filter(Boolean)
+        .map((v) => v!.replace(/["\\]/g, ' ').trim())
+        .join(' ');
+      if (plain) queries.push({ q: plain, plain: true });
     } else if (query.catno && !cleanBarcode) {
-      queries.push(query.catno.trim());
+      queries.push({ q: query.catno.trim(), plain: true });
     } else if (query.freeText && !cleanBarcode) {
-      queries.push(query.freeText.trim());
+      queries.push({ q: query.freeText.trim(), plain: true });
     }
     if (queries.length === 0) return [];
 
@@ -100,7 +127,8 @@ export async function searchSpotify(query: {
 
     let data: any = null;
     let hasResults = false;
-    for (const q of queries) {
+    let usedPlainQuery = false;
+    for (const { q, plain } of queries) {
       const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=${searchType}&limit=10&market=JP`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 6000);
@@ -110,17 +138,26 @@ export async function searchSpotify(query: {
           signal: controller.signal,
           headers: { 'Authorization': `Bearer ${token}` },
         });
+      } catch (err: any) {
+        if (err?.name === 'AbortError') throw new Error('Spotify API がタイムアウトしました (6秒)。');
+        throw err;
       } finally {
         clearTimeout(timeout);
       }
 
       if (!res.ok) {
-        console.warn(`Spotify API status: ${res.status}`);
-        continue;
+        if (res.status === 401) {
+          // トークンが失効している場合に備えてキャッシュを捨てる（次回の検索で再取得）
+          spotifyTokenCache.clear();
+        }
+        throw new Error(describeSpotifyHttpError(res.status, res.headers.get('retry-after')));
       }
       data = await res.json();
       hasResults = (isTrackSearch ? data.tracks?.items : data.albums?.items)?.length > 0;
-      if (hasResults) break;
+      if (hasResults) {
+        usedPlainQuery = Boolean(plain);
+        break;
+      }
     }
     if (!data || !hasResults) return [];
 
@@ -137,6 +174,14 @@ export async function searchSpotify(query: {
       }
     } else {
       albums = data.albums?.items || [];
+    }
+
+    // キーワード検索（フィールド指定なし）の結果は無関係なアーティストが混ざるため、
+    // アーティスト名が指定されている場合は近いものだけに絞る
+    if (usedPlainQuery && query.artist) {
+      albums = albums.filter((alb: any) =>
+        (alb.artists || []).some((a: any) => artistSimilarity(a.name, query.artist) >= 0.8)
+      );
     }
 
     const results: CDMetadata[] = [];
@@ -177,9 +222,10 @@ export async function searchSpotify(query: {
     }
 
     return results;
-  } catch (err) {
-    console.error('Error searching Spotify API:', err);
-    return [];
+  } catch (err: any) {
+    // 画面の「API別データ比較」にエラー理由を表示できるよう、握りつぶさずに投げ直す
+    console.error('Error searching Spotify API:', err?.message || err);
+    throw err;
   }
 }
 

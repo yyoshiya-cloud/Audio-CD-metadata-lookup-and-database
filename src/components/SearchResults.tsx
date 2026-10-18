@@ -708,6 +708,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
             {searchedSourcesList.map((src) => {
               const res = searchResponse?.sourceResults?.[src];
               const count = res?.count || 0;
+              const hasError = Boolean(res?.error);
               const isSelected = selectedRawSource === src;
 
               const srcNames: Record<APISource, string> = {
@@ -737,7 +738,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
                     isSelected ? 'bg-indigo-950 text-indigo-200' : 'bg-slate-900 text-slate-400'
                   }`}>
-                    {count}件
+                    {hasError && count === 0 ? 'エラー' : `${count}件`}
                   </span>
                 </button>
               );
@@ -842,9 +843,16 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
               })}
             </div>
           ) : (
-            <div className="bg-slate-800/40 p-6 text-center text-slate-400 text-xs rounded-xl border border-slate-800">
-              このAPIからは結果が返されませんでした。
-            </div>
+            searchResponse?.sourceResults?.[selectedRawSource]?.error ? (
+              <div className="bg-red-950/30 p-4 text-red-300 text-xs rounded-xl border border-red-900/50 break-words">
+                <p className="font-bold mb-1">このAPIでエラーが発生しました</p>
+                <p>{searchResponse.sourceResults[selectedRawSource]?.error}</p>
+              </div>
+            ) : (
+              <div className="bg-slate-800/40 p-6 text-center text-slate-400 text-xs rounded-xl border border-slate-800">
+                このAPIからは結果が返されませんでした。
+              </div>
+            )
           )}
         </div>
       )}
