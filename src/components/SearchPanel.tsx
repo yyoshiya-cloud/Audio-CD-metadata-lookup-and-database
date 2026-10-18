@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ENABLED_SOURCES, isSourceEnabled } from '../config/sources';
 import { Search, Camera, Disc, RefreshCw, Barcode, Check, RotateCcw, Sparkles, PanelLeftClose } from 'lucide-react';
 import { APISource, SearchQuery } from '../types/cd';
 
@@ -11,7 +12,8 @@ interface SearchPanelProps {
   isCollapsed?: boolean;
 }
 
-const API_SOURCE_OPTIONS: { id: APISource; label: string; description: string; badgeColor: string }[] = [
+// 全ソースの定義。無効なソース（src/config/sources.ts）は下の API_SOURCE_OPTIONS で除外される。
+const ALL_API_SOURCE_OPTIONS: { id: APISource; label: string; description: string; badgeColor: string }[] = [
   {
     id: 'musicbrainz',
     label: 'MusicBrainz',
@@ -50,6 +52,8 @@ const API_SOURCE_OPTIONS: { id: APISource; label: string; description: string; b
   },
 ];
 
+const API_SOURCE_OPTIONS = ALL_API_SOURCE_OPTIONS.filter((o) => isSourceEnabled(o.id));
+
 const SAMPLE_CD_QUERIES = [
   { catno: 'VICL-60300', title: 'さくら', artist: 'サザンオールスターズ', label: 'サザン - さくら (VICL-60300)' },
   { catno: 'TOCT-24067', title: 'First Love', artist: '宇多田ヒカル', label: '宇多田ヒカル - First Love' },
@@ -80,14 +84,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
       onClear();
     }
   };
-  const VALID_SOURCES: APISource[] = [
-    'musicbrainz',
-    'discogs',
-    'itunes',
-    'ndl',
-    'spotify',
-    'rakuten',
-  ];
+  const VALID_SOURCES: APISource[] = ENABLED_SOURCES;
 
   const [selectedSources, setSelectedSources] = useState<APISource[]>(() => {
     try {
@@ -120,7 +117,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   };
 
   const selectAllSources = () => {
-    const all: APISource[] = ['musicbrainz', 'discogs', 'itunes', 'ndl', 'spotify', 'rakuten'];
+    const all: APISource[] = ENABLED_SOURCES;
     setSelectedSources(all);
     try {
       localStorage.setItem('cd_search_selected_sources', JSON.stringify(all));
@@ -128,7 +125,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   };
 
   const selectDomesticSources = () => {
-    const domestic: APISource[] = ['ndl', 'rakuten', 'itunes'];
+    const domestic: APISource[] = (['ndl', 'rakuten', 'itunes'] as APISource[]).filter(isSourceEnabled);
     setSelectedSources(domestic);
     try {
       localStorage.setItem('cd_search_selected_sources', JSON.stringify(domestic));
@@ -328,7 +325,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
                 type="button"
                 onClick={selectDomesticSources}
                 className="text-indigo-400 hover:text-indigo-300 font-semibold transition-colors cursor-pointer whitespace-nowrap"
-                title="NDL(国会図書館)・楽天ブックス・iTunesのみ選択"
+                title="国内向けのAPI（NDL・iTunes）のみ選択"
               >
                 主要国内
               </button>

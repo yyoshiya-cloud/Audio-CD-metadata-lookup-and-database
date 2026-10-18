@@ -8,6 +8,7 @@ import { Header } from './components/Header';
 import { SearchPanel } from './components/SearchPanel';
 import { SearchResults } from './components/SearchResults';
 import { resolvePreviewToggle } from './utils/searchPreviewMode';
+import { enabledSourcesLabel, isSourceEnabled } from './config/sources';
 import { CDDetailModal } from './components/CDDetailModal';
 import { CDDatabaseTable } from './components/CDDatabaseTable';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
@@ -529,9 +530,9 @@ export default function App() {
 
   const configuredApiKeysCount = React.useMemo(() => {
     let count = 0;
-    if (apiCredentials.spotifyClientId || apiCredentials.spotifyClientSecret) count += 1;
+    if (isSourceEnabled('spotify') && (apiCredentials.spotifyClientId || apiCredentials.spotifyClientSecret)) count += 1;
     if (apiCredentials.discogsToken) count += 1;
-    if (apiCredentials.rakutenAppId) count += 1;
+    if (isSourceEnabled('rakuten') && apiCredentials.rakutenAppId) count += 1;
     if (apiCredentials.musicbrainzEmail) count += 1;
     if (apiCredentials.yahooAppId) count += 1;
     return count;
@@ -775,7 +776,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <p>© CD メタデータ検索＆データベース - Googleスプレッドシート連携システム</p>
           <p className="flex items-center gap-2 font-mono text-[11px] text-slate-400">
-            <span>APIs: MusicBrainz • Discogs • iTunes • NDL • Spotify • 楽天ブックス • Gemini AI</span>
+            <span>APIs: {enabledSourcesLabel(' • ')} • Gemini AI</span>
           </p>
         </div>
       </footer>

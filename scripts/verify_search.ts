@@ -26,6 +26,7 @@ import { cleanDiscogsArtist, mapDiscogsResult, pickDiscogsBarcode } from '../ser
 import { buildReleaseQueries, pickLabelInfo } from '../server/musicbrainz.ts';
 import { ImageCache } from '../server/imageCache.ts';
 import { resolvePreviewToggle } from '../src/utils/searchPreviewMode.ts';
+import { ENABLED_SOURCES, enabledSourcesLabel, isSourceEnabled } from '../src/config/sources.ts';
 
 let passed = 0;
 let failed = 0;
@@ -299,6 +300,14 @@ test('MusicBrainz: 複数 label-info から検索型番に一致するものを�
 });
 
 
+
+console.log('有効な検索ソース');
+test('Spotify と楽天ブックスは無効化中（コードは残してあり、設定で再有効化できる）', () => {
+  assert.ok(!isSourceEnabled('spotify'));
+  assert.ok(!isSourceEnabled('rakuten'));
+  assert.deepEqual([...ENABLED_SOURCES].sort(), ['discogs', 'itunes', 'musicbrainz', 'ndl']);
+  assert.equal(enabledSourcesLabel(), 'MusicBrainz · Discogs · iTunes · NDL');
+});
 
 console.log('Spotify');
 test('Spotify: HTTPエラーの説明（403はPremium要件、429は待機時間）', () => {

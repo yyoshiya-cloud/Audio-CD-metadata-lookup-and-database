@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { isSourceEnabled } from '../config/sources';
 import { APICredentials } from '../types/cd';
 import { X, Key, ExternalLink, Check, ShieldCheck, Info, Eye, EyeOff } from 'lucide-react';
 
@@ -161,93 +162,95 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 1. Spotify Web API */}
-          <div className="bg-slate-800/60 border border-slate-700/80 p-4 rounded-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
-                <h3 className="text-xs font-bold text-white">Spotify Web API (ストリーミング・高画質ジャケット)</h3>
+          {/* 1. Spotify Web API（無効化中: src/config/sources.ts の ENABLED_SOURCES に 'spotify' を追加すると再表示） */}
+          {isSourceEnabled('spotify') && (
+            <div className="bg-slate-800/60 border border-slate-700/80 p-4 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                  <h3 className="text-xs font-bold text-white">Spotify Web API (ストリーミング・高画質ジャケット)</h3>
+                </div>
+                <a
+                  href="https://developer.spotify.com/dashboard"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                >
+                  キー発行画面 (Dashboard) <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
-              <a
-                href="https://developer.spotify.com/dashboard"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium"
-              >
-                キー発行画面 (Dashboard) <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                  Spotify Client ID
-                </label>
-                <div className="relative">
-                  <input
-                    type={showSpotifyClientId ? 'text' : 'password'}
-                    value={spotifyClientId}
-                    onChange={(e) => setSpotifyClientId(e.target.value)}
-                    placeholder="32桁のClient ID"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pr-9 text-xs text-white font-mono focus:border-indigo-500 transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSpotifyClientId(!showSpotifyClientId)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors p-1"
-                    title={showSpotifyClientId ? 'IDを隠す' : 'IDを表示する'}
-                  >
-                    {showSpotifyClientId ? (
-                      <EyeOff className="w-4 h-4 text-slate-300" />
-                    ) : (
-                      <Eye className="w-4 h-4 text-slate-400" />
-                    )}
-                  </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Spotify Client ID
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showSpotifyClientId ? 'text' : 'password'}
+                      value={spotifyClientId}
+                      onChange={(e) => setSpotifyClientId(e.target.value)}
+                      placeholder="32桁のClient ID"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pr-9 text-xs text-white font-mono focus:border-indigo-500 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSpotifyClientId(!showSpotifyClientId)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors p-1"
+                      title={showSpotifyClientId ? 'IDを隠す' : 'IDを表示する'}
+                    >
+                      {showSpotifyClientId ? (
+                        <EyeOff className="w-4 h-4 text-slate-300" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Spotify Client Secret
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showSpotifySecret ? 'text' : 'password'}
+                      value={spotifyClientSecret}
+                      onChange={(e) => setSpotifyClientSecret(e.target.value)}
+                      placeholder="32桁のClient Secret"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pr-9 text-xs text-white font-mono focus:border-indigo-500 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSpotifySecret(!showSpotifySecret)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors p-1"
+                      title={showSpotifySecret ? 'パスワードを隠す' : 'パスワードを表示する'}
+                    >
+                      {showSpotifySecret ? (
+                        <EyeOff className="w-4 h-4 text-slate-300" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                  Spotify Client Secret
-                </label>
-                <div className="relative">
-                  <input
-                    type={showSpotifySecret ? 'text' : 'password'}
-                    value={spotifyClientSecret}
-                    onChange={(e) => setSpotifyClientSecret(e.target.value)}
-                    placeholder="32桁のClient Secret"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pr-9 text-xs text-white font-mono focus:border-indigo-500 transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSpotifySecret(!showSpotifySecret)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors p-1"
-                    title={showSpotifySecret ? 'パスワードを隠す' : 'パスワードを表示する'}
-                  >
-                    {showSpotifySecret ? (
-                      <EyeOff className="w-4 h-4 text-slate-300" />
-                    ) : (
-                      <Eye className="w-4 h-4 text-slate-400" />
-                    )}
-                  </button>
-                </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleTestKey('spotify')}
+                  className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200"
+                >
+                  接続テスト
+                </button>
+                {testStatus.spotify && (
+                  <span className={`text-xs font-bold ${testStatus.spotify.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {testStatus.spotify.loading ? '検証中...' : testStatus.spotify.msg}
+                  </span>
+                )}
               </div>
             </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={() => handleTestKey('spotify')}
-                className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200"
-              >
-                接続テスト
-              </button>
-              {testStatus.spotify && (
-                <span className={`text-xs font-bold ${testStatus.spotify.success ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {testStatus.spotify.loading ? '検証中...' : testStatus.spotify.msg}
-                </span>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* 2. Discogs API */}
           <div className="bg-slate-800/60 border border-slate-700/80 p-4 rounded-xl space-y-3">
@@ -317,65 +320,67 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 3. 楽天ブックス CD検索 API */}
-          <div className="bg-slate-800/60 border border-slate-700/80 p-4 rounded-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-                <h3 className="text-xs font-bold text-white">楽天ブックス CD検索 API (JANコード・国内発売元)</h3>
+          {/* 3. 楽天ブックス CD検索 API（無効化中: ENABLED_SOURCES に 'rakuten' を追加すると再表示） */}
+          {isSourceEnabled('rakuten') && (
+            <div className="bg-slate-800/60 border border-slate-700/80 p-4 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                  <h3 className="text-xs font-bold text-white">楽天ブックス CD検索 API (JANコード・国内発売元)</h3>
+                </div>
+                <a
+                  href="https://webservice.rakuten.co.jp/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                >
+                  楽天デベロッパー登録 <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
-              <a
-                href="https://webservice.rakuten.co.jp/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium"
-              >
-                楽天デベロッパー登録 <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
 
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                Rakuten Application ID (アプリID)
-              </label>
-              <div className="relative">
-                <input
-                  type={showRakutenAppId ? 'text' : 'password'}
-                  value={rakutenAppId}
-                  onChange={(e) => setRakutenAppId(e.target.value)}
-                  placeholder="未入力時は内蔵パブリックIDが自動適用されます"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pr-9 text-xs text-white font-mono focus:border-indigo-500 transition-colors"
-                />
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Rakuten Application ID (アプリID)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showRakutenAppId ? 'text' : 'password'}
+                    value={rakutenAppId}
+                    onChange={(e) => setRakutenAppId(e.target.value)}
+                    placeholder="未入力時は内蔵パブリックIDが自動適用されます"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pr-9 text-xs text-white font-mono focus:border-indigo-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRakutenAppId(!showRakutenAppId)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors p-1"
+                    title={showRakutenAppId ? 'アプリIDを隠す' : 'アプリIDを表示する'}
+                  >
+                    {showRakutenAppId ? (
+                      <EyeOff className="w-4 h-4 text-slate-300" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-slate-400" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
                 <button
                   type="button"
-                  onClick={() => setShowRakutenAppId(!showRakutenAppId)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors p-1"
-                  title={showRakutenAppId ? 'アプリIDを隠す' : 'アプリIDを表示する'}
+                  onClick={() => handleTestKey('rakuten')}
+                  className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200"
                 >
-                  {showRakutenAppId ? (
-                    <EyeOff className="w-4 h-4 text-slate-300" />
-                  ) : (
-                    <Eye className="w-4 h-4 text-slate-400" />
-                  )}
+                  接続テスト
                 </button>
+                {testStatus.rakuten && (
+                  <span className={`text-xs font-bold ${testStatus.rakuten.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {testStatus.rakuten.loading ? '検証中...' : testStatus.rakuten.msg}
+                  </span>
+                )}
               </div>
             </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={() => handleTestKey('rakuten')}
-                className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200"
-              >
-                接続テスト
-              </button>
-              {testStatus.rakuten && (
-                <span className={`text-xs font-bold ${testStatus.rakuten.success ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {testStatus.rakuten.loading ? '検証中...' : testStatus.rakuten.msg}
-                </span>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* 4. MusicBrainz, iTunes, NDL Public Info */}
           <div className="bg-slate-800/40 border border-slate-700/60 p-4 rounded-xl space-y-2 text-xs text-slate-300">

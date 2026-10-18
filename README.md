@@ -4,7 +4,7 @@ CDの題名・型番(規格品番)・バーコードから複数のデータベ�
 
 ## 主な機能
 
-- **横断検索**: MusicBrainz / Discogs / iTunes / 国立国会図書館(NDL) / Spotify / 楽天ブックス
+- **横断検索**: MusicBrainz / Discogs / iTunes / 国立国会図書館(NDL)（Spotify・楽天ブックスは現在無効。下記参照）
   - 型番・バーコードのみの検索では、先にCD系DBで正確な題名・アーティストを特定してからストリーミング系を検索
 - **AI支援(Gemini)**: 検索結果の統合・検証、背表紙のOCR、ジャケット画像の高画質化、AIタグ付け、メタデータ補完
 - **データ管理**: ダッシュボード、重複チェック、ジャケットギャラリー、曲名検索とセットリスト、一括インポート・編集
@@ -31,8 +31,8 @@ npm run dev        # http://localhost:3000
 |---|---|---|
 | `GEMINI_API_KEY` | 必須 | AI機能(統合・OCR・タグ付けなど) |
 | `DISCOGS_TOKEN` | 任意 | Discogs検索 |
-| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | 任意 | Spotify検索 |
-| `RAKUTEN_APP_ID` | 任意 | 楽天ブックス検索(未設定の場合、楽天は検索されません) |
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | 任意 | Spotify検索（現在無効） |
+| `RAKUTEN_APP_ID` | 任意 | 楽天ブックス検索（現在無効） |
 | `MB_CONTACT` | 任意 | MusicBrainz の User-Agent に含める連絡先(メールまたはURL) |
 | `TRUST_PROXY` | 任意 | リバースプロキシ配下の場合のみ `1`(レート制限のIP判定用) |
 | `PORT` | 任意 | サーバーポート(既定 3000) |
@@ -47,6 +47,14 @@ npm run dev        # http://localhost:3000
 | `npm run lint` | 型チェック |
 | `npm run verify` | ユーティリティ関数の検証スクリプト |
 | `npm run verify:search` | 検索ロジック(正規化・統合・スコアリング・各ソースの解析)の検証。外部APIには接続しません |
+
+## 検索ソースの有効/無効
+
+使用する検索APIは `src/config/sources.ts` の `ENABLED_SOURCES` で管理しています（サーバーと画面の両方がこの一覧を参照します）。
+
+- 現在は **Spotify と楽天ブックス CD検索を無効化**しています。検索対象・設定画面の入力欄・件数表示から外れ、サーバーもこれらのソースを呼びません。
+- 実装コード（`server/spotify.ts`、`server/rakuten.ts`、設定画面の入力欄）は残してあります。再び使うときは `ENABLED_SOURCES` に `'spotify'` / `'rakuten'` を追加するだけです。
+- 保存済みのAPIキーは削除していません。
 
 ## Firebase設定について
 

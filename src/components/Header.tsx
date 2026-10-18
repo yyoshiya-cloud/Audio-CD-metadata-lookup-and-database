@@ -1,4 +1,5 @@
 import React from 'react';
+import { ENABLED_SOURCES, enabledSourcesLabel } from '../config/sources';
 import {
   LogIn,
   LogOut,
@@ -94,12 +95,12 @@ export const Header: React.FC<HeaderProps> = ({
                 CD メタデータ DB
               </h1>
               <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-xs">
-                6-API
+                {ENABLED_SOURCES.length}-API
               </span>
             </div>
             {!isCompactHeader && (
               <p className="text-[9px] text-slate-400 whitespace-nowrap hidden xl:block leading-tight mt-0.5">
-                MusicBrainz · Discogs · iTunes · NDL · Spotify · 楽天ブックス
+                {enabledSourcesLabel()}
               </p>
             )}
           </div>

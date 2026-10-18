@@ -38,7 +38,7 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                MusicBrainz · Discogs · NDL · iTunes · Spotify · Rakuten 複数API横断・AI検証アプリ
+                MusicBrainz · Discogs · NDL · iTunes 複数API横断・AI検証アプリ
               </p>
             </div>
           </div>
@@ -72,7 +72,7 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({
                 <span>同時・横断API検索 & AI高精度突合</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                MusicBrainz・Discogs・NDL・iTunes・Spotify・楽天ブックスの並列横断検索。Gemini AIが候補データを高精度に突合・重複排除し、高画質ジャケット＆試聴付き収録曲を自動取得。
+                MusicBrainz・Discogs・NDL・iTunesの並列横断検索。Gemini AIが候補データを高精度に突合・重複排除し、高画質ジャケット＆試聴付き収録曲を自動取得。
               </p>
             </div>
 

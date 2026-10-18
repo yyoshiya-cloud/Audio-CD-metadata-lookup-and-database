@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CDMetadata, SearchResponse, APISource } from '../types/cd';
 import { CoverImage, coverUrlsOf } from './CoverImage';
+import { ENABLED_SOURCES } from '../config/sources';
 import { Music, Calendar, Disc, Check, Plus, ShieldCheck, Layers, Layers2, Sparkles, Trash2, ChevronDown, ChevronUp, ListMusic, PanelRight, Maximize2 } from 'lucide-react';
 
 interface SearchResultsProps {
@@ -59,7 +60,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
     if (searchResponse?.searchedSources && searchResponse.searchedSources.length > 0) {
       return searchResponse.searchedSources;
     }
-    return ['musicbrainz', 'discogs', 'itunes', 'ndl', 'spotify', 'rakuten'] as APISource[];
+    return ENABLED_SOURCES;
   }, [searchResponse]);
 
   const [selectedRawSource, setSelectedRawSource] = useState<APISource>(searchedSourcesList[0] || 'musicbrainz');
@@ -90,7 +91,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
         </div>
         <h3 className="text-lg font-semibold text-white">チェックされたAPIからメタデータを並列取得中...</h3>
         <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-          選択されたAPI（MusicBrainz, Discogs, iTunes, 国会図書館NDL, 楽天ブックス, Spotify等）のみを横断検索し照合しています
+          選択されたAPI（MusicBrainz, Discogs, iTunes, 国会図書館NDL）のみを横断検索し照合しています
         </p>
       </div>
     );

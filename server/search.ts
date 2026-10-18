@@ -8,10 +8,13 @@ import { searchRakutenBooks } from './rakuten.js';
 import { verifyAndConsolidateWithGemini } from './geminiSearchIntegrator.js';
 import { CATALOG_SOURCES, STREAMING_SOURCES, mergeCDCandidates, pickAnchorItem } from './searchMerge.js';
 import { normalizeSearchQuery } from './searchUtils.js';
+import { ENABLED_SOURCES } from '../src/config/sources.js';
 
 type SourceOutcome = { source: APISource; items: CDMetadata[]; error?: string };
 
-const ALL_SOURCES: APISource[] = ['musicbrainz', 'discogs', 'itunes', 'ndl', 'spotify', 'rakuten'];
+// 検索対象にできるソース。無効化中のソース（Spotify / 楽天ブックス）は src/config/sources.ts で管理しており、
+// クライアントが指定しても無視される（コードは残してあり、ENABLED_SOURCES に追加すれば再び使える）。
+const ALL_SOURCES: APISource[] = ENABLED_SOURCES;
 
 // 1ソースが遅くても全体を待たせない。超過したソースは「結果なし(タイムアウト)」として扱う。
 const SOURCE_DEADLINE_MS = 12000;
@@ -43,7 +46,7 @@ function runSource(source: APISource, q: any): Promise<SourceOutcome> {
 }
 
 /**
- * MusicBrainz / Discogs / iTunes / NDL / Spotify / 楽天ブックスを横断検索する。
+ * 有効なソース（src/config/sources.ts の ENABLED_SOURCES）を横断検索する。
  *
  * - 型番/JANだけの検索: 型番を直接引ける一次情報源 (NDL, MusicBrainz, Discogs, 楽天(JANのみ)) を先に検索し、
  *   特定できたタイトル・アーティストで配信サービス等を再検索する。
