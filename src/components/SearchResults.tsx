@@ -30,12 +30,13 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<'aggregated' | 'rawBySource' | 'tableList'>('aggregated');
 
-  // 表形式一覧では常にモーダル表示にする（スプリットのままなら切り替える。モーダルは開かない）
+  // 表形式一覧・API別データ比較では即時プレビューを出さず、常にモーダル表示（一覧のみ）にする
+  const isModalOnlyView = viewMode === 'tableList' || viewMode === 'rawBySource';
   useEffect(() => {
-    if (viewMode === 'tableList' && previewMode === 'inline') {
+    if (isModalOnlyView && previewMode === 'inline') {
       onTogglePreviewMode?.('modal', { openModal: false });
     }
-  }, [viewMode, previewMode, onTogglePreviewMode]);
+  }, [isModalOnlyView, previewMode, onTogglePreviewMode]);
 
   // 一覧の表示形式を切り替える。スプリット表示中に「表形式一覧」「API別データ比較」を選んだらモーダル表示に変更
   const handleChangeViewMode = (mode: 'aggregated' | 'rawBySource' | 'tableList') => {
@@ -204,17 +205,17 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
               <button
                 type="button"
                 onClick={() => onTogglePreviewMode('inline')}
-                disabled={viewMode === 'tableList'}
+                disabled={isModalOnlyView}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
-                  viewMode === 'tableList'
+                  isModalOnlyView
                     ? 'text-slate-600 opacity-50 cursor-not-allowed'
                     : previewMode === 'inline'
                     ? 'bg-indigo-600 text-white font-bold shadow-sm cursor-pointer'
                     : 'text-slate-400 hover:text-white cursor-pointer'
                 }`}
                 title={
-                  viewMode === 'tableList'
-                    ? '表形式一覧では常にモーダル表示になります'
+                  isModalOnlyView
+                    ? '表形式一覧・API別データ比較では常にモーダル表示になります'
                     : '検索結果の横に即時プレビューを表示（スプリットビュー）'
                 }
               >

@@ -93,8 +93,8 @@ export default function App() {
 
   /**
    * 詳細表示方式の切替。
-   * - 'modal': スプリットのプレビューを閉じ、フォーカス中のアルバムをモーダルで開く
-   *            （opts.openModal === false のときはモーダルを開かず、表示方式だけ切り替える）
+   * - 'modal': スプリットのプレビューを閉じる。スプリット表示からの切替では詳細モーダルは開かない
+   *            （すでにモーダル表示のときに押した場合のみ、フォーカス中のアルバムを開く）
    * - 'inline': フォーカス中のアルバムを右側のスプリット画面に表示する
    * フォーカス中のアルバム = 開いているモーダル > スプリット表示中 > 直近に見たもの > 先頭の候補
    */
@@ -112,7 +112,9 @@ export default function App() {
 
     if (mode === 'modal') {
       setSplitPreviewCD(null);
-      if (focused && (opts?.openModal ?? true)) {
+      // スプリット表示から戻すときは表示方式を切り替えるだけ（詳細モーダルは開かない）。
+      // すでにモーダル表示のときに「モーダル表示」を押した場合は、フォーカス中のアルバムを開く。
+      if (focused && (opts?.openModal ?? searchPreviewMode === 'modal')) {
         setSelectedCDForModal(focused);
         setModalCDList(candidates);
       }
@@ -695,8 +697,8 @@ export default function App() {
                       searchResponse?.candidates?.map((c) => c.cd) || [cd]
                     );
                   }}
-                  // 右上の✕: モーダル表示に切り替える（表示中のアルバムをモーダルで開く）
-                  onClose={() => handleToggleSearchPreviewMode('modal')}
+                  // 右上の✕: 詳細モーダルは開かず、モーダル表示（一覧のみ）に戻す
+                  onClose={() => handleToggleSearchPreviewMode('modal', { openModal: false })}
                 />
               </div>
             )}
