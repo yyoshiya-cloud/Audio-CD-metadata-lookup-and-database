@@ -8,7 +8,7 @@ import {
   formatCDToRowValues,
   formatTrackToRowValues,
   parseSpreadsheetRowsToCDs
-} from './googleSheets';
+} from './tabularFormat';
 import { normalizeCatalogNumber } from './dateUtils';
 
 /**

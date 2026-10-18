@@ -6,7 +6,7 @@ import {
   getJSTISOString,
   validateTrackDuration,
 } from './dateUtils';
-import { SUB_IMAGE_DEFAULT_LABELS, getSerializedSubImagesByType } from './googleSheets';
+import { SUB_IMAGE_DEFAULT_LABELS, getSerializedSubImagesByType } from './tabularFormat';
 
 export interface JSONExportData {
   app: string;
@@ -111,13 +111,10 @@ export function extractSubImagesFromRawItem(item: any): CDSubImage[] | undefined
 }
 
 /**
- * Export CD Metadata collection to formatted JSON file download
+ * CDコレクションを書き出し用JSON文字列にする（ダウンロードはしない）。
+ * 手動の書き出しと自動バックアップで同じ形式を使うため、組み立てだけを独立させている。
  */
-export function exportCDsToJSON(
-  items: CDMetadata[],
-  fileName?: string,
-  prettyPrint: boolean = true
-): { fileName: string; count: number; jsonString: string } {
+export function buildCDsJSONString(items: CDMetadata[], prettyPrint: boolean = true): string {
   const normalizedCds = items.map((cd) => {
     const subs = Array.isArray(cd.subImages) ? cd.subImages : [];
 
@@ -143,9 +140,18 @@ export function exportCDsToJSON(
     cds: normalizedCds,
   };
 
-  const jsonString = prettyPrint
-    ? JSON.stringify(exportPayload, null, 2)
-    : JSON.stringify(exportPayload);
+  return prettyPrint ? JSON.stringify(exportPayload, null, 2) : JSON.stringify(exportPayload);
+}
+
+/**
+ * Export CD Metadata collection to formatted JSON file download
+ */
+export function exportCDsToJSON(
+  items: CDMetadata[],
+  fileName?: string,
+  prettyPrint: boolean = true
+): { fileName: string; count: number; jsonString: string } {
+  const jsonString = buildCDsJSONString(items, prettyPrint);
 
   const defaultTimestamp = formatJSTTimestampCompact();
   const baseName = (fileName?.trim() || `CDコレクション_backup_${defaultTimestamp}`).replace(/\.json$/i, '');
@@ -290,7 +296,6 @@ export function parseJSONToCDs(jsonText: string): {
         tracks,
         createdAt: item.createdAt || getJSTISOString(),
         updatedAt: item.updatedAt || getJSTISOString(),
-        syncedToSheets: Boolean(item.syncedToSheets ?? true),
       };
     });
 

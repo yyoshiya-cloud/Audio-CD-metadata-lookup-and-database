@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CDMetadata } from '../types/cd';
-import { Search, FileSpreadsheet, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2, Tag, Edit3, Database, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, LayoutGrid, X, Star, Layers, Eye, EyeOff } from 'lucide-react';
+import { Search, FileSpreadsheet, ShieldCheck, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2, Tag, Edit3, Database, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, LayoutGrid, X, Star, Layers, Eye, EyeOff } from 'lucide-react';
 import { matchesCDSearchQuery, getMatchedTracksForQuery } from '../utils/japaneseSearchNormalizer';
 import { lookupVinylReleasesBatch } from '../utils/formatUtils';
 import { normalizeTagList, normalizeSingleTag, normalizeCDTagsAndGenre } from '../lib/tagNormalizer';
@@ -24,14 +24,12 @@ export const AVAILABLE_TABLE_COLUMNS: TableColumnConfig[] = [
   { id: 'releaseDate', label: 'CD発売年月日', canHide: true },
   { id: 'vinylRecordReleaseDate', label: 'LP/EP発売年月日', canHide: true },
   { id: 'trackCount', label: '収録曲数', canHide: true },
-  { id: 'syncedToSheets', label: '同期状態', canHide: true },
 ];
 
 export type TableDensity = 'compact' | 'normal' | 'relaxed';
 
 export type QuickFilterType =
   | 'all'
-  | 'unsynced'
   | 'hasVinyl'
   | 'noTags'
   | 'rated'
@@ -61,8 +59,12 @@ interface CDDatabaseTableProps {
   onSelectCD: (cd: CDMetadata, currentList?: CDMetadata[]) => void;
   onDeleteCD: (id: string) => void;
   onBatchDeleteCDs: (ids: string[]) => void;
-  onOpenExportSheetsModal: (selectedCDs: CDMetadata[]) => void;
-  onOpenImportSheetsModal?: () => void;
+  onOpenExportModal: (selectedCDs: CDMetadata[]) => void;
+  onOpenImportModal?: () => void;
+  /** JSON自動バックアップの設定画面を開く */
+  onOpenBackupSettings?: () => void;
+  /** 自動バックアップが有効か（ボタンの表示用） */
+  backupEnabled?: boolean;
   onOpenManualAdd?: () => void;
   onOpenBatchModal?: () => void;
   onOpenAITagging?: (selectedCDs: CDMetadata[]) => void;
@@ -77,8 +79,10 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   onSelectCD,
   onDeleteCD,
   onBatchDeleteCDs,
-  onOpenExportSheetsModal,
-  onOpenImportSheetsModal,
+  onOpenExportModal,
+  onOpenImportModal,
+  onOpenBackupSettings,
+  backupEnabled = false,
   onOpenManualAdd,
   onOpenBatchModal,
   onOpenAITagging,
@@ -95,7 +99,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
       setSearchKeyword(initialSearchKeyword);
     }
   }, [initialSearchKeyword]);
-  const [filterSynced, setFilterSynced] = useState<'all' | 'synced' | 'notSynced'>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedTracklistId, setExpandedTracklistId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<'catalogNumber' | 'title' | 'artist' | 'label' | 'releaseDate' | 'vinylRecordReleaseDate' | null>(null);
@@ -121,7 +124,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
       releaseDate: true,
       vinylRecordReleaseDate: true,
       trackCount: true,
-      syncedToSheets: true,
     };
   });
   const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
@@ -148,7 +150,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
       releaseDate: true,
       vinylRecordReleaseDate: true,
       trackCount: true,
-      syncedToSheets: true,
     };
     setVisibleColumns(defaultCols);
     try {
@@ -208,7 +209,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   const quickFilterCounts = useMemo(() => {
     return {
       all: cds.length,
-      unsynced: cds.filter((c) => !c.syncedToSheets).length,
       hasVinyl: cds.filter((c) => !!c.vinylRecordReleaseDate).length,
       noTags: cds.filter((c) => !c.tags || c.tags.length === 0).length,
       rated: cds.filter((c) => !!c.rating && c.rating > 0).length,
@@ -242,7 +242,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
     if (visibleColumns.releaseDate) count++;
     if (visibleColumns.vinylRecordReleaseDate) count++;
     if (visibleColumns.trackCount) count++;
-    if (visibleColumns.syncedToSheets) count++;
     return count;
   }, [visibleColumns]);
 
@@ -273,25 +272,14 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   } | null>(null);
 
   const totalCount = cds.length;
-  const syncedCount = cds.filter((c) => c.syncedToSheets).length;
-  const notSyncedCount = totalCount - syncedCount;
 
   // Filter & Sort logic
   const filteredCDs = cds.filter((cd) => {
     const matchesKw = matchesCDSearchQuery(cd, searchKeyword);
 
-    const matchesSynced =
-      filterSynced === 'all'
-        ? true
-        : filterSynced === 'synced'
-        ? cd.syncedToSheets
-        : !cd.syncedToSheets;
 
     let matchesQuick = true;
     switch (quickFilter) {
-      case 'unsynced':
-        matchesQuick = !cd.syncedToSheets;
-        break;
       case 'hasVinyl':
         matchesQuick = !!cd.vinylRecordReleaseDate;
         break;
@@ -322,7 +310,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
         break;
     }
 
-    return matchesKw && matchesSynced && matchesQuick;
+    return matchesKw && matchesQuick;
   });
 
   const handleSort = (field: 'catalogNumber' | 'title' | 'artist' | 'label' | 'releaseDate' | 'vinylRecordReleaseDate') => {
@@ -627,7 +615,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                 </span>
               </div>
               <p className="text-[9px] text-slate-400 whitespace-nowrap hidden 2xl:block">
-                登録CD一覧・一括編集・データ連携
+                登録CD一覧・一括編集・バックアップ
               </p>
             </div>
           </div>
@@ -653,42 +641,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-0.5 bg-slate-900/80 p-0.5 rounded-xl border border-slate-700/80 text-[11px] flex-nowrap flex-shrink-0 shadow-inner">
-            <Filter className="w-3 h-3 text-slate-400 ml-1.5 mr-0.5 flex-shrink-0" />
-            <button
-              type="button"
-              onClick={() => setFilterSynced('all')}
-              className={`px-2 py-1 rounded-lg font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                filterSynced === 'all'
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              すべて({cds.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterSynced('synced')}
-              className={`px-2 py-1 rounded-lg font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                filterSynced === 'synced'
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              連携済({syncedCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterSynced('notSynced')}
-              className={`px-2 py-1 rounded-lg font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                filterSynced === 'notSynced'
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              未同期({notSyncedCount})
-            </button>
-          </div>
         </div>
 
         {/* Action Buttons (Single Row) */}
@@ -802,16 +754,37 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
           )}
 
           <button
-            onClick={() => onOpenExportSheetsModal(selectedIds.length > 0 ? selectedCDs : cds)}
+            onClick={() => onOpenExportModal(selectedIds.length > 0 ? selectedCDs : cds)}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/30 transition-all cursor-pointer border border-emerald-500/40 flex-shrink-0"
-            title="Googleスプレッドシート・Excel・CSV・JSONの双方向連携・書き出し"
+            title="JSON・Excel・CSVの書き出し・読み込み（バックアップ・復元）"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100 flex-shrink-0" />
-            <span>データ連携</span>
+            <span>書き出し・読み込み</span>
             <span className="text-[10px] bg-emerald-950/80 text-emerald-200 px-1.5 py-0.2 rounded-full border border-emerald-400/40 font-mono font-bold">
               {selectedIds.length > 0 ? selectedIds.length : cds.length}
             </span>
           </button>
+
+          {onOpenBackupSettings && (
+            <button
+              type="button"
+              onClick={onOpenBackupSettings}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-slate-800 hover:bg-slate-700 text-slate-100 shadow transition-all cursor-pointer border border-slate-600/60 flex-shrink-0"
+              title="JSONの自動バックアップの設定・復元"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-300 flex-shrink-0" />
+              <span>自動バックアップ</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full border font-mono font-bold ${
+                  backupEnabled
+                    ? 'bg-emerald-950/80 text-emerald-200 border-emerald-400/40'
+                    : 'bg-slate-900 text-slate-400 border-slate-600/60'
+                }`}
+              >
+                {backupEnabled ? 'ON' : 'OFF'}
+              </span>
+            </button>
+          )}
 
           {/* Density 3-way Switcher */}
           <div className="flex items-center p-0.5 bg-slate-900/90 rounded-xl border border-slate-700/80 text-[10px] font-bold flex-shrink-0 shadow-inner" title="表示密度（行の高さ・余白）を切り替え">
@@ -935,7 +908,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
 
         {[
           { id: 'all', label: 'すべて', count: quickFilterCounts.all },
-          { id: 'unsynced', label: '未同期', count: quickFilterCounts.unsynced },
           { id: 'hasVinyl', label: 'LP/EP発売日あり', count: quickFilterCounts.hasVinyl },
           { id: 'noTags', label: 'タグ未設定', count: quickFilterCounts.noTags },
           { id: 'rated', label: '高評価★', count: quickFilterCounts.rated },
@@ -1102,9 +1074,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                     <th className={`${densityConfig.th} text-center whitespace-nowrap bg-slate-900`}>収録曲</th>
                   )}
 
-                  {visibleColumns.syncedToSheets && (
-                    <th className={`${densityConfig.th} text-center whitespace-nowrap bg-slate-900`}>スプレッドシート</th>
-                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-sans">
@@ -1281,18 +1250,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                           </td>
                         )}
 
-                        {visibleColumns.syncedToSheets && (
-                          <td className={`${densityConfig.td} text-center`}>
-                            {cd.syncedToSheets ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                                <CheckCircle2 className="w-3 h-3" />
-                                同期済み
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-slate-500">未同期</span>
-                            )}
-                          </td>
-                        )}
                       </tr>
                       
                       {/* Expandable Tracklist Drawer */}
@@ -1340,18 +1297,18 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
           <div>
             <h3 className="text-base font-semibold text-slate-300">データベースに登録されたCDがありません</h3>
             <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-              「Web検索・メタデータ取得」からCDを追加するか、バックアップファイル（JSON / Excel / CSV / Googleスプレッドシート）からインポートしてください。
+              「Web検索・メタデータ取得」からCDを追加するか、バックアップファイル（JSON / Excel / CSV）からインポートしてください。
             </p>
           </div>
-          {onOpenImportSheetsModal && (
+          {onOpenImportModal && (
             <div className="pt-2 flex items-center justify-center gap-3">
               <button
                 type="button"
-                onClick={onOpenImportSheetsModal}
+                onClick={onOpenImportModal}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
               >
                 <Download className="w-4 h-4" />
-                <span>ファイル / スプレッドシートからインポート</span>
+                <span>バックアップファイルからインポート</span>
               </button>
             </div>
           )}
@@ -1733,12 +1690,12 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
               </button>
             )}
 
-            {/* Export Sheets */}
+            {/* Export */}
             <button
               type="button"
-              onClick={() => onOpenExportSheetsModal(selectedCDs)}
+              onClick={() => onOpenExportModal(selectedCDs)}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer border border-emerald-400/40 flex-shrink-0"
-              title="選択分をGoogleスプレッドシート・CSV等へ書き出し"
+              title="選択分をJSON・Excel・CSVへ書き出し"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span className="hidden md:inline">データ書き出し</span>

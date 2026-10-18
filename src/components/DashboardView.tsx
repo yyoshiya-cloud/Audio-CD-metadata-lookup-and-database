@@ -22,7 +22,6 @@ import {
   Users,
   Calendar,
   Sparkles,
-  FileSpreadsheet,
   TrendingUp,
   Tag,
   Building,
@@ -41,6 +40,7 @@ import {
   Layers,
   Info,
 } from 'lucide-react';
+import { getBackupSettings, getBackupState } from '../lib/autoBackup';
 
 interface DashboardViewProps {
   cds: CDMetadata[];
@@ -215,8 +215,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return set.size;
   }, [cds]);
 
-  const syncedCount = useMemo(() => {
-    return cds.filter((c) => c.syncedToSheets).length;
+  // 最終バックアップ（自動バックアップの状態。7日以上前、または未実施なら注意色）
+  const backupInfo = useMemo(() => {
+    let enabled = false;
+    let lastAt: string | undefined;
+    try {
+      enabled = getBackupSettings().enabled;
+      lastAt = getBackupState().lastBackupAt;
+    } catch {
+      // localStorage が使えない環境では未実施として扱う
+    }
+    if (!lastAt) return { label: '未実施', enabled, stale: cds.length > 0 };
+    const days = Math.floor((Date.now() - new Date(lastAt).getTime()) / (24 * 3600 * 1000));
+    const label = days <= 0 ? '今日' : `${days}日前`;
+    return { label, enabled, stale: days >= 7 };
   }, [cds]);
 
   const taggedCount = useMemo(() => {
@@ -653,19 +665,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <p className="text-[10px] text-slate-400">レコード会社・発売元</p>
         </div>
 
-        {/* Google Sheets Synced */}
+        {/* 最終バックアップ */}
         <div className="bg-slate-800/70 border border-slate-700/80 rounded-2xl p-4 space-y-2 shadow-lg">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[11px] font-medium">スプレッドシート同期</span>
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <span className="text-[11px] font-medium">最終バックアップ</span>
+            <ShieldCheck className={`w-4 h-4 ${backupInfo.stale ? 'text-amber-400' : 'text-emerald-400'}`} />
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <p className="text-2xl font-bold font-mono text-white">{syncedCount}</p>
-            <span className="text-xs text-emerald-400 font-bold">
-              ({Math.round((syncedCount / (totalCDs || 1)) * 100)}%)
-            </span>
-          </div>
-          <p className="text-[10px] text-slate-400">連携済みレコード</p>
+          <p className={`text-2xl font-bold font-mono ${backupInfo.stale ? 'text-amber-300' : 'text-white'}`}>{backupInfo.label}</p>
+          <p className="text-[10px] text-slate-400">自動バックアップ: {backupInfo.enabled ? 'ON' : 'OFF'}</p>
         </div>
 
         {/* AI Tagged Rate */}

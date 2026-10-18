@@ -109,7 +109,6 @@ export const DuplicateCheckView: React.FC<DuplicateCheckViewProps> = ({
           barcode,
           tracks,
           tags: Array.from(tagSet),
-          syncedToSheets: items.some((i) => i.syncedToSheets),
           verifiedByAI: items.some((i) => i.verifiedByAI),
           aiVerificationSummary: `重複データ${items.length}件を1つに統合・名寄せ完了`,
           updatedAt: new Date().toISOString(),
@@ -397,9 +396,6 @@ export const DuplicateCheckView: React.FC<DuplicateCheckViewProps> = ({
                       {/* Action status */}
                       <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
                         <span>{isPrimary ? '✨ 統合後に残るレコード' : '🗑️ 統合後に削除されるレコード'}</span>
-                        {item.syncedToSheets && (
-                          <span className="text-emerald-400 font-bold">Sheets連携済</span>
-                        )}
                       </div>
                     </div>
                   );

@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { CDMetadata, TrackInfo } from '../types/cd';
 import { normalizeCatalogNumber, normalizeReleaseDate } from './dateUtils';
-import { parseSpreadsheetRowsToCDs, getSerializedSubImagesByType } from './googleSheets';
+import { parseSpreadsheetRowsToCDs, getSerializedSubImagesByType } from './tabularFormat';
 
 /**
  * Sanitize a string against CSV / Spreadsheet Formula Injection (OWASP CSV Injection defense).

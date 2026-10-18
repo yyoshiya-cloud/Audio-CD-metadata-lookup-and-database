@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
-import { initAuth, googleSignIn, logout, getAccessToken } from './lib/firebase';
-import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, markCDsAsSynced, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage, loadAppInfoConfigDB, saveAppInfoConfigDB, DEFAULT_APP_INFO_CONFIG, AppInfoConfig } from './lib/db';
+import { initAuth, googleSignIn, logout } from './lib/firebase';
+import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage, loadAppInfoConfigDB, saveAppInfoConfigDB, DEFAULT_APP_INFO_CONFIG, AppInfoConfig } from './lib/db';
 import { CDMetadata, SearchQuery, SearchResponse, APICredentials } from './types/cd';
 import { getJSTISOString } from './lib/dateUtils';
 import { Header } from './components/Header';
@@ -11,7 +11,10 @@ import { resolvePreviewToggle } from './utils/searchPreviewMode';
 import { enabledSourcesLabel, isSourceEnabled } from './config/sources';
 import { CDDetailModal } from './components/CDDetailModal';
 import { CDDatabaseTable } from './components/CDDatabaseTable';
-import { GoogleSheetsModal } from './components/GoogleSheetsModal';
+import { DataExchangeModal } from './components/DataExchangeModal';
+import { BackupSettingsModal } from './components/BackupSettingsModal';
+import { useAutoBackup } from './hooks/useAutoBackup';
+import { getBackupSettings } from './lib/autoBackup';
 import { CDSpineScanner } from './components/CDSpineScanner';
 import { BatchImportModal } from './components/BatchImportModal';
 import { APISettingsModal } from './components/APISettingsModal';
@@ -29,7 +32,6 @@ import { CheckCircle2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   // API Keys state
   const [apiCredentials, setApiCredentials] = useState<APICredentials>(() => {
@@ -123,8 +125,11 @@ export default function App() {
   useEffect(() => {
     if (splitPreviewCD) lastViewedCDIdRef.current = splitPreviewCD.id;
   }, [splitPreviewCD]);
-  const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
-  const [sheetsModalMode, setSheetsModalMode] = useState<'export' | 'import'>('export');
+  const [isBackupSettingsOpen, setIsBackupSettingsOpen] = useState(false);
+  const [backupEnabled, setBackupEnabled] = useState(false);
+  const [isLibraryLoaded, setIsLibraryLoaded] = useState(false);
+  const [isDataExchangeOpen, setIsDataExchangeOpen] = useState(false);
+  const [dataExchangeMode, setDataExchangeMode] = useState<'export' | 'import'>('export');
   const [itemsToExport, setItemsToExport] = useState<CDMetadata[]>([]);
   const [isOCRModalOpen, setIsOCRModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
@@ -201,26 +206,25 @@ export default function App() {
     });
   };
 
-  // Load Auth state (strictly for Google Sheets OAuth) and Dexie IndexedDB on mount
+  // Load Auth state and Dexie IndexedDB on mount
   useEffect(() => {
     (async () => {
       await initPersistentStorage();
       await loadLocalLibrary();
+      setIsLibraryLoaded(true);
+      try {
+        setBackupEnabled(getBackupSettings().enabled);
+      } catch {
+        // localStorage が使えない環境
+      }
       const creds = await loadApiCredentialsDB();
       setApiCredentials(creds);
       const loadedAppInfo = await loadAppInfoConfigDB();
       setAppInfoConfig(loadedAppInfo);
 
       initAuth(
-        async (u, token) => {
-          setUser(u);
-          const tok = token || (await getAccessToken());
-          setAccessToken(tok);
-        },
-        async () => {
-          setUser(null);
-          setAccessToken(null);
-        }
+        (u) => setUser(u),
+        () => setUser(null)
       );
     })();
   }, []);
@@ -239,13 +243,15 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // JSON自動バックアップ（有効なとき、条件を満たすとバックグラウンドで保存する）
+  useAutoBackup(savedCDs, isLibraryLoaded, (notice) => showToast(notice.message));
+
   const handleLogin = async () => {
     try {
       const res = await googleSignIn();
       if (res) {
         setUser(res.user);
-        setAccessToken(res.accessToken);
-        showToast('Googleアカウントでログインしました（Googleスプレッドシート連携が利用可能です）');
+        showToast('Googleアカウントでログインしました');
         return res;
       }
     } catch (err: any) {
@@ -263,7 +269,6 @@ export default function App() {
   const handleLogout = async () => {
     await logout();
     setUser(null);
-    setAccessToken(null);
     showToast('Googleアカウントからログアウトしました（ローカルDBのデータはそのまま保持されています）');
   };
 
@@ -373,11 +378,11 @@ export default function App() {
     showToast(`${ids.length} 件のCDを削除しました`);
   };
 
-  // Open Sheets Modal for export
-  const handleOpenSheetsModalForItems = (items: CDMetadata[]) => {
-    setSheetsModalMode('export');
+  // 書き出し（JSON / Excel / CSV）モーダルを開く
+  const handleOpenExportModalForItems = (items: CDMetadata[]) => {
+    setDataExchangeMode('export');
     setItemsToExport(items);
-    setIsSheetsModalOpen(true);
+    setIsDataExchangeOpen(true);
   };
 
   // Open AI Tagging Modal
@@ -425,15 +430,15 @@ export default function App() {
     showToast(`${mergeActions.length} グループの重複CDを一括統合・クリーンアップしました`);
   };
 
-  // Open Sheets Modal for import
-  const handleOpenImportSheetsModal = () => {
-    setSheetsModalMode('import');
+  // 読み込み（バックアップからの復元など）モーダルを開く
+  const handleOpenImportModal = () => {
+    setDataExchangeMode('import');
     setItemsToExport([]);
-    setIsSheetsModalOpen(true);
+    setIsDataExchangeOpen(true);
   };
 
-  // Import CDs from Sheets / Excel / CSV / JSON into library
-  const handleImportCDsFromSheets = async (importedCDs: CDMetadata[]) => {
+  // JSON / Excel / CSV から読み込んだCDをライブラリへ反映（既存と一致するものは統合）
+  const handleImportCDs = async (importedCDs: CDMetadata[]) => {
     const existingMapById = new Map<string, CDMetadata>();
     const existingMapByCat = new Map<string, CDMetadata>();
     const existingMapByTitleArtist = new Map<string, CDMetadata>();
@@ -491,7 +496,6 @@ export default function App() {
           vinylRecordCatalogNumber: imported.vinylRecordCatalogNumber || existingMatch.vinylRecordCatalogNumber,
           barcode: imported.barcode || existingMatch.barcode,
           notes: imported.notes || existingMatch.notes,
-          syncedToSheets: true,
           updatedAt: getJSTISOString(),
         };
         toSaveMap.set(mergedRecord.id, mergedRecord);
@@ -502,7 +506,6 @@ export default function App() {
       } else {
         const newRecord: CDMetadata = {
           ...imported,
-          syncedToSheets: true,
           updatedAt: imported.updatedAt || getJSTISOString(),
         };
         toSaveMap.set(newRecord.id, newRecord);
@@ -517,13 +520,6 @@ export default function App() {
     await importCDs(toSave);
     await loadLocalLibrary();
     showToast(`${toSave.length} 件のCDデータをインポート・反映しました`);
-  };
-
-  // Mark items as synced
-  const handleMarkSynced = async (ids: string[]) => {
-    await markCDsAsSynced(ids);
-    await loadLocalLibrary();
-    showToast('スプレッドシート連携ステータスを更新しました');
   };
 
   const savedCDIds = savedCDs.map((c) => c.id);
@@ -702,8 +698,10 @@ export default function App() {
             }}
             onDeleteCD={handleDeleteCD}
             onBatchDeleteCDs={handleBatchDelete}
-            onOpenExportSheetsModal={handleOpenSheetsModalForItems}
-            onOpenImportSheetsModal={handleOpenImportSheetsModal}
+            onOpenExportModal={handleOpenExportModalForItems}
+            onOpenImportModal={handleOpenImportModal}
+            onOpenBackupSettings={() => setIsBackupSettingsOpen(true)}
+            backupEnabled={backupEnabled}
             onOpenManualAdd={handleOpenManualAdd}
             onOpenBatchModal={() => setIsBatchModalOpen(true)}
             onOpenAITagging={handleOpenAITagging}
@@ -774,7 +772,7 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-800 bg-slate-950 py-3 px-4 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p>© CD メタデータ検索＆データベース - Googleスプレッドシート連携システム</p>
+          <p>© CD メタデータ検索＆データベース - ローカル保存・JSONバックアップ</p>
           <p className="flex items-center gap-2 font-mono text-[11px] text-slate-400">
             <span>APIs: {enabledSourcesLabel(' • ')} • Gemini AI</span>
           </p>
@@ -816,18 +814,30 @@ export default function App() {
         />
       )}
 
-      {/* Google Sheets Export / Import Modal */}
-      {isSheetsModalOpen && (
-        <GoogleSheetsModal
-          user={user}
-          accessToken={accessToken}
+      {/* JSON自動バックアップの設定・復元 */}
+      {isBackupSettingsOpen && (
+        <BackupSettingsModal
+          cds={savedCDs}
+          onClose={() => {
+            setIsBackupSettingsOpen(false);
+            try {
+              setBackupEnabled(getBackupSettings().enabled);
+            } catch {
+              // localStorage が使えない環境
+            }
+          }}
+          onRestoreCDs={handleImportCDs}
+        />
+      )}
+
+      {/* データの書き出し・読み込み（JSON / Excel / CSV） */}
+      {isDataExchangeOpen && (
+        <DataExchangeModal
           itemsToExport={itemsToExport}
           allCDs={savedCDs}
-          initialMode={sheetsModalMode}
-          onClose={() => setIsSheetsModalOpen(false)}
-          onLogin={handleLogin}
-          onMarkSynced={handleMarkSynced}
-          onImportCDs={handleImportCDsFromSheets}
+          initialMode={dataExchangeMode}
+          onClose={() => setIsDataExchangeOpen(false)}
+          onImportCDs={handleImportCDs}
         />
       )}
 

@@ -98,7 +98,7 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({
                 <span>スプレッドシート形式エディタ</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Excel風の直接セル入力、各項目正順/逆順ソート、列幅ドラッグ調整、未登録項目の完全空白化、Excel/SheetsからのTSV一括貼り付け、チェックボックス一括削除。
+                Excel風の直接セル入力、各項目正順/逆順ソート、列幅ドラッグ調整、未登録項目の完全空白化、ExcelからのTSV一括貼り付け、チェックボックス一括削除。
               </p>
             </div>
 
@@ -111,7 +111,7 @@ export const AppInfoModal: React.FC<AppInfoModalProps> = ({
                 <span>Dexie.js (IndexedDB) 高速DB & 各種データ連携</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Dexie.jsによるオフライン対応・無制限ローカルIndexedDBストレージ（ジャケット・付属画像のBASE64永続化対応）。Googleスプレッドシート / Excel(.xlsx) / CSV / JSONバックアップの双方向データ交換に対応。
+                Dexie.jsによるオフライン対応・無制限ローカルIndexedDBストレージ（ジャケット・付属画像のBASE64永続化対応）。Excel(.xlsx) / CSV / JSONの書き出し・読み込みに対応し、JSONは自動バックアップが可能です。
               </p>
             </div>
 

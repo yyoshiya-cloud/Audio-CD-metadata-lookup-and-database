@@ -272,25 +272,6 @@ export async function deleteMultipleCDs(ids: string[]): Promise<void> {
 }
 
 /**
- * Mark specified CDs as synced to Google Sheets / Exported
- */
-export async function markCDsAsSynced(ids: string[]): Promise<void> {
-  if (ids.length === 0) return;
-  await db.transaction('rw', db.cds, async () => {
-    const existing = await db.cds.bulkGet(ids);
-    const toUpdate: CDMetadata[] = [];
-    for (const item of existing) {
-      if (item && !item.syncedToSheets) {
-        toUpdate.push({ ...item, syncedToSheets: true });
-      }
-    }
-    if (toUpdate.length > 0) {
-      await db.cds.bulkPut(toUpdate);
-    }
-  });
-}
-
-/**
  * Save API Credentials into Dexie IndexedDB settings table (and localStorage backup)
  */
 export async function saveApiCredentialsDB(credentials: APICredentials): Promise<void> {
