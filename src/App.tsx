@@ -85,39 +85,41 @@ export default function App() {
   };
 
   // 4. Split Preview Mode & Current Preview CD (Item 4)
-  const [searchPreviewMode, setSearchPreviewMode] = useState<'inline' | 'modal'>(() => {
-    try {
-      const stored = localStorage.getItem('cd_search_preview_mode');
-      if (stored === 'inline' || stored === 'modal') return stored;
-    } catch {}
-    return 'inline';
-  });
+  // 検索結果の詳細表示方式。検索を始めるたびに 'modal' から始める（保存はしない）
+  const [searchPreviewMode, setSearchPreviewMode] = useState<'inline' | 'modal'>('modal');
 
-  // 直近に詳細を開いた候補のID（モーダルを閉じた後に「モーダル表示」で同じ候補を開き直すため）
+  // 直近にフォーカスした（モーダルまたはスプリットで表示した）アルバムのID
   const lastViewedCDIdRef = useRef<string | null>(null);
 
-  const handleToggleSearchPreviewMode = (mode: 'inline' | 'modal') => {
+  /**
+   * 詳細表示方式の切替。
+   * - 'modal': スプリットのプレビューを閉じ、フォーカス中のアルバムをモーダルで開く
+   *            （opts.openModal === false のときはモーダルを開かず、表示方式だけ切り替える）
+   * - 'inline': フォーカス中のアルバムを右側のスプリット画面に表示する
+   * フォーカス中のアルバム = 開いているモーダル > スプリット表示中 > 直近に見たもの > 先頭の候補
+   */
+  const handleToggleSearchPreviewMode = (mode: 'inline' | 'modal', opts?: { openModal?: boolean }) => {
     setSearchPreviewMode(mode);
-    try {
-      localStorage.setItem('cd_search_preview_mode', mode);
-    } catch {}
 
     const candidates = searchResponse?.candidates?.map((c) => c.cd) || [];
-    if (candidates.length === 0) return;
-
-    const findLastViewed = () => candidates.find((c) => c.id === lastViewedCDIdRef.current);
+    const inCandidates = (cd: CDMetadata | null | undefined) =>
+      cd ? candidates.find((c) => c.id === cd.id) : undefined;
+    const focused =
+      inCandidates(selectedCDForModal) ||
+      inCandidates(splitPreviewCD) ||
+      candidates.find((c) => c.id === lastViewedCDIdRef.current) ||
+      candidates[0];
 
     if (mode === 'modal') {
-      // 「モーダル表示」は表示方式の切替だけでなく、押した時点でモーダルを開く
-      // （×で閉じた後に同じボタンを押しても開き直せるようにする）
-      const target =
-        (splitPreviewCD && candidates.find((c) => c.id === splitPreviewCD.id)) || findLastViewed() || candidates[0];
       setSplitPreviewCD(null);
-      setSelectedCDForModal(target);
-      setModalCDList(candidates);
+      if (focused && (opts?.openModal ?? true)) {
+        setSelectedCDForModal(focused);
+        setModalCDList(candidates);
+      }
     } else {
-      // 「スプリット表示」に戻したときは、プレビューが空にならないよう直近の候補を表示
-      setSplitPreviewCD((prev) => prev ?? findLastViewed() ?? candidates[0]);
+      // スプリット表示へ: 開いているモーダルは閉じ、同じアルバムを右画面に表示する
+      setSelectedCDForModal(null);
+      setSplitPreviewCD(focused ?? null);
     }
   };
 
@@ -129,6 +131,9 @@ export default function App() {
   useEffect(() => {
     if (selectedCDForModal) lastViewedCDIdRef.current = selectedCDForModal.id;
   }, [selectedCDForModal]);
+  useEffect(() => {
+    if (splitPreviewCD) lastViewedCDIdRef.current = splitPreviewCD.id;
+  }, [splitPreviewCD]);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [sheetsModalMode, setSheetsModalMode] = useState<'export' | 'import'>('export');
   const [itemsToExport, setItemsToExport] = useState<CDMetadata[]>([]);
@@ -283,6 +288,12 @@ export default function App() {
   const handlePerformSearch = async (query: SearchQuery, retryCount = 0) => {
     setIsLoadingSearch(true);
     setSearchResponse(null);
+    if (retryCount === 0) {
+      // 検索の最初は常にモーダル表示（スプリットのプレビューも閉じる）
+      setSearchPreviewMode('modal');
+      setSplitPreviewCD(null);
+      lastViewedCDIdRef.current = null;
+    }
 
     const fullQuery: SearchQuery = {
       ...query,
@@ -310,11 +321,7 @@ export default function App() {
 
       const data: SearchResponse = await res.json();
       setSearchResponse(data);
-      if (searchPreviewMode === 'inline' && data.candidates && data.candidates.length > 0) {
-        setSplitPreviewCD(data.candidates[0].cd);
-      } else {
-        setSplitPreviewCD(null);
-      }
+      setSplitPreviewCD(null);
       setIsLoadingSearch(false);
     } catch (err: any) {
       console.error('Search failure:', err);
@@ -688,7 +695,8 @@ export default function App() {
                       searchResponse?.candidates?.map((c) => c.cd) || [cd]
                     );
                   }}
-                  onClose={() => setSplitPreviewCD(null)}
+                  // 右上の✕: モーダル表示に切り替える（表示中のアルバムをモーダルで開く）
+                  onClose={() => handleToggleSearchPreviewMode('modal')}
                 />
               </div>
             )}

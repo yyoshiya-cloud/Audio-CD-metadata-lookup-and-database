@@ -4,7 +4,7 @@ import { catnoBase, catnoVariants, digitsOnly, luceneQuote } from './searchUtils
 const MB_BASE = 'https://musicbrainz.org/ws/2';
 
 // トラックリスト取得は1件あたり1秒以上かかる(レート制限)ため、上位のみに絞る
-const MB_TRACKLIST_LIMIT = 3;
+const MB_TRACKLIST_LIMIT = 2;
 
 // MusicBrainz は 1リクエスト/秒 (IP単位) の制限があるため、全リクエストを直列化して間隔を空ける
 const MB_MIN_INTERVAL_MS = 1100;

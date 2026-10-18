@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CDMetadata, SearchResponse, APISource } from '../types/cd';
 import { CoverImage, coverUrlsOf } from './CoverImage';
 import { Music, Calendar, Disc, Check, Plus, ShieldCheck, Layers, Layers2, Sparkles, Trash2, ChevronDown, ChevronUp, ListMusic, PanelRight, Maximize2 } from 'lucide-react';
@@ -13,7 +13,7 @@ interface SearchResultsProps {
   onManualAdd?: () => void;
   previewCDId?: string;
   previewMode?: 'inline' | 'modal';
-  onTogglePreviewMode?: (mode: 'inline' | 'modal') => void;
+  onTogglePreviewMode?: (mode: 'inline' | 'modal', opts?: { openModal?: boolean }) => void;
 }
 
 export const SearchResults: React.FC<SearchResultsProps> = ({
@@ -29,6 +29,21 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
   onTogglePreviewMode,
 }) => {
   const [viewMode, setViewMode] = useState<'aggregated' | 'rawBySource' | 'tableList'>('aggregated');
+
+  // 表形式一覧では常にモーダル表示にする（スプリットのままなら切り替える。モーダルは開かない）
+  useEffect(() => {
+    if (viewMode === 'tableList' && previewMode === 'inline') {
+      onTogglePreviewMode?.('modal', { openModal: false });
+    }
+  }, [viewMode, previewMode, onTogglePreviewMode]);
+
+  // 一覧の表示形式を切り替える。スプリット表示中に「表形式一覧」「API別データ比較」を選んだらモーダル表示に変更
+  const handleChangeViewMode = (mode: 'aggregated' | 'rawBySource' | 'tableList') => {
+    setViewMode(mode);
+    if ((mode === 'tableList' || mode === 'rawBySource') && previewMode === 'inline') {
+      onTogglePreviewMode?.('modal', { openModal: false });
+    }
+  };
   const [tableDensity, setTableDensity] = useState<'compact' | 'normal'>('normal');
   const [expandedPreviewKeys, setExpandedPreviewKeys] = useState<Record<string, boolean>>({});
 
@@ -189,12 +204,19 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
               <button
                 type="button"
                 onClick={() => onTogglePreviewMode('inline')}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                  previewMode === 'inline'
-                    ? 'bg-indigo-600 text-white font-bold shadow-sm'
-                    : 'text-slate-400 hover:text-white'
+                disabled={viewMode === 'tableList'}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${
+                  viewMode === 'tableList'
+                    ? 'text-slate-600 opacity-50 cursor-not-allowed'
+                    : previewMode === 'inline'
+                    ? 'bg-indigo-600 text-white font-bold shadow-sm cursor-pointer'
+                    : 'text-slate-400 hover:text-white cursor-pointer'
                 }`}
-                title="検索結果の横に即時プレビューを表示（スプリットビュー）"
+                title={
+                  viewMode === 'tableList'
+                    ? '表形式一覧では常にモーダル表示になります'
+                    : '検索結果の横に即時プレビューを表示（スプリットビュー）'
+                }
               >
                 <PanelRight className="w-3.5 h-3.5" />
                 <span>スプリット表示</span>
@@ -228,7 +250,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('tableList')}
+              onClick={() => handleChangeViewMode('tableList')}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
                 viewMode === 'tableList' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-white'
               }`}
@@ -239,7 +261,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('rawBySource')}
+              onClick={() => handleChangeViewMode('rawBySource')}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
                 viewMode === 'rawBySource' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-white'
               }`}
