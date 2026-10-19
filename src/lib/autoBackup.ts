@@ -60,10 +60,23 @@ export async function clearDirHandle(): Promise<void> {
   }
 }
 
-/** フォルダ選択ダイアログを開き、選んだフォルダを保存先として記憶する（ユーザー操作から呼ぶこと） */
+/**
+ * フォルダ選択ダイアログを開き、選んだフォルダを保存先として記憶する（ユーザー操作から呼ぶこと）。
+ *
+ * 注意: Chrome / Edge は、ドキュメント・ダウンロード・デスクトップなどの標準フォルダ「そのもの」や
+ * システムファイルを含むフォルダを選ばせない（「このフォルダを開けません」と表示される）。
+ * その中に作った専用フォルダ（例: ドキュメント\CD-Backup）を選ぶ必要がある。
+ */
 export async function pickBackupFolder(): Promise<DirHandle> {
-  const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'cd-backup' });
-  await db.settings.put({ key: HANDLE_KEY, value: handle, updatedAt: new Date().toISOString() });
+  const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite', id: 'cd-backup', startIn: 'documents' });
+  try {
+    await db.settings.put({ key: HANDLE_KEY, value: handle, updatedAt: new Date().toISOString() });
+    // 記憶できたことを読み戻して確認する（失敗に気づけず「未選択」のままになるのを防ぐ）
+    const saved = await db.settings.get(HANDLE_KEY);
+    if (!saved?.value) throw new Error('保存した内容を読み戻せませんでした');
+  } catch (err: any) {
+    throw new Error(`フォルダ「${handle?.name ?? ''}」は選べましたが、ブラウザに記憶できませんでした（${err?.message || err}）。`);
+  }
   return handle;
 }
 

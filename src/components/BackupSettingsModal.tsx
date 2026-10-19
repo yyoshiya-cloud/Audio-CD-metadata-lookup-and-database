@@ -84,7 +84,9 @@ export const BackupSettingsModal: React.FC<BackupSettingsModalProps> = ({ cds, o
   const handlePickFolder = async () => {
     setMessage(null);
     try {
-      await pickBackupFolder();
+      const handle = await pickBackupFolder();
+      setFolderName(handle?.name ?? null); // 選んだフォルダ名をすぐに表示する
+      setMessage({ type: 'ok', text: `保存先フォルダを「${handle?.name ?? ''}」に設定しました。` });
       await refresh();
     } catch (err: any) {
       if (err?.name !== 'AbortError') setMessage({ type: 'error', text: `フォルダを選択できませんでした: ${err?.message || err}` });
@@ -230,6 +232,10 @@ export const BackupSettingsModal: React.FC<BackupSettingsModalProps> = ({ cds, o
                   </div>
                 )}
                 {needsFolder && <p className="text-[11px] text-slate-400">バックアップを保存するフォルダを選んでください（クラウド同期フォルダを選ぶと、別の場所にも自動で複製されます）。</p>}
+                <p className="text-[10px] text-amber-200/90 leading-relaxed">
+                  ドキュメント・ダウンロード・デスクトップなどの標準フォルダ「そのもの」は、ブラウザの制限で選べません（「このフォルダを開けません」と表示されます）。
+                  その中に専用のフォルダ（例: ドキュメント\CD-Backup）を作って、そのフォルダを選んでください。
+                </p>
               </div>
             )}
           </div>

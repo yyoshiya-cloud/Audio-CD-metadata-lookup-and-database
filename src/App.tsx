@@ -16,7 +16,6 @@ import { BackupSettingsModal } from './components/BackupSettingsModal';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { getBackupSettings } from './lib/autoBackup';
 import { CDSpineScanner } from './components/CDSpineScanner';
-import { BatchImportModal } from './components/BatchImportModal';
 import { APISettingsModal } from './components/APISettingsModal';
 import { AITaggingModal } from './components/AITaggingModal';
 import { AppInfoModal } from './components/AppInfoModal';
@@ -132,7 +131,6 @@ export default function App() {
   const [dataExchangeMode, setDataExchangeMode] = useState<'export' | 'import'>('export');
   const [itemsToExport, setItemsToExport] = useState<CDMetadata[]>([]);
   const [isOCRModalOpen, setIsOCRModalOpen] = useState(false);
-  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isAPISettingsOpen, setIsAPISettingsOpen] = useState(false);
   const [isAITaggingOpen, setIsAITaggingOpen] = useState(false);
   const [isAppInfoOpen, setIsAppInfoOpen] = useState(false);
@@ -355,13 +353,6 @@ export default function App() {
       updatedAt: getJSTISOString(),
     };
     setSelectedCDForModal(newCD);
-  };
-
-  // Save multiple CDs from batch process
-  const handleBatchCDsComplete = async (cds: CDMetadata[]) => {
-    await importCDs(cds);
-    await loadLocalLibrary();
-    showToast(`${cds.length} 件のCDをライブラリに保存・同期しました`);
   };
 
   // Delete CD from DB
@@ -704,7 +695,6 @@ export default function App() {
             onOpenBackupSettings={() => setIsBackupSettingsOpen(true)}
             backupEnabled={backupEnabled}
             onOpenManualAdd={handleOpenManualAdd}
-            onOpenBatchModal={() => setIsBatchModalOpen(true)}
             onOpenAITagging={handleOpenAITagging}
             onOpenPDFCatalog={handleOpenPDFCatalog}
             onBatchUpdateCDs={handleApplyBatchAITags}
@@ -849,14 +839,6 @@ export default function App() {
             setActiveTab('search');
             handlePerformSearch(ocrQuery);
           }}
-        />
-      )}
-
-      {/* Batch Import Modal */}
-      {isBatchModalOpen && (
-        <BatchImportModal
-          onClose={() => setIsBatchModalOpen(false)}
-          onBatchFetchComplete={handleBatchCDsComplete}
         />
       )}
 
