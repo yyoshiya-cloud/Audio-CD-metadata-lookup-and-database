@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CDMetadata } from '../types/cd';
-import { Search, FileSpreadsheet, ShieldCheck, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, PlusCircle, Sparkles, Table, BookOpen, Loader2, Tag, Edit3, Database, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, LayoutGrid, X, Star, Layers, Eye, EyeOff } from 'lucide-react';
+import { Search, FileSpreadsheet, ShieldCheck, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, Sparkles, Table, BookOpen, Loader2, Tag, Edit3, Database, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, LayoutGrid, X, Star, Layers, Eye, EyeOff } from 'lucide-react';
 import { matchesCDSearchQuery, getMatchedTracksForQuery } from '../utils/japaneseSearchNormalizer';
 import { lookupVinylReleasesBatch } from '../utils/formatUtils';
 import { normalizeTagList, normalizeSingleTag, normalizeCDTagsAndGenre } from '../lib/tagNormalizer';
@@ -66,7 +66,6 @@ interface CDDatabaseTableProps {
   /** 自動バックアップが有効か（ボタンの表示用） */
   backupEnabled?: boolean;
   onOpenManualAdd?: () => void;
-  onOpenBatchModal?: () => void;
   onOpenAITagging?: (selectedCDs: CDMetadata[]) => void;
   onOpenPDFCatalog?: (selectedCDs: CDMetadata[]) => void;
   onBatchUpdateCDs?: (updatedCDs: CDMetadata[]) => Promise<void>;
@@ -83,7 +82,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   onOpenBackupSettings,
   backupEnabled = false,
   onOpenManualAdd,
-  onOpenBatchModal,
   onOpenAITagging,
   onOpenPDFCatalog,
   onBatchUpdateCDs,
@@ -618,13 +616,13 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             </div>
           </div>
 
-          <div className="relative w-28 lg:w-32 xl:w-36 flex-shrink-0">
+          <div className="relative w-40 lg:w-48 xl:w-52 flex-shrink-0">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
             <input
               type="text"
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
-              placeholder="型番・タイトル・歌手"
+              placeholder="型番、タイトル、歌手名、曲名、タグ..."
               className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl py-1 pl-7 pr-6 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none transition-all shadow-inner"
             />
             {searchKeyword && (
@@ -667,17 +665,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             >
               <Plus className="w-3.5 h-3.5 flex-shrink-0" />
               <span className="hidden min-[1800px]:inline">CD登録</span>
-            </button>
-          )}
-
-          {onOpenBatchModal && (
-            <button
-              onClick={onOpenBatchModal}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 hover:border-slate-600 transition-all cursor-pointer shadow-sm flex-shrink-0"
-              title="型番の一括連続自動取得"
-            >
-              <PlusCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-              <span className="hidden min-[1800px]:inline">型番一括</span>
             </button>
           )}
 
@@ -831,54 +818,82 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
               </span>
             </button>
 
+            {/* 表示項目の選択: JSON自動バックアップと同じ、画面中央のモーダル（背景クリック・Escで閉じる） */}
             {isColumnMenuOpen && (
-              <>
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                onClick={() => setIsColumnMenuOpen(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setIsColumnMenuOpen(false);
+                }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="表示項目の選択"
+              >
                 <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setIsColumnMenuOpen(false)}
-                />
-                <div className="absolute right-0 top-full mt-1.5 z-50 w-56 bg-slate-900/98 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <LayoutGrid className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>表示項目の選択</span>
-                    </span>
+                  className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden max-h-[90vh]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="px-6 py-4 border-b border-slate-800 bg-slate-800/50 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center">
+                        <LayoutGrid className="w-6 h-6 text-indigo-400" />
+                      </div>
+                      <div>
+                        <h2 className="text-base font-bold text-white leading-tight">表示項目の選択</h2>
+                        <p className="text-xs text-slate-400">
+                          登録ライブラリに表示する列を選びます（{Object.values(visibleColumns).filter(Boolean).length}/{AVAILABLE_TABLE_COLUMNS.length}列を表示中）
+                        </p>
+                      </div>
+                    </div>
                     <button
                       type="button"
-                      onClick={resetColumns}
-                      className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
+                      onClick={() => setIsColumnMenuOpen(false)}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
+                      aria-label="閉じる"
                     >
-                      全列表示
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
-                  <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-                    {AVAILABLE_TABLE_COLUMNS.map((col) => (
-                      <label
-                        key={col.id}
-                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs cursor-pointer select-none transition-colors ${
-                          visibleColumns[col.id]
-                            ? 'bg-slate-800/80 text-white font-medium'
-                            : 'text-slate-400 hover:bg-slate-800/40'
-                        }`}
+
+                  <div className="p-6 space-y-3 overflow-y-auto">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-slate-300">表示する列</p>
+                      <button
+                        type="button"
+                        onClick={resetColumns}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
                       >
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={visibleColumns[col.id]}
-                            disabled={!col.canHide}
-                            onChange={() => toggleColumn(col.id)}
-                            className="rounded border-slate-600 text-indigo-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
-                          />
-                          <span>{col.label}</span>
-                        </div>
-                        {!col.canHide && (
-                          <span className="text-[9px] text-slate-500 font-mono">固定</span>
-                        )}
-                      </label>
-                    ))}
+                        全列表示
+                      </button>
+                    </div>
+                    <div className="space-y-1">
+                      {AVAILABLE_TABLE_COLUMNS.map((col) => (
+                        <label
+                          key={col.id}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer select-none transition-colors border ${
+                            visibleColumns[col.id]
+                              ? 'bg-slate-950/70 border-slate-700 text-white font-medium'
+                              : 'border-transparent text-slate-400 hover:bg-slate-800/40'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={visibleColumns[col.id]}
+                              disabled={!col.canHide}
+                              onChange={() => toggleColumn(col.id)}
+                              className="rounded border-slate-600 accent-indigo-500 w-4 h-4 cursor-pointer"
+                            />
+                            <span>{col.label}</span>
+                          </div>
+                          {!col.canHide && <span className="text-[10px] text-slate-500 font-mono">固定</span>}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
