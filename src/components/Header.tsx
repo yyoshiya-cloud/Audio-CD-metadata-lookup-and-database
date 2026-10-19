@@ -15,6 +15,7 @@ import {
   Moon,
   Minimize2,
   Maximize2,
+  Edit3,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 
@@ -26,6 +27,8 @@ interface HeaderProps {
   onOpenAPISettings: () => void;
   onOpenAppInfo: () => void;
   onOpenAdminMode?: () => void;
+  /** タグ名称管理モーダルを開く（タブではなく、重複チェックの右に置くボタン） */
+  onOpenTagManager?: () => void;
   onLogin: () => void;
   onLogout: () => void;
   activeTab: 'search' | 'database' | 'gallery' | 'tracks' | 'dashboard' | 'duplicates';
@@ -44,6 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAPISettings,
   onOpenAppInfo,
   onOpenAdminMode,
+  onOpenTagManager,
   onLogin,
   onLogout,
   activeTab,
@@ -204,6 +208,20 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </button>
+
+          {onOpenTagManager && (
+            <button
+              type="button"
+              onClick={onOpenTagManager}
+              className={`flex items-center gap-1.5 rounded-xl font-bold whitespace-nowrap transition-all duration-150 cursor-pointer text-slate-300 hover:text-white hover:bg-slate-800/80 border border-transparent ${
+                isCompactHeader ? 'px-2 py-1 text-xs' : 'px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs'
+              }`}
+              title="新しいタグ名称の追加や、既存タグ名称の一括変更（リネーム）・削除を行います"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+              <span>タグ名称管理</span>
+            </button>
+          )}
         </nav>
 
         {/* Action Buttons, Visual Toggles & Profile */}

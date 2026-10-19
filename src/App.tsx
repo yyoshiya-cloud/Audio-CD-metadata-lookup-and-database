@@ -566,6 +566,7 @@ export default function App() {
         onOpenAPISettings={() => setIsAPISettingsOpen(true)}
         onOpenAppInfo={() => setIsAppInfoOpen(true)}
         onOpenAdminMode={() => setIsAdminModeOpen(true)}
+        onOpenTagManager={() => setIsTagManagerOpen(true)}
         onLogin={handleLogin}
         onLogout={handleLogout}
         activeTab={activeTab}
@@ -706,7 +707,6 @@ export default function App() {
             onOpenBatchModal={() => setIsBatchModalOpen(true)}
             onOpenAITagging={handleOpenAITagging}
             onOpenPDFCatalog={handleOpenPDFCatalog}
-            onOpenTagManager={() => setIsTagManagerOpen(true)}
             onBatchUpdateCDs={handleApplyBatchAITags}
             initialSearchKeyword={librarySearchFilter}
           />
