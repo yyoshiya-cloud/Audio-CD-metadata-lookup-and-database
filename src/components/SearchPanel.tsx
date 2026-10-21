@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ENABLED_SOURCES, isSourceEnabled } from '../config/sources';
+import { ENABLED_SOURCES, isSourceEnabled, SOURCE_SHORT_LABELS } from '../config/sources';
+import { settingsStore, STORAGE_KEYS } from '../lib/settingsStore';
 import { Search, Camera, Disc, RefreshCw, Barcode, Check, RotateCcw, Sparkles, PanelLeftClose } from 'lucide-react';
 import { APISource, SearchQuery } from '../types/cd';
 
@@ -87,18 +88,11 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   const VALID_SOURCES: APISource[] = ENABLED_SOURCES;
 
   const [selectedSources, setSelectedSources] = useState<APISource[]>(() => {
-    try {
-      const saved = localStorage.getItem('cd_search_selected_sources');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const valid = parsed.filter((s: APISource) => VALID_SOURCES.includes(s));
-          if (valid.length > 0) {
-            return valid;
-          }
-        }
-      }
-    } catch {}
+    const parsed = settingsStore.getJSON<unknown>(STORAGE_KEYS.searchSelectedSources, null);
+    if (Array.isArray(parsed)) {
+      const valid = parsed.filter((s): s is APISource => VALID_SOURCES.includes(s as APISource));
+      if (valid.length > 0) return valid;
+    }
     return VALID_SOURCES;
   });
 
@@ -111,25 +105,19 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
       next = [...selectedSources, source];
     }
     setSelectedSources(next);
-    try {
-      localStorage.setItem('cd_search_selected_sources', JSON.stringify(next));
-    } catch {}
+    settingsStore.setJSON(STORAGE_KEYS.searchSelectedSources, next);
   };
 
   const selectAllSources = () => {
     const all: APISource[] = ENABLED_SOURCES;
     setSelectedSources(all);
-    try {
-      localStorage.setItem('cd_search_selected_sources', JSON.stringify(all));
-    } catch {}
+    settingsStore.setJSON(STORAGE_KEYS.searchSelectedSources, all);
   };
 
   const selectDomesticSources = () => {
     const domestic: APISource[] = (['ndl', 'rakuten', 'itunes'] as APISource[]).filter(isSourceEnabled);
     setSelectedSources(domestic);
-    try {
-      localStorage.setItem('cd_search_selected_sources', JSON.stringify(domestic));
-    } catch {}
+    settingsStore.setJSON(STORAGE_KEYS.searchSelectedSources, domestic);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -334,17 +322,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
           <div className="grid grid-cols-3 gap-1.5">
             {API_SOURCE_OPTIONS.map((src) => {
               const isChecked = selectedSources.includes(src.id);
-              const shortLabels: Record<APISource, string> = {
-                musicbrainz: 'MusicBrainz',
-                discogs: 'Discogs',
-                itunes: 'iTunes',
-                ndl: '国会図書館',
-                spotify: 'Spotify',
-                rakuten: '楽天ブックス',
-                vgmdb: 'VGMdb',
-                yahoo: 'Yahoo!',
-                gemini: 'AI OCR',
-              };
+              const shortLabels: Record<APISource, string> = SOURCE_SHORT_LABELS;
 
               return (
                 <button

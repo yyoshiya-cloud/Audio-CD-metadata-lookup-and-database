@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { errorMessage } from './apiTypes.js';
 
 const GEMINI_MODELS = [
   'gemini-3.8-flash',
@@ -57,7 +58,7 @@ export async function generateContentWithFallback(
   const modelsToTry = [...activeModels, ...cooldownModels];
 
   const perModelTimeout = params.timeoutMs || 14000;
-  let lastError: any = null;
+  let lastError: unknown = null;
 
   for (const model of modelsToTry) {
     try {
@@ -71,9 +72,9 @@ export async function generateContentWithFallback(
         model
       );
       return response;
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
-      const errStr = String(err?.message || err).toLowerCase();
+      const errStr = errorMessage(err).toLowerCase();
       const isRateLimit =
         errStr.includes('429') ||
         errStr.includes('resource_exhausted') ||

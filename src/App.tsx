@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { initAuth, googleSignIn, logout } from './lib/firebase';
 import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage, loadAppInfoConfigDB, saveAppInfoConfigDB, DEFAULT_APP_INFO_CONFIG, AppInfoConfig } from './lib/db';
@@ -7,13 +7,15 @@ import { getJSTISOString } from './lib/dateUtils';
 import { Header } from './components/Header';
 import { SearchPanel } from './components/SearchPanel';
 import { SearchResults } from './components/SearchResults';
-import { resolvePreviewToggle } from './utils/searchPreviewMode';
 import { enabledSourcesLabel, isSourceEnabled } from './config/sources';
 import { CDDetailModal } from './components/CDDetailModal';
 import { CDDatabaseTable } from './components/CDDatabaseTable';
 import { DataExchangeModal } from './components/DataExchangeModal';
 import { BackupSettingsModal } from './components/BackupSettingsModal';
 import { useAutoBackup } from './hooks/useAutoBackup';
+import { useToast } from './hooks/useToast';
+import { useDisplaySettings } from './hooks/useDisplaySettings';
+import { useSearchPreviewMode } from './hooks/useSearchPreviewMode';
 import { getBackupSettings } from './lib/autoBackup';
 import { CDSpineScanner } from './components/CDSpineScanner';
 import { APISettingsModal } from './components/APISettingsModal';
@@ -28,19 +30,16 @@ import { TagManagerModal } from './components/TagManagerModal';
 import { TrackSearchAndSetlistView } from './components/TrackSearchAndSetlistView';
 import { CDInlinePreviewCard } from './components/CDInlinePreviewCard';
 import { CheckCircle2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { createLogger } from './lib/logger';
+
+const log = createLogger('App');
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
 
   // API Keys state
-  const [apiCredentials, setApiCredentials] = useState<APICredentials>(() => {
-    try {
-      const saved = localStorage.getItem('cd_api_credentials');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  // APIキーは暗号化して IndexedDB に保存している。起動後に loadApiCredentialsDB で復号して読み込む
+  const [apiCredentials, setApiCredentials] = useState<APICredentials>({});
 
   // CD Database State
   const [savedCDs, setSavedCDs] = useState<CDMetadata[]>([]);
@@ -68,62 +67,15 @@ export default function App() {
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
 
-  // 1. Search Panel Collapsed State (Item 1)
-  const [isSearchPanelCollapsed, setIsSearchPanelCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('cd_search_panel_collapsed') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  const handleToggleSearchPanelCollapse = (collapsed?: boolean) => {
-    setIsSearchPanelCollapsed((prev) => {
-      const next = typeof collapsed === 'boolean' ? collapsed : !prev;
-      try {
-        localStorage.setItem('cd_search_panel_collapsed', String(next));
-      } catch {}
-      return next;
-    });
-  };
-
-  // 4. Split Preview Mode & Current Preview CD (Item 4)
-  // 検索結果の詳細表示方式。検索を始めるたびに 'modal' から始める（保存はしない）
-  const [searchPreviewMode, setSearchPreviewMode] = useState<'inline' | 'modal'>('modal');
-
-  // 直近にフォーカスした（モーダルまたはスプリットで表示した）アルバムのID
-  const lastViewedCDIdRef = useRef<string | null>(null);
-
-  /**
-   * 詳細表示方式の切替（モーダル表示 ⇄ スプリット表示）。
-   * ここでは CD メタデータ詳細モーダルを開閉しない。詳細モーダルは、結果のクリックや
-   * プレビューの「詳細を開く」など明示的な操作でのみ開く。
-   * - 'modal'  : 右のプレビューを閉じて一覧のみのモーダル表示に戻す
-   * - 'inline' : フォーカス中のアルバム（開いているモーダル > プレビュー中 > 直近 > 先頭）を右に表示
-   */
-  const handleToggleSearchPreviewMode = (mode: 'inline' | 'modal') => {
-    const candidates = searchResponse?.candidates?.map((c) => c.cd) || [];
-    const result = resolvePreviewToggle(mode, {
-      candidateIds: candidates.map((c) => c.id),
-      modalId: selectedCDForModal?.id,
-      splitId: splitPreviewCD?.id,
-      lastViewedId: lastViewedCDIdRef.current,
-    });
-    setSearchPreviewMode(result.mode);
-    setSplitPreviewCD(candidates.find((c) => c.id === result.splitPreviewId) || null);
-  };
-
-  const [splitPreviewCD, setSplitPreviewCD] = useState<CDMetadata | null>(null);
-
   // Modal States
   const [selectedCDForModal, setSelectedCDForModal] = useState<CDMetadata | null>(null);
   const [modalCDList, setModalCDList] = useState<CDMetadata[]>([]);
-  useEffect(() => {
-    if (selectedCDForModal) lastViewedCDIdRef.current = selectedCDForModal.id;
-  }, [selectedCDForModal]);
-  useEffect(() => {
-    if (splitPreviewCD) lastViewedCDIdRef.current = splitPreviewCD.id;
-  }, [splitPreviewCD]);
+
+  // 検索結果の詳細表示方式（モーダル表示 ⇄ スプリット表示）と右プレビューのCD
+  const { searchPreviewMode, splitPreviewCD, setSplitPreviewCD, togglePreviewMode, resetForNewSearch } = useSearchPreviewMode({
+    candidates: searchResponse?.candidates?.map((c) => c.cd) || [],
+    selectedCDForModal,
+  });
   const [isBackupSettingsOpen, setIsBackupSettingsOpen] = useState(false);
   const [backupEnabled, setBackupEnabled] = useState(false);
   const [isLibraryLoaded, setIsLibraryLoaded] = useState(false);
@@ -141,68 +93,16 @@ export default function App() {
   const [isAdminModeOpen, setIsAdminModeOpen] = useState(false);
   const [appInfoConfig, setAppInfoConfig] = useState<AppInfoConfig>(DEFAULT_APP_INFO_CONFIG);
 
-  // Toast Notification
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Theme & Compact Header States
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    try {
-      const stored = localStorage.getItem('cd_app_theme');
-      return stored !== 'light';
-    } catch {
-      return true;
-    }
-  });
-
-  const [isCompactHeader, setIsCompactHeader] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('cd_header_compact') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      if (!isDarkMode) {
-        document.documentElement.classList.add('light-theme');
-        localStorage.setItem('cd_app_theme', 'light');
-      } else {
-        document.documentElement.classList.remove('light-theme');
-        localStorage.setItem('cd_app_theme', 'dark');
-      }
-    } catch {}
-  }, [isDarkMode]);
-
-  useEffect(() => {
-    try {
-      if (isCompactHeader) {
-        document.documentElement.classList.add('compact-header');
-        localStorage.setItem('cd_header_compact', 'true');
-      } else {
-        document.documentElement.classList.remove('compact-header');
-        localStorage.setItem('cd_header_compact', 'false');
-      }
-    } catch {}
-  }, [isCompactHeader]);
-
-  const handleToggleTheme = () => {
-    setIsDarkMode((prev) => {
-      const next = !prev;
-      setToastMessage(next ? '🌙 ダークモードに切り替えました' : '🌤️ おとなしいライトモード（低刺激・ソフトトーン）に切り替えました');
-      setTimeout(() => setToastMessage(null), 2500);
-      return next;
-    });
-  };
-
-  const handleToggleCompactHeader = () => {
-    setIsCompactHeader((prev) => {
-      const next = !prev;
-      setToastMessage(next ? 'ヘッダーをコンパクト表示にしました' : 'ヘッダーを標準サイズに戻しました');
-      setTimeout(() => setToastMessage(null), 2500);
-      return next;
-    });
-  };
+  // Toast Notification / 表示設定（テーマ・ヘッダー・検索パネル）
+  const { toastMessage, showToast } = useToast();
+  const {
+    isDarkMode,
+    toggleTheme,
+    isCompactHeader,
+    toggleCompactHeader,
+    isSearchPanelCollapsed,
+    toggleSearchPanelCollapse,
+  } = useDisplaySettings(showToast);
 
   // Load Auth state and Dexie IndexedDB on mount
   useEffect(() => {
@@ -232,13 +132,8 @@ export default function App() {
       const cds = await getAllCDs();
       setSavedCDs(cds);
     } catch (err) {
-      console.error('Failed to load local DB:', err);
+      log.error('Failed to load local DB:', err);
     }
-  };
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
   };
 
   // JSON自動バックアップ（有効なとき、条件を満たすとバックグラウンドで保存する）
@@ -253,7 +148,7 @@ export default function App() {
         return res;
       }
     } catch (err: any) {
-      console.error('Login error:', err);
+      log.error('Login error:', err);
       if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
         showToast('ログイン不可: ドメインが未承認です。アプリ情報ヘルプの解決手順をご確認ください。');
         setIsAppInfoOpen(true);
@@ -272,8 +167,12 @@ export default function App() {
 
   const handleSaveApiCredentials = async (updated: APICredentials) => {
     setApiCredentials(updated);
-    await saveApiCredentialsDB(updated);
-    showToast('API設定をローカルデータベース（IndexedDB）に保存しました');
+    const saved = await saveApiCredentialsDB(updated);
+    showToast(
+      saved
+        ? 'API設定を暗号化してローカルデータベース（IndexedDB）に保存しました'
+        : 'API設定を暗号化して保存できませんでした（この画面を開いている間だけ有効です）。HTTPS またはlocalhost で開いているか確認してください'
+    );
   };
 
   // Perform multi-source aggregated search
@@ -282,9 +181,7 @@ export default function App() {
     setSearchResponse(null);
     if (retryCount === 0) {
       // 検索の最初は常にモーダル表示（スプリットのプレビューも閉じる）
-      setSearchPreviewMode('modal');
-      setSplitPreviewCD(null);
-      lastViewedCDIdRef.current = null;
+      resetForNewSearch();
     }
 
     const fullQuery: SearchQuery = {
@@ -316,7 +213,7 @@ export default function App() {
       setSplitPreviewCD(null);
       setIsLoadingSearch(false);
     } catch (err: any) {
-      console.error('Search failure:', err);
+      log.error('Search failure:', err);
       if ((err.message === 'Failed to fetch' || err.message?.includes('fetch') || err.message?.includes('NetworkError')) && retryCount < 1) {
         setTimeout(() => handlePerformSearch(query, retryCount + 1), 1200);
         return;
@@ -563,9 +460,9 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isDarkMode={isDarkMode}
-        onToggleTheme={handleToggleTheme}
+        onToggleTheme={toggleTheme}
         isCompactHeader={isCompactHeader}
-        onToggleCompactHeader={handleToggleCompactHeader}
+        onToggleCompactHeader={toggleCompactHeader}
       />
 
       {/* Main Container */}
@@ -589,7 +486,7 @@ export default function App() {
                 <div className="hidden lg:flex flex-col items-center py-4 px-2 bg-slate-800/90 border border-slate-700/80 rounded-2xl shadow-xl space-y-4">
                   <button
                     type="button"
-                    onClick={() => handleToggleSearchPanelCollapse(false)}
+                    onClick={() => toggleSearchPanelCollapse(false)}
                     className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/40 transition-all cursor-pointer"
                     title="検索条件パネルを展開する"
                   >
@@ -598,7 +495,7 @@ export default function App() {
                   <span
                     className="text-[11px] font-bold text-slate-400 tracking-wider cursor-pointer hover:text-white select-none py-2"
                     style={{ writingMode: 'vertical-rl' }}
-                    onClick={() => handleToggleSearchPanelCollapse(false)}
+                    onClick={() => toggleSearchPanelCollapse(false)}
                   >
                     検索条件パネルを展開
                   </span>
@@ -609,7 +506,7 @@ export default function App() {
                   <span className="text-xs font-bold text-slate-300">検索条件パネルが折りたたまれています</span>
                   <button
                     type="button"
-                    onClick={() => handleToggleSearchPanelCollapse(false)}
+                    onClick={() => toggleSearchPanelCollapse(false)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold shadow cursor-pointer"
                   >
                     <PanelLeftOpen className="w-3.5 h-3.5" />
@@ -627,7 +524,7 @@ export default function App() {
                     setSearchResponse(null);
                     setSplitPreviewCD(null);
                   }}
-                  onToggleCollapse={() => handleToggleSearchPanelCollapse(true)}
+                  onToggleCollapse={() => toggleSearchPanelCollapse(true)}
                   isCollapsed={false}
                 />
               </div>
@@ -655,7 +552,7 @@ export default function App() {
                 onManualAdd={handleOpenManualAdd}
                 previewCDId={splitPreviewCD?.id}
                 previewMode={searchPreviewMode}
-                onTogglePreviewMode={handleToggleSearchPreviewMode}
+                onTogglePreviewMode={togglePreviewMode}
               />
             </div>
 
@@ -673,7 +570,7 @@ export default function App() {
                     );
                   }}
                   // 右上の✕: 詳細モーダルは開かず、モーダル表示（一覧のみ）に戻す
-                  onClose={() => handleToggleSearchPreviewMode('modal')}
+                  onClose={() => togglePreviewMode('modal')}
                 />
               </div>
             )}

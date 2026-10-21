@@ -22,6 +22,9 @@ import {
   Music,
   Scissors,
 } from 'lucide-react';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('PDFCatalogModal');
 
 interface PDFCatalogModalProps {
   allCDs: CDMetadata[];
@@ -1063,7 +1066,7 @@ export const PDFCatalogModal: React.FC<PDFCatalogModalProps> = ({
 
       pdf.save(`${modePrefix}_${timestamp}.pdf`);
     } catch (err) {
-      console.error('PDF generation failed:', err);
+      log.error('PDF generation failed:', err);
     } finally {
       setIsGenerating(false);
       setGenerationProgress(null);

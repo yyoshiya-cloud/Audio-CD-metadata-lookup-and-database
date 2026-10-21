@@ -11,6 +11,7 @@
  */
 import type { CDMetadata } from '../types/cd';
 import { db } from './db';
+import { settingsStore } from './settingsStore';
 import { buildCDsJSONString } from './jsonExportImport';
 import {
   BackupResult,
@@ -26,8 +27,19 @@ import {
   saveBackupState,
   selectFilesToDelete,
 } from './autoBackupCore';
+import { createLogger } from './logger';
+
+const log = createLogger('autoBackup');
 
 const HANDLE_KEY = 'autoBackupDirHandle';
+
+// 自動バックアップの設定・状態は、設定ストア経由で localStorage に保存する
+const backupStorage = {
+  getItem: (k: string) => settingsStore.getString(k),
+  setItem: (k: string, v: string) => {
+    settingsStore.setString(k, v);
+  },
+};
 
 // File System Access API の型は環境によって未定義のため any で扱う
 type DirHandle = any;
@@ -35,9 +47,9 @@ type DirHandle = any;
 export const isFolderBackupSupported = (): boolean =>
   typeof window !== 'undefined' && typeof (window as any).showDirectoryPicker === 'function';
 
-export const getBackupSettings = (): BackupSettings => loadBackupSettings(window.localStorage);
-export const getBackupState = (): BackupState => loadBackupState(window.localStorage);
-export const updateBackupSettings = (s: BackupSettings): void => saveBackupSettings(window.localStorage, s);
+export const getBackupSettings = (): BackupSettings => loadBackupSettings(backupStorage);
+export const getBackupState = (): BackupState => loadBackupState(backupStorage);
+export const updateBackupSettings = (s: BackupSettings): void => saveBackupSettings(backupStorage, s);
 
 // ---------------------------------------------------------------------------
 // 保存先フォルダのハンドル（IndexedDB に保存）
@@ -151,7 +163,7 @@ function record(result: BackupResult, fingerprint: string): BackupResult {
     next.lastBackupAt = result.at;
     next.lastFingerprint = fingerprint;
   }
-  saveBackupState(window.localStorage, next);
+  saveBackupState(backupStorage, next);
   return result;
 }
 
@@ -227,7 +239,7 @@ export async function runBackupNow(cds: CDMetadata[], opts: { interactive?: bool
     );
   } catch (err: any) {
     if (err?.name === 'AbortError') return fail('バックアップを中断しました。');
-    console.error('Backup error:', err);
+    log.error('Backup error:', err);
     return fail(`バックアップに失敗しました: ${err?.message || err}`);
   } finally {
     running = false;

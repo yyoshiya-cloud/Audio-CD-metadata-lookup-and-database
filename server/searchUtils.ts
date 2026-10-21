@@ -262,7 +262,6 @@ export interface NormalizableQuery {
   barcode?: string;
   freeText?: string;
   sources?: string[];
-  [key: string]: any;
 }
 
 const MAX_FIELD_LENGTH = 200;

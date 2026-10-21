@@ -1,3 +1,6 @@
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('imageEnhancer');
 /**
  * Client-side Canvas High-Resolution Sharpening & Upscaling
  * Scales the jacket image to a crisp high-res 1000x1000 canvas with high-quality smoothing,
@@ -53,7 +56,7 @@ export function enhanceImageWithCanvas(imageUrl: string, targetSize = 1000): Pro
         // Convert to high quality JPEG data URL (92% quality)
         resolve(canvas.toDataURL('image/jpeg', 0.92));
       } catch (err) {
-        console.warn('Canvas filter error:', err);
+        log.warn('Canvas filter error:', err);
         resolve(imageUrl);
       }
     };

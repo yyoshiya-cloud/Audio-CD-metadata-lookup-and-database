@@ -1,5 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
 import { fetchSafeExternalImage } from './security.js';
+import { createLogger } from '../src/lib/logger.js';
+import { errorMessage } from './apiTypes.js';
+
+const log = createLogger('upscaleImage', { timestamp: true });
 
 export async function upscaleJacketImage(
   imageBase64: string,
@@ -39,8 +43,8 @@ export async function upscaleJacketImage(
       const { buffer, mimeType: fetchedMime } = await fetchSafeExternalImage(imageBase64);
       mimeType = fetchedMime;
       cleanBase64 = buffer.toString('base64');
-    } catch (err: any) {
-      return { error: `画像取得エラー: ${err.message || '通信エラー'}` };
+    } catch (err: unknown) {
+      return { error: `画像取得エラー: ${errorMessage(err) || '通信エラー'}` };
     }
   }
 
@@ -93,8 +97,8 @@ Recreate the album artwork sharply with 1:1 square ratio. Preserve the original 
     }
 
     return { enhancedImageBase64, description };
-  } catch (err: any) {
-    console.log('Gemini image model quota limit (429) active, using client canvas fallback.');
+  } catch {
+    log.info('Gemini image model quota limit (429) active, using client canvas fallback.');
     return {
       error: 'Gemini APIの無料枠画像生成制限(Quota 429)に達しました。キャンバス高画質化フィルターを代替適用します。',
       isQuotaError: true,

@@ -47,15 +47,14 @@ export const TRACKLIST_HEADERS = [
 const MAX_CELL_CHARACTERS = 45000;
 
 /**
- * Sanitizes cell values for Google Sheets and Excel (.xlsx) exports:
- * 1. Prevents Formula Injection (cells starting with =, +, -, @, \t, \r are prefixed with ')
- *    unless allowTrustedFormula is explicitly true.
- * 2. Enforces the 45,000-character cell limit.
+ * Excel (.xlsx) 書き出し用にセルの値を整える:
+ * 1. 数式インジェクション対策（先頭が = + - @ タブ 改行 のセルは ' を付ける）
+ * 2. 1セル45,000文字の上限を守る
  */
-function sanitizeCellValue(val: any, allowTrustedFormula: boolean = false): any {
+function sanitizeCellValue(val: any): any {
   if (typeof val === 'string') {
     let processed = val;
-    if (!allowTrustedFormula && /^[\s]*[=+\-@\t\r]/.test(processed)) {
+    if (/^[\s]*[=+\-@\t\r]/.test(processed)) {
       processed = `'${processed}`;
     }
     if (processed.length > MAX_CELL_CHARACTERS) {
@@ -86,31 +85,8 @@ export const SUB_IMAGE_DEFAULT_LABELS: Record<SubImageType, string> = {
   other: 'その他付属画像',
 };
 
-export function getSerializedSubImagesByType(
-  cd: CDMetadata,
-  type: SubImageType,
-  mode: 'raw' | 'sheets' = 'raw'
-): string {
+export function getSerializedSubImagesByType(cd: CDMetadata, type: SubImageType): string {
   const subs = (cd.subImages || []).filter((s) => s && s.type === type && s.imageUrl && s.imageUrl.trim());
-  if (subs.length === 0) return '';
-
-  if (mode === 'sheets') {
-    // If single HTTP/HTTPS URL, we can use =IFERROR(IMAGE(...)) just like coverUrl
-    if (subs.length === 1 && !subs[0].imageUrl.startsWith('data:')) {
-      const safeUrl = subs[0].imageUrl.trim().replace(/"/g, '%22');
-      return `=IFERROR(IMAGE("${safeUrl}"), "${safeUrl}")`;
-    }
-    return subs
-      .map((s) => {
-        const u = s.imageUrl.trim();
-        if (u.startsWith('data:') && u.length > MAX_CELL_CHARACTERS) {
-          return '[添付画像あり(端末ローカル)]';
-        }
-        return u;
-      })
-      .join(' || ');
-  }
-
   return subs.map((s) => s.imageUrl.trim()).join(' || ');
 }
 
@@ -119,11 +95,9 @@ export function getSerializedSubImagesByType(
  */
 export function formatCDToRowValues(
   cd: CDMetadata,
-  columns: ExportColumnConfig[],
-  options?: { forGoogleSheetsFormula?: boolean }
+  columns: ExportColumnConfig[]
 ): any[] {
   const activeCols = columns.filter((c) => c.enabled);
-  const forSheetsFormula = options?.forGoogleSheetsFormula ?? true;
 
   return activeCols.map((col) => {
     let cellValue: any = '';
@@ -146,22 +120,7 @@ export function formatCDToRowValues(
       };
       cellValue = sourceNames[cd.source] || cd.source;
     } else if (col.key === 'coverUrl') {
-      if (!cd.coverUrl) {
-        cellValue = '';
-      } else if (cd.coverUrl.startsWith('data:')) {
-        if (!forSheetsFormula || cd.coverUrl.length <= MAX_CELL_CHARACTERS) {
-          cellValue = cd.coverUrl;
-        } else {
-          cellValue = '[添付画像あり(端末ローカル)]';
-        }
-      } else if (forSheetsFormula) {
-        // Safely escape any double quotes in URL before embedding into =IFERROR(IMAGE(...))
-        const safeUrl = cd.coverUrl.replace(/"/g, '%22');
-        cellValue = `=IFERROR(IMAGE("${safeUrl}"), "${safeUrl}")`;
-        return sanitizeCellValue(cellValue, true);
-      } else {
-        cellValue = cd.coverUrl;
-      }
+      cellValue = cd.coverUrl || '';
     } else if (
       col.key === 'backCoverUrl' ||
       col.key === 'obiUrl' ||
@@ -170,15 +129,7 @@ export function formatCDToRowValues(
       col.key === 'otherSubImagesUrl'
     ) {
       const subType = SUB_IMAGE_TYPE_MAP[col.key];
-      const serialized = getSerializedSubImagesByType(
-        cd,
-        subType,
-        forSheetsFormula ? 'sheets' : 'raw'
-      );
-      if (serialized.startsWith('=IFERROR(IMAGE(')) {
-        return sanitizeCellValue(serialized, true);
-      }
-      cellValue = serialized;
+      cellValue = getSerializedSubImagesByType(cd, subType);
     } else if (col.key === 'createdAt' || col.key === 'updatedAt') {
       const val = cd[col.key as 'createdAt' | 'updatedAt'];
       cellValue = val ? formatJSTDateTime(val) : '';
@@ -604,7 +555,6 @@ export function parseSpreadsheetRowsToCDs(
         notes: getVal(notesIdx) || undefined,
         createdAt: getVal(createdAtIdx) || getJSTISOString(),
         updatedAt: getJSTISOString(),
-        syncedToSheets: true,
       };
 
       combinedAlbumMap.set(albumKey, newCd);
@@ -661,7 +611,6 @@ export function parseSpreadsheetRowsToCDs(
       notes: getVal(notesIdx) || undefined,
       createdAt: getVal(createdAtIdx) || getJSTISOString(),
       updatedAt: getJSTISOString(),
-      syncedToSheets: true,
     };
 
     result.push(cd);

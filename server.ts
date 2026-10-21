@@ -16,6 +16,23 @@ import {
   securityHeadersMiddleware,
 } from './server/security.js';
 import { ImageCache } from './server/imageCache.js';
+import { Schema, validate } from './server/validate.js';
+import { errorMessage } from './server/apiTypes.js';
+import {
+  aiAnalyzeTagsBodySchema,
+  aiBackfillBodySchema,
+  imageBase64BodySchema,
+  imageProxyQuerySchema,
+  itunesTracksQuerySchema,
+  ocrBodySchema,
+  searchBodySchema,
+  upscaleBodySchema,
+  vinylLookupBodySchema,
+} from './server/schemas.js';
+import type { SearchQuery } from './src/types/cd.js';
+import { createLogger } from './src/lib/logger.js';
+
+const log = createLogger('server', { timestamp: true });
 
 dotenv.config();
 
@@ -61,7 +78,14 @@ const imageProxyRateLimiter = createRateLimiter({
 // ジャケット画像プロキシ用のメモリキャッシュ
 const coverImageCache = new ImageCache();
 
-const MAX_BATCH_ITEMS_PER_REQUEST = 50;
+/** リクエストの入力を検証する。不正なら 400 を返して null を返す */
+function readInput<T>(schema: Schema<T>, input: unknown, res: express.Response, asText = false): T | null {
+  const result = validate(schema, input ?? {});
+  if (result.ok) return result.data;
+  if (asText) res.status(400).send(result.error);
+  else res.status(400).json({ error: result.error });
+  return null;
+}
 
 // Health Check API
 app.get('/api/health', (req, res) => {
@@ -71,104 +95,96 @@ app.get('/api/health', (req, res) => {
 // Aggregated Search API across MusicBrainz, Discogs, iTunes, and NDL
 app.post('/api/search', searchRateLimiter, async (req, res) => {
   try {
-    const { catalogNumber, catno, title, artist, trackTitle, barcode, freeText, sources, apiKeys } = req.body || {};
-    const effectiveCatno = catalogNumber || catno;
-    
-    if (!effectiveCatno && !title && !artist && !trackTitle && !barcode && !freeText) {
+    const body = readInput(searchBodySchema, req.body, res);
+    if (!body) return;
+    const effectiveCatno = body.catalogNumber || body.catno;
+
+    if (!effectiveCatno && !body.title && !body.artist && !body.trackTitle && !body.barcode && !body.freeText) {
       return res.status(400).json({ error: '検索条件（型番、タイトル、歌手名、曲名、バーコード等）を入力してください。' });
     }
 
     const result = await performAggregatedSearch({
       catalogNumber: effectiveCatno,
-      title,
-      artist,
-      trackTitle,
-      barcode,
-      freeText,
-      sources,
-      apiKeys,
+      title: body.title,
+      artist: body.artist,
+      trackTitle: body.trackTitle,
+      barcode: body.barcode,
+      freeText: body.freeText,
+      sources: body.sources as SearchQuery['sources'],
+      apiKeys: body.apiKeys as SearchQuery['apiKeys'],
     });
 
     res.json(result);
-  } catch (err: any) {
-    console.error('Error handling /api/search:', err);
-    res.status(500).json({ error: err.message || 'メタデータ検索中にエラーが発生しました。' });
+  } catch (err: unknown) {
+    log.error('Error handling /api/search:', err);
+    res.status(500).json({ error: errorMessage(err) || 'メタデータ検索中にエラーが発生しました。' });
   }
 });
 
 // Fetch iTunes tracks on demand
 app.get('/api/itunes/tracks', searchRateLimiter, async (req, res) => {
   try {
-    const collectionId = req.query.collectionId ? parseInt(req.query.collectionId as string, 10) : 0;
+    const query = readInput(itunesTracksQuerySchema, req.query, res);
+    if (!query) return;
+    const collectionId = /^\d+$/.test(query.collectionId) ? parseInt(query.collectionId, 10) : 0;
     if (!collectionId) {
-      return res.status(400).json({ error: 'collectionId is required' });
+      return res.status(400).json({ error: 'collectionId は数字で指定してください。' });
     }
 
     const tracks = await fetchITunesTracks(collectionId);
     res.json({ tracks });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'iTunesトラック取得エラー' });
+  } catch (err: unknown) {
+    res.status(500).json({ error: errorMessage(err) || 'iTunesトラック取得エラー' });
   }
 });
 
 // Gemini AI CD Spine / Jacket Photo OCR API
 app.post('/api/ocr', aiRateLimiter, async (req, res) => {
   try {
-    const { imageBase64, mimeType } = req.body || {};
-    if (!imageBase64 || typeof imageBase64 !== 'string') {
-      return res.status(400).json({ error: '画像データ(imageBase64)が必要です。' });
-    }
+    const body = readInput(ocrBodySchema, req.body, res);
+    if (!body) return;
 
-    const ocrResult = await processCDImageOCR(imageBase64, mimeType || 'image/jpeg');
+    const ocrResult = await processCDImageOCR(body.imageBase64, body.mimeType || 'image/jpeg');
     res.json(ocrResult);
-  } catch (err: any) {
-    console.error('Error in /api/ocr:', err);
-    res.status(500).json({ error: err.message || 'AI画像解析中にエラーが発生しました。' });
+  } catch (err: unknown) {
+    log.error('Error in /api/ocr:', err);
+    res.status(500).json({ error: errorMessage(err) || 'AI画像解析中にエラーが発生しました。' });
   }
 });
 
 // Server-side API to lookup same-title LP / EP vinyl record release dates via MusicBrainz, Discogs, NDL, and Gemini
 app.post('/api/lookup-vinyl-release', aiRateLimiter, async (req, res) => {
   try {
-    const { items, discogsToken } = req.body || {};
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'LP/EP発売日を検索する対象のCD情報(items)が必要です。' });
-    }
-    if (items.length > MAX_BATCH_ITEMS_PER_REQUEST) {
-      return res.status(400).json({
-        error: `1回のリクエストで処理できる件数は最大 ${MAX_BATCH_ITEMS_PER_REQUEST} 件までです（送信件数: ${items.length}件）。`,
-      });
-    }
+    const body = readInput(vinylLookupBodySchema, req.body, res);
+    if (!body) return;
 
-    const queries = items.map((item: any) => ({
+    const queries = body.items.map((item) => ({
       id: item.id,
       title: item.title || '',
       artist: item.artist || '',
       catalogNumber: item.catalogNumber || '',
       cdReleaseDate: item.releaseDate || '',
-      discogsToken: discogsToken || item.discogsToken,
+      discogsToken: body.discogsToken || item.discogsToken,
     }));
 
     const results = await lookupVinylReleaseDates(queries);
     res.json({ results });
-  } catch (err: any) {
-    console.error('Error in /api/lookup-vinyl-release:', err);
-    res.status(500).json({ error: err.message || 'LP/EPレコード発売日の取得中にエラーが発生しました。' });
+  } catch (err: unknown) {
+    log.error('Error in /api/lookup-vinyl-release:', err);
+    res.status(500).json({ error: errorMessage(err) || 'LP/EPレコード発売日の取得中にエラーが発生しました。' });
   }
 });
 
 // Server-side Gemini AI Cover Art Upscaling & Enhancement
 app.post('/api/upscale-jacket', aiRateLimiter, async (req, res) => {
   try {
-    const { imageBase64, title, artist, catalogNumber } = req.body || {};
-    if (!imageBase64 || typeof imageBase64 !== 'string') {
-      return res.status(400).json({ error: '画像URLまたは画像データ(imageBase64)が必要です。' });
-    }
+    const body = readInput(upscaleBodySchema, req.body, res);
+    if (!body) return;
 
-    const result = await upscaleJacketImage(imageBase64, title, artist, catalogNumber);
+    const result = await upscaleJacketImage(body.imageBase64, body.title, body.artist, body.catalogNumber);
     return res.status(200).json(result);
-  } catch (err: any) {
-    console.log('Handled /api/upscale-jacket fallback.');
+  } catch {
+    log.info('Handled /api/upscale-jacket fallback.');
     return res.status(200).json({
       error: 'Gemini API利用制限のため、キャンバス高画質化フィルターを代替適用します。',
       isQuotaError: true,
@@ -179,52 +195,40 @@ app.post('/api/upscale-jacket', aiRateLimiter, async (req, res) => {
 // Server-side Gemini AI Auto-Tagging and Music Analysis
 app.post('/api/ai-analyze-tags', aiRateLimiter, async (req, res) => {
   try {
-    const { cds, options } = req.body || {};
-    if (!cds || !Array.isArray(cds) || cds.length === 0) {
-      return res.status(400).json({ error: '分析対象のCDリスト(cds)が必要です。' });
-    }
-    if (cds.length > MAX_BATCH_ITEMS_PER_REQUEST) {
-      return res.status(400).json({
-        error: `1回のリクエストで分析できるCD件数は最大 ${MAX_BATCH_ITEMS_PER_REQUEST} 件までです（送信件数: ${cds.length}件）。`,
-      });
-    }
+    const body = readInput(aiAnalyzeTagsBodySchema, req.body, res);
+    if (!body) return;
 
-    const results = await analyzeCDTagsWithGemini(cds, options);
+    const results = await analyzeCDTagsWithGemini(
+      body.cds as unknown as Parameters<typeof analyzeCDTagsWithGemini>[0],
+      body.options as Parameters<typeof analyzeCDTagsWithGemini>[1]
+    );
     res.json({ results });
-  } catch (err: any) {
-    console.error('Error in /api/ai-analyze-tags:', err);
-    res.status(500).json({ error: err.message || 'AIタグ分析中にエラーが発生しました。' });
+  } catch (err: unknown) {
+    log.error('Error in /api/ai-analyze-tags:', err);
+    res.status(500).json({ error: errorMessage(err) || 'AIタグ分析中にエラーが発生しました。' });
   }
 });
 
 // Server-side Gemini AI Auto-Backfill for missing CD metadata
 app.post('/api/ai-backfill-metadata', aiRateLimiter, async (req, res) => {
   try {
-    const { cds } = req.body || {};
-    if (!cds || !Array.isArray(cds) || cds.length === 0) {
-      return res.status(400).json({ error: '補完対象のCDリスト(cds)が必要です。' });
-    }
-    if (cds.length > MAX_BATCH_ITEMS_PER_REQUEST) {
-      return res.status(400).json({
-        error: `1回のリクエストで補完できるCD件数は最大 ${MAX_BATCH_ITEMS_PER_REQUEST} 件までです（送信件数: ${cds.length}件）。`,
-      });
-    }
+    const body = readInput(aiBackfillBodySchema, req.body, res);
+    if (!body) return;
 
-    const results = await backfillCDMetadataWithGemini(cds);
+    const results = await backfillCDMetadataWithGemini(body.cds as unknown as Parameters<typeof backfillCDMetadataWithGemini>[0]);
     res.json({ results });
-  } catch (err: any) {
-    console.error('Error in /api/ai-backfill-metadata:', err);
-    res.status(500).json({ error: err.message || 'Gemini APIによる自動補完処理に失敗しました' });
+  } catch (err: unknown) {
+    log.error('Error in /api/ai-backfill-metadata:', err);
+    res.status(500).json({ error: errorMessage(err) || 'Gemini APIによる自動補完処理に失敗しました' });
   }
 });
 
 // Server-side Image Proxy for external CDNs (Discogs, Cover Art Archive, Rakuten, etc.) with SSRF & SVG protection
 app.get('/api/image-proxy', imageProxyRateLimiter, async (req, res) => {
   try {
-    const imageUrl = req.query.url as string;
-    if (!imageUrl) {
-      return res.status(400).send('有効な画像URLを指定してください。');
-    }
+    const query = readInput(imageProxyQuerySchema, req.query, res, true);
+    if (!query) return;
+    const imageUrl = query.url;
 
     // キャッシュ・同時リクエストの集約付き。ジャケット用途なので上限サイズ・待ち時間は短めにする
     const { buffer, mimeType } = await coverImageCache.getOrFetch(imageUrl, () =>
@@ -239,19 +243,17 @@ app.get('/api/image-proxy', imageProxyRateLimiter, async (req, res) => {
     );
     res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=604800, immutable');
     res.send(buffer);
-  } catch (err: any) {
-    res.status(400).send(err.message || '画像プロキシ処理中にエラーが発生しました。');
+  } catch (err: unknown) {
+    res.status(400).send(errorMessage(err) || '画像プロキシ処理中にエラーが発生しました。');
   }
 });
 
 // Server-side Image to Base64 Data URL converter for external image links with SSRF & SVG protection
 app.post('/api/image-base64', imageProxyRateLimiter, async (req, res) => {
   try {
-    const { url } = req.body || {};
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({ error: '有効な画像URLを指定してください。' });
-    }
-    const trimmedUrl = url.trim();
+    const body = readInput(imageBase64BodySchema, req.body, res);
+    if (!body) return;
+    const trimmedUrl = body.url.trim();
     if (trimmedUrl.startsWith('data:image/')) {
       const lowerData = trimmedUrl.slice(0, 64).toLowerCase();
       if (lowerData.includes('svg') || lowerData.includes('xml') || lowerData.includes('html')) {
@@ -265,8 +267,8 @@ app.post('/api/image-base64', imageProxyRateLimiter, async (req, res) => {
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
     res.json({ dataUrl, mimeType });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || '画像のBASE64変換中にエラーが発生しました。' });
+  } catch (err: unknown) {
+    res.status(400).json({ error: errorMessage(err) || '画像のBASE64変換中にエラーが発生しました。' });
   }
 });
 
@@ -332,7 +334,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`CD Catalog App server listening on port ${PORT}`);
+    log.info(`CD Catalog App server listening on port ${PORT}`);
   });
 }
 

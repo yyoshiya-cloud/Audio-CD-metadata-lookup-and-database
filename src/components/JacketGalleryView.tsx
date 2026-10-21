@@ -27,6 +27,9 @@ import {
   LayoutGrid,
   Star,
 } from 'lucide-react';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('JacketGalleryView');
 
 interface JacketGalleryViewProps {
   cds: CDMetadata[];
@@ -303,7 +306,7 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
         throw new Error('高画質化処理に失敗しました');
       }
     } catch (err: any) {
-      console.error('Upscale error:', err);
+      log.error('Upscale error:', err);
       try {
         const canvasEnhanced = await enhanceImageWithCanvas(cd.coverUrl, 1000);
         const updatedCD: CDMetadata = {
@@ -407,7 +410,7 @@ export const JacketGalleryView: React.FC<JacketGalleryViewProps> = ({
         showToast('変換可能な外部画像リンクがありませんでした');
       }
     } catch (err) {
-      console.error('Batch Base64 conversion error:', err);
+      log.error('Batch Base64 conversion error:', err);
       showToast('一括BASE64変換中にエラーが発生しました');
     } finally {
       setIsBatchConverting(false);

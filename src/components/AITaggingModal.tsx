@@ -3,6 +3,9 @@ import { CDMetadata } from '../types/cd';
 import { getJSTISOString } from '../lib/dateUtils';
 import { normalizeSingleTag, normalizeTagList, applyGenreRuleFilter } from '../lib/tagNormalizer';
 import { X, Sparkles, RefreshCw, CheckCircle2, Tag, Disc, AlertCircle, Check, Plus, Info, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('AITaggingModal');
 
 interface TagEvidenceItem {
   tag: string;
@@ -208,7 +211,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
           });
         }
       } catch (err: any) {
-        console.warn('Handled batch chunk fallback:', err?.message || err);
+        log.warn('Handled batch chunk fallback:', err?.message || err);
         // Fallback for this chunk using multi-metadata rule filter (prioritizing vinylRecordReleaseDate over releaseDate)
         chunk.forEach((c) => {
           const hasVinyl = Boolean(c.vinylRecordReleaseDate && c.vinylRecordReleaseDate.trim());
@@ -349,7 +352,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
       await onApplyBatchTags(updatedList);
       onClose();
     } catch (err: any) {
-      console.error('Failed to apply batch tags:', err);
+      log.error('Failed to apply batch tags:', err);
       setErrorMessage(`保存エラー: ${err.message || '通信エラー'}`);
     } finally {
       setIsSaving(false);

@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import type { CDMetadata } from '../types/cd';
 import { maybeRunAutoBackup } from '../lib/autoBackup';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('useAutoBackup');
 
 const DEBOUNCE_MS = 20 * 1000; // データ変更後、操作が落ち着いてから確認
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 開いたままの場合の定期確認
@@ -40,7 +43,7 @@ export function useAutoBackup(
         noticeRef.current({ kind: 'needs-permission', message: `自動バックアップ: ${outcome.message}（「書き出し・読み込み」の隣の「自動バックアップ」から許可してください）` });
       }
     } catch (err) {
-      console.error('Auto backup check failed:', err);
+      log.error('Auto backup check failed:', err);
     }
   });
 

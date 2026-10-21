@@ -1,5 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 import { generateContentWithFallback } from './geminiFallback.js';
+import { createLogger } from '../src/lib/logger.js';
+
+const log = createLogger('ocr', { timestamp: true });
 
 export interface OCRResult {
   catalogNumber?: string;
@@ -78,7 +81,7 @@ Return ONLY a strict valid JSON object in this format with no code markdown back
       return { rawText: text };
     }
   } catch (err: any) {
-    console.error('Error running Gemini OCR:', err);
+    log.error('Error running Gemini OCR:', err);
     throw new Error(`AI OCR解析エラー: ${err.message || '画像の解析に失敗しました。'}`);
   }
 }

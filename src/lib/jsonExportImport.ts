@@ -124,11 +124,11 @@ export function buildCDsJSONString(items: CDMetadata[], prettyPrint: boolean = t
       vinylRecordFormat: cd.vinylRecordFormat || '',
       vinylRecordCatalogNumber: cd.vinylRecordCatalogNumber ? normalizeCatalogNumber(cd.vinylRecordCatalogNumber) : '',
       subImages: subs,
-      backCoverUrl: getSerializedSubImagesByType(cd, 'back', 'raw'),
-      obiUrl: getSerializedSubImagesByType(cd, 'obi', 'raw'),
-      discUrl: getSerializedSubImagesByType(cd, 'disc', 'raw'),
-      bookletUrl: getSerializedSubImagesByType(cd, 'booklet', 'raw'),
-      otherSubImagesUrl: getSerializedSubImagesByType(cd, 'other', 'raw'),
+      backCoverUrl: getSerializedSubImagesByType(cd, 'back'),
+      obiUrl: getSerializedSubImagesByType(cd, 'obi'),
+      discUrl: getSerializedSubImagesByType(cd, 'disc'),
+      bookletUrl: getSerializedSubImagesByType(cd, 'booklet'),
+      otherSubImagesUrl: getSerializedSubImagesByType(cd, 'other'),
     };
   });
 

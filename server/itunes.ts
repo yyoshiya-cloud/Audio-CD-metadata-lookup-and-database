@@ -1,4 +1,8 @@
 import { CDMetadata, TrackInfo } from '../src/types/cd.js';
+import { createLogger } from '../src/lib/logger.js';
+import { ITunesResult } from './apiTypes.js';
+
+const log = createLogger('itunes', { timestamp: true });
 
 /**
  * Search iTunes Search API
@@ -38,7 +42,7 @@ export async function searchITunes(query: {
     }
 
     if (!res.ok) {
-      console.warn(`iTunes API returned status ${res.status}`);
+      log.warn(`iTunes API returned status ${res.status}`);
       return [];
     }
 
@@ -47,7 +51,7 @@ export async function searchITunes(query: {
 
     // Deduplicate by collectionId when entity=song returns multiple songs from the same album
     const seenCollectionIds = new Set<number>();
-    const results: any[] = [];
+    const results: ITunesResult[] = [];
     for (const item of rawResults) {
       const cid = item.collectionId;
       if (!cid || seenCollectionIds.has(cid)) continue;
@@ -120,7 +124,7 @@ export async function searchITunes(query: {
 
     return items;
   } catch (err) {
-    console.error('Error searching iTunes API:', err);
+    log.error('Error searching iTunes API:', err);
     return [];
   }
 }
@@ -135,11 +139,11 @@ export async function fetchITunesTracks(collectionId: number): Promise<TrackInfo
     if (!res.ok) return [];
 
     const data = await res.json();
-    const results = data.results || [];
+    const results: ITunesResult[] = data.results || [];
 
     const tracks: TrackInfo[] = [];
 
-    results.forEach((item: any) => {
+    results.forEach((item) => {
       if (item.wrapperType === 'track') {
         const ms = item.trackTimeMillis;
         let duration = '';

@@ -1,6 +1,10 @@
 import { CDMetadata, TrackInfo } from '../src/types/cd.js';
 
 import { digitsOnly, isValidBarcodeLength } from './searchUtils.js';
+import { createLogger } from '../src/lib/logger.js';
+import { errorMessage, isAbortError } from './apiTypes.js';
+
+const log = createLogger('rakuten', { timestamp: true });
 
 /**
  * Search 楽天ブックスCD検索API (Rakuten Books CD Search API)
@@ -123,10 +127,10 @@ export async function searchRakutenBooks(query: {
     }
 
     return results;
-  } catch (err: any) {
-    console.error('Error searching Rakuten Books API:', err?.message || err);
+  } catch (err: unknown) {
+    log.error('Error searching Rakuten Books API:', errorMessage(err));
     // 「API別データ比較」にエラー理由を表示できるよう、握りつぶさずに投げ直す
-    if (err?.name === 'AbortError') throw new Error('楽天ブックスAPIがタイムアウトしました (6秒)。');
+    if (isAbortError(err)) throw new Error('楽天ブックスAPIがタイムアウトしました (6秒)。');
     throw err;
   }
 }

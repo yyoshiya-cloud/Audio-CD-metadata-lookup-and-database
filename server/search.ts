@@ -19,7 +19,10 @@ const ALL_SOURCES: APISource[] = ENABLED_SOURCES;
 // 1ソースが遅くても全体を待たせない。超過したソースは「結果なし(タイムアウト)」として扱う。
 const SOURCE_DEADLINE_MS = 12000;
 
-function runSource(source: APISource, q: any): Promise<SourceOutcome> {
+/** 各ソースの検索関数に渡す条件（型番は catno に統一済み） */
+type SourceQuery = Pick<SearchQuery, 'title' | 'artist' | 'trackTitle' | 'barcode' | 'freeText' | 'apiKeys'> & { catno?: string };
+
+function runSource(source: APISource, q: SourceQuery): Promise<SourceOutcome> {
   let p: Promise<CDMetadata[]>;
   switch (source) {
     case 'musicbrainz': p = searchMusicBrainz(q); break;
@@ -54,7 +57,7 @@ function runSource(source: APISource, q: any): Promise<SourceOutcome> {
  */
 export async function performAggregatedSearch(rawQuery: SearchQuery): Promise<SearchResponse> {
   const startTime = Date.now();
-  const query = normalizeSearchQuery(rawQuery as any) as SearchQuery & { catno: string; barcode: string; catalogNumber: string };
+  const query = normalizeSearchQuery(rawQuery);
 
   const selectedSources: APISource[] =
     Array.isArray(query.sources) && query.sources.length > 0

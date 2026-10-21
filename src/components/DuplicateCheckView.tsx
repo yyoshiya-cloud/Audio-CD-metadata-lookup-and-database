@@ -8,6 +8,9 @@ import {
   RefreshCw,
   Copy,
 } from 'lucide-react';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('DuplicateCheckView');
 
 interface DuplicateCheckViewProps {
   cds: CDMetadata[];
@@ -136,7 +139,7 @@ export const DuplicateCheckView: React.FC<DuplicateCheckViewProps> = ({
       setCompletedMessage(`「${group.proposedMerged.title}」の重複${group.items.length}件を統合しました。`);
       setTimeout(() => setCompletedMessage(null), 3500);
     } catch (err) {
-      console.error('Merge error:', err);
+      log.error('Merge error:', err);
     } finally {
       setMergingKeys((prev) => {
         const next = new Set(prev);
@@ -158,7 +161,7 @@ export const DuplicateCheckView: React.FC<DuplicateCheckViewProps> = ({
       setCompletedMessage(`全 ${duplicateGroups.length} グループの重複CDを一括統合しました！`);
       setTimeout(() => setCompletedMessage(null), 4000);
     } catch (err) {
-      console.error('Merge all error:', err);
+      log.error('Merge all error:', err);
     } finally {
       setIsMergingAll(false);
     }

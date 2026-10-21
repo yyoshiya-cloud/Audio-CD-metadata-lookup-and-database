@@ -31,6 +31,9 @@ import {
   Copy,
   FileJson
 } from 'lucide-react';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('DataExchangeModal');
 
 interface DataExchangeModalProps {
   itemsToExport: CDMetadata[];
@@ -139,7 +142,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
       setJsonExportSuccess(true);
       setTimeout(() => setJsonExportSuccess(false), 4500);
     } catch (err: any) {
-      console.error('JSON Export error:', err);
+      log.error('JSON Export error:', err);
       setErrorMessage(err.message || 'JSONファイルの書き出しに失敗しました。');
     }
   };
@@ -168,7 +171,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
       setJsonCopySuccess(true);
       setTimeout(() => setJsonCopySuccess(false), 3000);
     } catch (err: any) {
-      console.error('Clipboard copy error:', err);
+      log.error('Clipboard copy error:', err);
       setErrorMessage('クリップボードへのコピーに失敗しました。');
     }
   };
@@ -198,7 +201,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
         exportedAt: res.exportedAt,
       });
     } catch (err: any) {
-      console.error('JSON parse error:', err);
+      log.error('JSON parse error:', err);
       setErrorMessage(err.message || 'JSONデータの解析に失敗しました。');
     } finally {
       setIsParsingJSON(false);
@@ -223,7 +226,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
       setJsonTextInput('');
       setJsonImportFile(null);
     } catch (err: any) {
-      console.error('JSON Sync error:', err);
+      log.error('JSON Sync error:', err);
       setErrorMessage(err.message || 'ライブラリへの反映中にエラーが発生しました。');
     } finally {
       setIsSyncingToLibrary(false);
@@ -250,7 +253,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
       setCsvExportSuccess(true);
       setTimeout(() => setCsvExportSuccess(false), 4500);
     } catch (err: any) {
-      console.error('CSV Export error:', err);
+      log.error('CSV Export error:', err);
       setErrorMessage(err.message || 'CSVファイルの書き出しに失敗しました。');
     }
   };
@@ -277,7 +280,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
         fileNames: res.fileNames,
       });
     } catch (err: any) {
-      console.error('CSV parse error:', err);
+      log.error('CSV parse error:', err);
       setErrorMessage(err.message || 'CSVファイルの解析に失敗しました。');
     } finally {
       setIsParsingCSV(false);
@@ -302,7 +305,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
       setCsvAlbumFile(null);
       setCsvTrackFile(null);
     } catch (err: any) {
-      console.error('CSV Sync error:', err);
+      log.error('CSV Sync error:', err);
       setErrorMessage(err.message || 'ライブラリへの反映中にエラーが発生しました。');
     } finally {
       setIsSyncingToLibrary(false);
@@ -320,7 +323,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
       const result = exportCDsToExcel(itemsToExport, excelFileName, DEFAULT_COLUMN_CONFIG);
       setExcelExportResult(result);
     } catch (err: any) {
-      console.error('Excel Export error:', err);
+      log.error('Excel Export error:', err);
       setErrorMessage(err.message || 'Excelファイルの書き出しに失敗しました。');
     }
   };
@@ -366,7 +369,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
         });
       }
     } catch (err: any) {
-      console.error('File parse error:', err);
+      log.error('File parse error:', err);
       setErrorMessage(err.message || 'ファイルの解析に失敗しました。');
     } finally {
       setIsParsingExcel(false);
@@ -388,7 +391,7 @@ export const DataExchangeModal: React.FC<DataExchangeModalProps> = ({
       setExcelParsedInfo(null);
       setExcelImportFile(null);
     } catch (err: any) {
-      console.error('Sync error:', err);
+      log.error('Sync error:', err);
       setErrorMessage(err.message || 'ライブラリへの同期中にエラーが発生しました。');
     } finally {
       setIsSyncingToLibrary(false);

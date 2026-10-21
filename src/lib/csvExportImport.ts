@@ -65,11 +65,11 @@ export function generateAlbumsCSVContent(cds: CDMetadata[]): string {
     cd.tracks ? cd.tracks.length : 0,
     escapeCSV((cd.tags || []).join(', ')),
     escapeCSV(cd.coverUrl || ''),
-    escapeCSV(getSerializedSubImagesByType(cd, 'back', 'raw')),
-    escapeCSV(getSerializedSubImagesByType(cd, 'obi', 'raw')),
-    escapeCSV(getSerializedSubImagesByType(cd, 'disc', 'raw')),
-    escapeCSV(getSerializedSubImagesByType(cd, 'booklet', 'raw')),
-    escapeCSV(getSerializedSubImagesByType(cd, 'other', 'raw')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'back')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'obi')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'disc')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'booklet')),
+    escapeCSV(getSerializedSubImagesByType(cd, 'other')),
     escapeCSV(cd.notes || ''),
     escapeCSV(cd.source || ''),
     escapeCSV(cd.createdAt || ''),
@@ -140,11 +140,11 @@ export function generateCombinedCSVContent(cds: CDMetadata[]): string {
 
   const rows: string[][] = [];
   cds.forEach((cd) => {
-    const backStr = escapeCSV(getSerializedSubImagesByType(cd, 'back', 'raw'));
-    const obiStr = escapeCSV(getSerializedSubImagesByType(cd, 'obi', 'raw'));
-    const discStr = escapeCSV(getSerializedSubImagesByType(cd, 'disc', 'raw'));
-    const bookletStr = escapeCSV(getSerializedSubImagesByType(cd, 'booklet', 'raw'));
-    const otherStr = escapeCSV(getSerializedSubImagesByType(cd, 'other', 'raw'));
+    const backStr = escapeCSV(getSerializedSubImagesByType(cd, 'back'));
+    const obiStr = escapeCSV(getSerializedSubImagesByType(cd, 'obi'));
+    const discStr = escapeCSV(getSerializedSubImagesByType(cd, 'disc'));
+    const bookletStr = escapeCSV(getSerializedSubImagesByType(cd, 'booklet'));
+    const otherStr = escapeCSV(getSerializedSubImagesByType(cd, 'other'));
 
     if (cd.tracks && cd.tracks.length > 0) {
       cd.tracks.forEach((tr) => {

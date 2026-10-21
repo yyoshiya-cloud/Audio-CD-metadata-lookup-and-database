@@ -1,5 +1,6 @@
 import { CDMetadata } from '../src/types/cd.js';
 import { catnoVariants, digitsOnly, isValidBarcodeLength } from './searchUtils.js';
+import { DiscogsSearchResult, errorMessage, isAbortError } from './apiTypes.js';
 
 /** Discogs はアーティスト名の同名区別に "(2)" のような接尾辞を付ける */
 export function cleanDiscogsArtist(name: string): string {
@@ -89,18 +90,18 @@ export async function searchDiscogs(query: {
   return [];
 }
 
-async function fetchDiscogsPage(url: string, headers: Record<string, string>): Promise<any[]> {
+async function fetchDiscogsPage(url: string, headers: Record<string, string>): Promise<DiscogsSearchResult[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   let res: Response;
   try {
     res = await fetch(url, { signal: controller.signal, headers });
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
+  } catch (err: unknown) {
+    if (isAbortError(err)) {
       throw new Error('Discogs APIへの接続がタイムアウトしました (10秒)');
     }
-    throw new Error(`Discogs API接続失敗: ${err.message || err}`);
+    throw new Error(`Discogs API接続失敗: ${errorMessage(err)}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -126,7 +127,7 @@ async function fetchDiscogsPage(url: string, headers: Record<string, string>): P
   return data.results || [];
 }
 
-export function mapDiscogsResult(r: any): CDMetadata {
+export function mapDiscogsResult(r: DiscogsSearchResult): CDMetadata {
   // Discogs の title は通常 "Artist - Album Title"
   let artist = 'Unknown Artist';
   let title = r.title || 'Unknown Title';

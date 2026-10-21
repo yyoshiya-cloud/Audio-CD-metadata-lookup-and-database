@@ -1,5 +1,8 @@
 import { createGeminiClient, generateContentWithFallback } from './geminiFallback.js';
 import { runGenreRulePrecheck, applyGenreRuleFilter } from '../src/lib/genreRuleFilter.js';
+import { createLogger } from '../src/lib/logger.js';
+
+const log = createLogger('aiTagging', { timestamp: true });
 
 export interface CDTagAnalysisInput {
   id: string;
@@ -474,7 +477,7 @@ Return ONLY a valid JSON object matching this schema with no markdown backticks:
         throw new Error('Unexpected JSON structure from Gemini');
       }
     } catch (err: any) {
-      console.error(`Error in Gemini AI tagging chunk ${i}:`, err);
+      log.error(`Error in Gemini AI tagging chunk ${i}:`, err);
       // Fallback: generate deterministic tags using multi-metadata rule filter and prioritizing vinylRecordReleaseDate over releaseDate
       chunk.forEach((cd) => {
         const hasVinyl = Boolean(cd.vinylRecordReleaseDate && cd.vinylRecordReleaseDate.trim());

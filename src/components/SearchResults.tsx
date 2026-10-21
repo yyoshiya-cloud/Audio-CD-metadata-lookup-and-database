@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CDMetadata, SearchResponse, APISource } from '../types/cd';
 import { CoverImage, coverUrlsOf } from './CoverImage';
-import { ENABLED_SOURCES } from '../config/sources';
+import { ENABLED_SOURCES, SOURCE_FULL_LABELS } from '../config/sources';
 import { Music, Calendar, Disc, Check, Plus, ShieldCheck, Layers, Layers2, Sparkles, Trash2, ChevronDown, ChevronUp, ListMusic, PanelRight, Maximize2 } from 'lucide-react';
 
 interface SearchResultsProps {
@@ -712,17 +712,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
               const hasError = Boolean(res?.error);
               const isSelected = selectedRawSource === src;
 
-              const srcNames: Record<APISource, string> = {
-                musicbrainz: 'MusicBrainz',
-                discogs: 'Discogs',
-                itunes: 'iTunes Search',
-                ndl: '国立国会図書館 (NDL)',
-                spotify: 'Spotify API',
-                rakuten: '楽天ブックス CD',
-                vgmdb: 'VGMdb',
-                yahoo: 'Yahoo! ショッピング',
-                gemini: 'AI OCR',
-              };
+              const srcNames: Record<APISource, string> = SOURCE_FULL_LABELS;
 
               return (
                 <button

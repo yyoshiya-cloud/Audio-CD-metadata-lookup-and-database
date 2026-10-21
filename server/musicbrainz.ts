@@ -1,5 +1,17 @@
 import { CDMetadata, TrackInfo } from '../src/types/cd.js';
 import { catnoBase, catnoVariants, digitsOnly, luceneQuote } from './searchUtils.js';
+import {
+  MusicBrainzArtistCredit,
+  MusicBrainzLabelInfo,
+  MusicBrainzRecording,
+  MusicBrainzRelease,
+  MusicBrainzReleaseDetail,
+  errorMessage,
+  isAbortError,
+} from './apiTypes.js';
+import { createLogger } from '../src/lib/logger.js';
+
+const log = createLogger('musicbrainz', { timestamp: true });
 
 const MB_BASE = 'https://musicbrainz.org/ws/2';
 
@@ -21,7 +33,7 @@ function userAgent(contact?: string): string {
   return `CDMetadataLookup/1.1 (${c})`;
 }
 
-async function mbFetchJson(url: string, contact?: string, timeoutMs = 10000): Promise<any | null> {
+async function mbFetchJson<T>(url: string, contact?: string, timeoutMs = 10000): Promise<T | null> {
   const run = async () => {
     const wait = mbLastRequestAt + MB_MIN_INTERVAL_MS - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -42,7 +54,7 @@ async function mbFetchJson(url: string, contact?: string, timeoutMs = 10000): Pr
           continue;
         }
         if (!res.ok) {
-          console.warn(`MusicBrainz API returned status ${res.status}`);
+          log.warn(`MusicBrainz API returned status ${res.status}`);
           return null;
         }
         return await res.json();
@@ -66,11 +78,11 @@ function formatDuration(lengthMs?: number): string {
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
-function artistCreditName(credit: any[] | undefined, fallback = 'Unknown Artist'): string {
+function artistCreditName(credit: MusicBrainzArtistCredit[] | undefined, fallback = 'Unknown Artist'): string {
   if (!credit || credit.length === 0) return fallback;
   // joinphrase を考慮して "A feat. B" のような表記を再現
   const s = credit
-    .map((ac: any) => `${ac.name || ac.artist?.name || ''}${ac.joinphrase || ''}`)
+    .map((ac) => `${ac.name || ac.artist?.name || ''}${ac.joinphrase || ''}`)
     .join('')
     .trim();
   return s || fallback;
@@ -80,7 +92,7 @@ function artistCreditName(credit: any[] | undefined, fallback = 'Unknown Artist'
  * label-info が複数ある場合、検索した型番に一致するエントリを優先して採用する。
  */
 export function pickLabelInfo(
-  labelInfo: any[] | undefined,
+  labelInfo: MusicBrainzLabelInfo[] | undefined,
   targetCatno?: string
 ): { label: string; catalogNumber: string } {
   if (!labelInfo || labelInfo.length === 0) return { label: '', catalogNumber: '' };
@@ -96,7 +108,7 @@ export function pickLabelInfo(
 }
 
 function mapRelease(
-  rel: any,
+  rel: MusicBrainzRelease,
   tracks: TrackInfo[],
   fallbackArtist: string,
   targetCatno?: string,
@@ -188,7 +200,7 @@ export async function searchMusicBrainz(query: {
         recParts.push(`artist:${luceneQuote(query.artist.trim())}`);
       }
       const recUrl = `${MB_BASE}/recording?query=${encodeURIComponent(recParts.join(' AND '))}&fmt=json&limit=10`;
-      const recData = await mbFetchJson(recUrl, contact);
+      const recData = await mbFetchJson<{ recordings?: MusicBrainzRecording[] }>(recUrl, contact);
       const recordings = recData?.recordings || [];
       const seenReleaseIds = new Set<string>();
       const results: CDMetadata[] = [];
@@ -221,10 +233,10 @@ export async function searchMusicBrainz(query: {
     const lucenes = buildReleaseQueries(query);
     if (lucenes.length === 0) return [];
 
-    let releases: any[] = [];
+    let releases: MusicBrainzRelease[] = [];
     for (const lq of lucenes) {
       const url = `${MB_BASE}/release?query=${encodeURIComponent(lq)}&fmt=json&limit=8`;
-      const data = await mbFetchJson(url, contact);
+      const data = await mbFetchJson<{ releases?: MusicBrainzRelease[] }>(url, contact);
       releases = data?.releases || [];
       if (releases.length > 0) break;
     }
@@ -242,11 +254,11 @@ export async function searchMusicBrainz(query: {
       results.push(mapRelease(rel, tracks, 'Unknown Artist', query.catno, hasFront));
     }
     return results;
-  } catch (err: any) {
-    if (err?.name === 'AbortError') {
-      console.warn('MusicBrainz API fetch timed out (10s limit)');
+  } catch (err: unknown) {
+    if (isAbortError(err)) {
+      log.warn('MusicBrainz API fetch timed out (10s limit)');
     } else {
-      console.error('Error fetching MusicBrainz API:', err?.message || err);
+      log.error('Error fetching MusicBrainz API:', errorMessage(err));
     }
     return [];
   }
@@ -261,7 +273,7 @@ async function fetchMBRelease(
   contact?: string
 ): Promise<{ tracks: TrackInfo[]; hasFront?: boolean }> {
   try {
-    const data = await mbFetchJson(`${MB_BASE}/release/${mbid}?inc=recordings+media&fmt=json`, contact);
+    const data = await mbFetchJson<MusicBrainzReleaseDetail>(`${MB_BASE}/release/${mbid}?inc=recordings+media&fmt=json`, contact);
     if (!data) return { tracks: [] };
     const tracks: TrackInfo[] = [];
     let trackCounter = 1;

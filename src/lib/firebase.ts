@@ -7,6 +7,10 @@ import {
   User 
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { settingsStore } from './settingsStore';
+import { createLogger } from './logger';
+
+const log = createLogger('firebase');
 
 // Firebase Authentication（Googleアカウントでのログイン）のみに使用する。
 // Googleスプレッドシート連携の廃止に伴い、Sheets / Drive のスコープ要求とアクセストークンの保持は行わない。
@@ -16,17 +20,9 @@ export const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
 // 旧バージョンが localStorage に保存したスプレッドシート用トークン・連携情報を削除する（移行処理）
-const LEGACY_LOCAL_STORAGE_KEYS = [
-  'google_sheets_access_token_v2',
-  'google_sheets_token_timestamp_v2',
-  'cd_catalog_known_spreadsheets_v1',
-  'cd_catalog_primary_spreadsheet_v1',
-];
-try {
-  LEGACY_LOCAL_STORAGE_KEYS.forEach((k) => localStorage.removeItem(k));
-} catch {
-  // localStorage が使えない環境では何もしない
-}
+['google_sheets_access_token_v2', 'google_sheets_token_timestamp_v2', 'cd_catalog_known_spreadsheets_v1', 'cd_catalog_primary_spreadsheet_v1'].forEach(
+  (key) => settingsStore.remove(key)
+);
 
 /**
  * Initialize auth state listener.
@@ -52,7 +48,7 @@ export const googleSignIn = async (): Promise<{ user: User } | null> => {
     const result = await signInWithPopup(auth, provider);
     return { user: result.user };
   } catch (error: any) {
-    console.error('Sign in error:', error);
+    log.error('Sign in error:', error);
     throw error;
   }
 };

@@ -3,10 +3,15 @@ import { CDMetadata } from '../types/cd';
 import { Search, FileSpreadsheet, ShieldCheck, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, Sparkles, Table, BookOpen, Loader2, Tag, Edit3, Database, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, LayoutGrid, X, Star, Layers, Eye, EyeOff } from 'lucide-react';
 import { matchesCDSearchQuery, getMatchedTracksForQuery } from '../utils/japaneseSearchNormalizer';
 import { lookupVinylReleasesBatch } from '../utils/formatUtils';
+import { settingsStore, STORAGE_KEYS } from '../lib/settingsStore';
+import { Modal } from './Modal';
 import { normalizeTagList, normalizeSingleTag, normalizeCDTagsAndGenre } from '../lib/tagNormalizer';
 import { loadTagPresetsDB, saveTagPresetsDB, DEFAULT_TAG_PRESETS } from '../lib/db';
 import { SpreadsheetEditorView } from './SpreadsheetEditorView';
 import { BatchEditModal } from './BatchEditModal';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('CDDatabaseTable');
 
 export interface TableColumnConfig {
   id: string;
@@ -72,6 +77,19 @@ interface CDDatabaseTableProps {
   initialSearchKeyword?: string;
 }
 
+/** 登録ライブラリで既定で表示する列 */
+const DEFAULT_VISIBLE_COLUMNS: Record<string, boolean> = {
+  index: true,
+  jacket: true,
+  catalogNumber: true,
+  title: true,
+  artist: true,
+  label: true,
+  releaseDate: true,
+  vinylRecordReleaseDate: true,
+  trackCount: true,
+};
+
 export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   cds,
   onSelectCD,
@@ -105,68 +123,34 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
 
   // 1. Column Visibility Customization State
-  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
-    try {
-      const stored = localStorage.getItem('cd_table_visible_columns_v1');
-      if (stored) return JSON.parse(stored);
-    } catch {}
-    return {
-      index: true,
-      jacket: true,
-      catalogNumber: true,
-      title: true,
-      artist: true,
-      label: true,
-      releaseDate: true,
-      vinylRecordReleaseDate: true,
-      trackCount: true,
-    };
-  });
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() =>
+    settingsStore.getJSON<Record<string, boolean>>(STORAGE_KEYS.tableVisibleColumns, DEFAULT_VISIBLE_COLUMNS)
+  );
   const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
 
   const toggleColumn = (colId: string) => {
     if (colId === 'title') return;
     setVisibleColumns((prev) => {
       const next = { ...prev, [colId]: !prev[colId] };
-      try {
-        localStorage.setItem('cd_table_visible_columns_v1', JSON.stringify(next));
-      } catch {}
+      settingsStore.setJSON(STORAGE_KEYS.tableVisibleColumns, next);
       return next;
     });
   };
 
   const resetColumns = () => {
-    const defaultCols = {
-      index: true,
-      jacket: true,
-      catalogNumber: true,
-      title: true,
-      artist: true,
-      label: true,
-      releaseDate: true,
-      vinylRecordReleaseDate: true,
-      trackCount: true,
-    };
-    setVisibleColumns(defaultCols);
-    try {
-      localStorage.setItem('cd_table_visible_columns_v1', JSON.stringify(defaultCols));
-    } catch {}
+    setVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
+    settingsStore.setJSON(STORAGE_KEYS.tableVisibleColumns, DEFAULT_VISIBLE_COLUMNS);
   };
 
   // 2. Table Density (Row Height & Padding) State
   const [tableDensity, setTableDensity] = useState<TableDensity>(() => {
-    try {
-      const stored = localStorage.getItem('cd_table_density_v1');
-      if (stored === 'compact' || stored === 'normal' || stored === 'relaxed') return stored as TableDensity;
-    } catch {}
-    return 'normal';
+    const stored = settingsStore.getString(STORAGE_KEYS.tableDensity);
+    return stored === 'compact' || stored === 'normal' || stored === 'relaxed' ? stored : 'normal';
   });
 
   const handleSetDensity = (density: TableDensity) => {
     setTableDensity(density);
-    try {
-      localStorage.setItem('cd_table_density_v1', density);
-    } catch {}
+    settingsStore.setString(STORAGE_KEYS.tableDensity, density);
   };
 
   const densityConfig = useMemo(() => {
@@ -368,7 +352,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
       }
       setTimeout(() => setVinylLookupNotice(null), 5000);
     } catch (err) {
-      console.error('Batch vinyl lookup error:', err);
+      log.error('Batch vinyl lookup error:', err);
       setVinylLookupNotice('LP/EPレコード発売日のAPI一括取得中にエラーが発生しました。');
       setTimeout(() => setVinylLookupNotice(null), 4000);
     } finally {
@@ -820,80 +804,51 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
 
             {/* 表示項目の選択: JSON自動バックアップと同じ、画面中央のモーダル（背景クリック・Escで閉じる） */}
             {isColumnMenuOpen && (
-              <div
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-                onClick={() => setIsColumnMenuOpen(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setIsColumnMenuOpen(false);
-                }}
-                role="dialog"
-                aria-modal="true"
-                aria-label="表示項目の選択"
+              <Modal
+                title="表示項目の選択"
+                subtitle={`登録ライブラリに表示する列を選びます（${Object.values(visibleColumns).filter(Boolean).length}/${AVAILABLE_TABLE_COLUMNS.length}列を表示中）`}
+                icon={<LayoutGrid className="w-6 h-6 text-indigo-400" />}
+                iconBoxClassName="bg-indigo-600/20 border-indigo-500/40"
+                widthClassName="max-w-md"
+                onClose={() => setIsColumnMenuOpen(false)}
               >
-                <div
-                  className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden max-h-[90vh]"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="px-6 py-4 border-b border-slate-800 bg-slate-800/50 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center">
-                        <LayoutGrid className="w-6 h-6 text-indigo-400" />
-                      </div>
-                      <div>
-                        <h2 className="text-base font-bold text-white leading-tight">表示項目の選択</h2>
-                        <p className="text-xs text-slate-400">
-                          登録ライブラリに表示する列を選びます（{Object.values(visibleColumns).filter(Boolean).length}/{AVAILABLE_TABLE_COLUMNS.length}列を表示中）
-                        </p>
-                      </div>
-                    </div>
+                <div className="p-6 space-y-3 overflow-y-auto">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-300">表示する列</p>
                     <button
                       type="button"
-                      onClick={() => setIsColumnMenuOpen(false)}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
-                      aria-label="閉じる"
+                      onClick={resetColumns}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
                     >
-                      <X className="w-5 h-5" />
+                      全列表示
                     </button>
                   </div>
-
-                  <div className="p-6 space-y-3 overflow-y-auto">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-slate-300">表示する列</p>
-                      <button
-                        type="button"
-                        onClick={resetColumns}
-                        className="text-xs text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
+                  <div className="space-y-1">
+                    {AVAILABLE_TABLE_COLUMNS.map((col) => (
+                      <label
+                        key={col.id}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer select-none transition-colors border ${
+                          visibleColumns[col.id]
+                            ? 'bg-slate-950/70 border-slate-700 text-white font-medium'
+                            : 'border-transparent text-slate-400 hover:bg-slate-800/40'
+                        }`}
                       >
-                        全列表示
-                      </button>
-                    </div>
-                    <div className="space-y-1">
-                      {AVAILABLE_TABLE_COLUMNS.map((col) => (
-                        <label
-                          key={col.id}
-                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer select-none transition-colors border ${
-                            visibleColumns[col.id]
-                              ? 'bg-slate-950/70 border-slate-700 text-white font-medium'
-                              : 'border-transparent text-slate-400 hover:bg-slate-800/40'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={visibleColumns[col.id]}
-                              disabled={!col.canHide}
-                              onChange={() => toggleColumn(col.id)}
-                              className="rounded border-slate-600 accent-indigo-500 w-4 h-4 cursor-pointer"
-                            />
-                            <span>{col.label}</span>
-                          </div>
-                          {!col.canHide && <span className="text-[10px] text-slate-500 font-mono">固定</span>}
-                        </label>
-                      ))}
-                    </div>
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={visibleColumns[col.id]}
+                            disabled={!col.canHide}
+                            onChange={() => toggleColumn(col.id)}
+                            className="rounded border-slate-600 accent-indigo-500 w-4 h-4 cursor-pointer"
+                          />
+                          <span>{col.label}</span>
+                        </div>
+                        {!col.canHide && <span className="text-[10px] text-slate-500 font-mono">固定</span>}
+                      </label>
+                    ))}
                   </div>
                 </div>
-              </div>
+              </Modal>
             )}
           </div>
         </div>

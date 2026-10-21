@@ -1,5 +1,9 @@
 import { CDMetadata, TrackInfo } from '../src/types/cd.js';
 import { artistSimilarity, digitsOnly, spotifyQuote } from './searchUtils.js';
+import { SpotifyAlbumItem, SpotifySearchResponse, SpotifyTrackItem, errorMessage, isAbortError } from './apiTypes.js';
+import { createLogger } from '../src/lib/logger.js';
+
+const log = createLogger('spotify', { timestamp: true });
 
 // クライアントIDごとにトークンをキャッシュ（検索のたびに再取得しない）
 const spotifyTokenCache = new Map<string, { token: string; expiresAt: number }>();
@@ -56,8 +60,8 @@ async function getSpotifyAccessToken(customClientId?: string, customClientSecret
     const ttlSec = typeof data.expires_in === 'number' ? data.expires_in : 3600;
     spotifyTokenCache.set(clientId, { token: data.access_token, expiresAt: Date.now() + Math.max(0, ttlSec - 60) * 1000 });
     return data.access_token;
-  } catch (err: any) {
-    if (err?.name === 'AbortError') {
+  } catch (err: unknown) {
+    if (isAbortError(err)) {
       throw new Error('Spotify の認証がタイムアウトしました (6秒)。');
     }
     throw err;
@@ -125,7 +129,7 @@ export async function searchSpotify(query: {
     const isTrackSearch = Boolean(query.trackTitle && query.trackTitle.trim() && !query.title && !cleanBarcode && !query.catno);
     const searchType = isTrackSearch ? 'track' : 'album';
 
-    let data: any = null;
+    let data: SpotifySearchResponse | null = null;
     let hasResults = false;
     let usedPlainQuery = false;
     for (const { q, plain } of queries) {
@@ -138,8 +142,8 @@ export async function searchSpotify(query: {
           signal: controller.signal,
           headers: { 'Authorization': `Bearer ${token}` },
         });
-      } catch (err: any) {
-        if (err?.name === 'AbortError') throw new Error('Spotify API がタイムアウトしました (6秒)。');
+      } catch (err: unknown) {
+        if (isAbortError(err)) throw new Error('Spotify API がタイムアウトしました (6秒)。');
         throw err;
       } finally {
         clearTimeout(timeout);
@@ -152,8 +156,9 @@ export async function searchSpotify(query: {
         }
         throw new Error(describeSpotifyHttpError(res.status, res.headers.get('retry-after')));
       }
-      data = await res.json();
-      hasResults = (isTrackSearch ? data.tracks?.items : data.albums?.items)?.length > 0;
+      const json: SpotifySearchResponse = await res.json();
+      data = json;
+      hasResults = ((isTrackSearch ? json.tracks?.items : json.albums?.items)?.length ?? 0) > 0;
       if (hasResults) {
         usedPlainQuery = Boolean(plain);
         break;
@@ -161,7 +166,7 @@ export async function searchSpotify(query: {
     }
     if (!data || !hasResults) return [];
 
-    let albums: any[] = [];
+    let albums: SpotifyAlbumItem[] = [];
     if (isTrackSearch) {
       const trackItems = data.tracks?.items || [];
       const seenAlbumIds = new Set<string>();
@@ -179,8 +184,8 @@ export async function searchSpotify(query: {
     // キーワード検索（フィールド指定なし）の結果は無関係なアーティストが混ざるため、
     // アーティスト名が指定されている場合は近いものだけに絞る
     if (usedPlainQuery && query.artist) {
-      albums = albums.filter((alb: any) =>
-        (alb.artists || []).some((a: any) => artistSimilarity(a.name, query.artist) >= 0.8)
+      albums = albums.filter((alb) =>
+        (alb.artists || []).some((a) => artistSimilarity(a.name, query.artist) >= 0.8)
       );
     }
 
@@ -189,7 +194,7 @@ export async function searchSpotify(query: {
     for (const alb of albums) {
       const spotifyId = alb.id;
       const title = alb.name || 'Unknown Title';
-      const artist = alb.artists ? alb.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist';
+      const artist = alb.artists ? alb.artists.map((a) => a.name).join(', ') : 'Unknown Artist';
       const releaseDate = alb.release_date || '';
       
       // High-res image (640x640)
@@ -222,9 +227,9 @@ export async function searchSpotify(query: {
     }
 
     return results;
-  } catch (err: any) {
+  } catch (err: unknown) {
     // 画面の「API別データ比較」にエラー理由を表示できるよう、握りつぶさずに投げ直す
-    console.error('Error searching Spotify API:', err?.message || err);
+    log.error('Error searching Spotify API:', errorMessage(err));
     throw err;
   }
 }
@@ -244,9 +249,9 @@ async function fetchSpotifyAlbumTracks(albumId: string, token: string): Promise<
     if (!res.ok) return [];
 
     const data = await res.json();
-    const items = data.items || [];
+    const items: SpotifyTrackItem[] = data.items || [];
 
-    return items.map((tr: any) => {
+    return items.map((tr, index) => {
       const ms = tr.duration_ms;
       let duration = '';
       if (ms) {
@@ -257,11 +262,11 @@ async function fetchSpotifyAlbumTracks(albumId: string, token: string): Promise<
       }
 
       return {
-        trackNumber: tr.track_number,
-        title: tr.name,
-        artist: tr.artists?.map((a: any) => a.name).join(', '),
+        trackNumber: tr.track_number ?? index + 1,
+        title: tr.name ?? `Track ${index + 1}`,
+        artist: tr.artists?.map((a) => a.name).join(', '),
         duration,
-        previewUrl: tr.preview_url,
+        previewUrl: tr.preview_url ?? undefined,
       };
     });
   } catch (err) {

@@ -44,10 +44,41 @@ npm run dev        # http://localhost:3000
 | `npm run dev` | 開発サーバー起動 |
 | `npm run build` | 本番ビルド(`dist/`) |
 | `npm start` | 本番サーバー起動 |
-| `npm run lint` | 型チェック |
-| `npm run verify` | ユーティリティ関数の検証スクリプト |
-| `npm run verify:backup` | 自動バックアップの判定ロジック(間隔・変更検出・世代整理・設定保存)の検証 |
-| `npm run verify:search` | 検索ロジック(正規化・統合・スコアリング・各ソースの解析)の検証。外部APIには接続しません |
+| `npm run typecheck` | 型チェック(`tsc --noEmit`) |
+| `npm run lint` / `lint:fix` | ESLint（既存コードの違反は warn。新規コードは warn も出さない方針） |
+| `npm run format` / `format:check` | Prettier による整形 / 整形の確認（既存ファイルは未整形のため、最初は差分が大きくなります） |
+| `npm test` | ロジックのテスト（基盤 / 検索 / 自動バックアップ）。外部APIには接続しません |
+| `npm run test:ui` | 画面部品のテスト（Vitest + Testing Library） |
+| `npm run verify` | 総合検証。サーバーを起動した状態で実行します（実APIへ接続するテストを含む） |
+| `npm run check` | 型チェック + lint + `npm test` をまとめて実行 |
+
+CI（GitHub Actions: `.github/workflows/ci.yml`）で、型チェック・lint・テストを実行します。
+
+## コード構成
+
+```
+server.ts                  Express サーバー（各APIルート。入力は server/schemas.ts で検証）
+server/
+  search.ts / searchMerge.ts / searchUtils.ts   検索の横断実行・統合・正規化
+  musicbrainz.ts discogs.ts itunes.ts ndl.ts …  各APIの検索（応答の型は apiTypes.ts）
+  validate.ts / schemas.ts                      依存パッケージなしの入力検証と各APIのスキーマ
+src/
+  App.tsx                  画面の組み立て（状態は hooks に分離）
+  hooks/                   useToast / useDisplaySettings / useSearchPreviewMode / useAutoBackup
+  config/sources.ts        有効な検索ソースとAPI名の表示ラベル（一元管理）
+  lib/
+    settingsStore.ts       localStorage の読み書き（キーは STORAGE_KEYS に集約）
+    logger.ts              共通ロガー（console を直接使わない）
+    secureCredentials.ts   APIキーの暗号化（AES-GCM）
+    db.ts                  IndexedDB（Dexie）。APIキーは暗号化して保存
+    tabularFormat.ts       Excel / CSV / JSON の共通変換
+  components/Modal.tsx     共通モーダル（Esc・背景クリック・フォーカス循環）
+  components/detail/       CD詳細モーダルのタブ（トラックリスト・API間比較）
+```
+
+### APIキーの保管について
+
+APIキーはブラウザのIndexedDBに **AES-GCM で暗号化して**保存します（鍵は取り出せない形で同じIndexedDBに保持）。ディスクやDBの中身を覗かれても、平文のキーは残りません。ただし、ページ内で悪意あるスクリプトが動いた場合（XSS）は、同じページのJSが鍵を使って復号できるため防げません。公開環境では、キーをサーバーの環境変数（`.env`）に置く運用を推奨します。旧バージョンが保存した平文のキーは、初回の読み込み時に暗号化へ移行し、平文のコピーを削除します。
 
 ## JSON自動バックアップ
 
@@ -80,3 +111,4 @@ npm run dev        # http://localhost:3000
 
 - Googleスプレッドシート連携は廃止しました。ログインはアカウント表示のみに使われ、アクセストークンは保持しません。旧バージョンが保存したスプレッドシート用の連携情報は、起動時に自動で削除されます。
 - 外部画像の取得にはSSRF対策(`server/security.ts`)とレート制限が入っています。
+- 各APIの入力は `server/schemas.ts` で型・長さ・件数を検証します（不正な入力は 400 を返します）。

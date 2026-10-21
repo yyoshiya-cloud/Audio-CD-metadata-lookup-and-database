@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { X, ShieldCheck, FolderOpen, Download, RefreshCw, AlertTriangle, CheckCircle2, History, Info } from 'lucide-react';
+import { ShieldCheck, FolderOpen, Download, RefreshCw, AlertTriangle, CheckCircle2, History, Info } from 'lucide-react';
 import type { CDMetadata } from '../types/cd';
 import {
   BackupFileInfo,
@@ -17,6 +17,8 @@ import {
 } from '../lib/autoBackup';
 import { BackupSettings, BackupState, INTERVAL_OPTIONS, KEEP_OPTIONS, formatBytes } from '../lib/autoBackupCore';
 import { parseJSONToCDs } from '../lib/jsonExportImport';
+import { Modal } from './Modal';
+import { measureImageFootprint } from '../lib/imageFootprint';
 
 interface BackupSettingsModalProps {
   cds: CDMetadata[];
@@ -47,6 +49,7 @@ export const BackupSettingsModal: React.FC<BackupSettingsModalProps> = ({ cds, o
   const [message, setMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
   const useFolder = settings.destination === 'folder' && folderSupported;
+  const footprint = React.useMemo(() => measureImageFootprint(cds), [cds]);
 
   const refresh = useCallback(async () => {
     setState(getBackupState());
@@ -138,23 +141,13 @@ export const BackupSettingsModal: React.FC<BackupSettingsModalProps> = ({ cds, o
   const needsPermission = useFolder && !!folderName && !permissionGranted;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden max-h-[90vh]">
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-800/50 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center">
-              <ShieldCheck className="w-6 h-6 text-emerald-400" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-white leading-tight">JSON自動バックアップ</h2>
-              <p className="text-xs text-slate-400">ライブラリ（{cds.length}件）をJSONファイルに自動で保存します</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer" aria-label="閉じる">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <Modal
+      title="JSON自動バックアップ"
+      subtitle={`ライブラリ（${cds.length}件）をJSONファイルに自動で保存します`}
+      icon={<ShieldCheck className="w-6 h-6 text-emerald-400" />}
+      iconBoxClassName="bg-emerald-600/20 border-emerald-500/40"
+      onClose={onClose}
+    >
         <div className="p-6 space-y-5 overflow-y-auto">
           {/* 有効/無効 */}
           <label className="flex items-center justify-between gap-3 p-3 bg-slate-950/70 border border-slate-800 rounded-xl cursor-pointer">
@@ -327,12 +320,16 @@ export const BackupSettingsModal: React.FC<BackupSettingsModalProps> = ({ cds, o
             </div>
           )}
 
+          <p className="text-[11px] text-slate-400">
+            ライブラリ内の画像: URL参照 {footprint.linkedCount}枚 ／ 埋め込み（base64）{footprint.embeddedCount}枚
+            {footprint.embeddedCount > 0 ? `（約${formatBytes(footprint.embeddedBytes)}。バックアップのサイズに含まれます）` : ''}
+          </p>
+
           <p className="text-[10px] text-slate-500 leading-relaxed">
             バックアップにはCDの情報（タグ・評価・メモ・収録曲・ジャケット画像を含む）が入ります。カスタムセットリスト・タグのプリセット・APIキーは含まれません。
             ライブラリが空のときはバックアップしません。
           </p>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

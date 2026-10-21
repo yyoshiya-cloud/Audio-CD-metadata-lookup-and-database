@@ -41,6 +41,9 @@ import {
   Info,
 } from 'lucide-react';
 import { getBackupSettings, getBackupState } from '../lib/autoBackup';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('DashboardView');
 
 interface DashboardViewProps {
   cds: CDMetadata[];
@@ -182,7 +185,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       setBackfillProgress(100);
       setBackfillResults(updatedCDsWithDetails);
     } catch (err: any) {
-      console.error('Backfill error:', err);
+      log.error('Backfill error:', err);
       setBackfillErrorMessage(err.message || '自動補完中にエラーが発生しました');
     } finally {
       setIsBackfilling(false);

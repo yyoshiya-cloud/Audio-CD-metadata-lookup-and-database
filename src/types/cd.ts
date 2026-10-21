@@ -108,8 +108,6 @@ export interface CDMetadata {
   exactMatchTypes?: ('catalogNumber' | 'title' | 'barcode')[];
   createdAt: string; // ISO date string
   updatedAt: string; // ISO date string
-  /** @deprecated Googleスプレッドシート連携の廃止により未使用。既存の保存データとの互換のためフィールドだけ残している */
-  syncedToSheets?: boolean;
 }
 
 export interface APICredentials {

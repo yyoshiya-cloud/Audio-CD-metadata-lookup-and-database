@@ -9,10 +9,18 @@
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "verify": "tsx scripts/verify_system.ts",
     "verify:search": "tsx scripts/verify_search.ts",
-    "verify:backup": "tsx scripts/verify_backup.ts"
+    "verify:backup": "tsx scripts/verify_backup.ts",
+    "verify:foundation": "tsx scripts/verify_foundation.ts",
+    "test": "npm run verify:foundation && npm run verify:search && npm run verify:backup",
+    "test:ui": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -35,13 +43,24 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/react-is": "^19.3.0",
     "autoprefixer": "^10.4.21",
+    "eslint": "^9.30.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.3.0",
+    "jsdom": "^26.1.0",
+    "prettier": "^3.6.0",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "typescript-eslint": "^8.35.0",
+    "vitest": "^3.2.4"
   }
 }

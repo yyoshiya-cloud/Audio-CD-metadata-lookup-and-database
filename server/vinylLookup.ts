@@ -1,5 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 import { generateContentWithFallback } from './geminiFallback.js';
+import { createLogger } from '../src/lib/logger.js';
+
+const log = createLogger('vinylLookup', { timestamp: true });
 
 export interface VinylLookupQuery {
   id?: string;
@@ -133,7 +136,7 @@ async function searchMusicBrainzVinyl(title: string, artist: string): Promise<Vi
       const catNo = labelInfo?.['catalog-number'] || '';
       const labelName = labelInfo?.label?.name || '';
       const relArtist = rel['artist-credit']
-        ? rel['artist-credit'].map((ac: any) => ac.name || ac.artist?.name).filter(Boolean).join(', ')
+        ? rel['artist-credit'].map((ac: { name?: string; artist?: { name?: string } }) => ac.name || ac.artist?.name).filter(Boolean).join(', ')
         : cleanArtist;
 
       candidates.push({
@@ -395,7 +398,7 @@ Return ONLY valid JSON with no markdown backticks:
       }
     }
   } catch (err) {
-    console.warn('Gemini vinyl lookup supplement skipped:', err);
+    log.warn('Gemini vinyl lookup supplement skipped:', err);
   }
   return resultMap;
 }

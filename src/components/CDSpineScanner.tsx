@@ -1,6 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { Camera, X, Sparkles, RefreshCw, Check, AlertCircle } from 'lucide-react';
 import { SearchQuery } from '../types/cd';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('CDSpineScanner');
 
 interface CDSpineScannerProps {
   onClose: () => void;
@@ -71,7 +74,7 @@ export const CDSpineScanner: React.FC<CDSpineScannerProps> = ({
       const data = await response.json();
       setExtractedData(data);
     } catch (err: any) {
-      console.error('OCR Error:', err);
+      log.error('OCR Error:', err);
       setErrorMessage(err.message || 'AI画像解析に失敗しました。');
     } finally {
       setIsAnalyzing(false);

@@ -1,6 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
 import { CDMetadata, TrackInfo } from '../src/types/cd.js';
 import { generateContentWithFallback } from './geminiFallback.js';
+import { createLogger } from '../src/lib/logger.js';
+
+const log = createLogger('aiBackfill', { timestamp: true });
 
 export interface BackfillCDResult {
   id: string;
@@ -100,7 +103,7 @@ export async function backfillCDMetadataWithGemini(
         }
       }
     } catch (err) {
-      console.warn('Error in Gemini backfill chunk (using existing data fallback):', err);
+      log.warn('Error in Gemini backfill chunk (using existing data fallback):', err);
       chunk.forEach((cd) => {
         results.push({
           id: cd.id,

@@ -1,5 +1,9 @@
 import { CDMetadata, TrackInfo } from '../src/types/cd.js';
 import { catnoVariants, cqlQuote, decodeXmlEntities, digitsOnly, isValidBarcodeLength } from './searchUtils.js';
+import { createLogger } from '../src/lib/logger.js';
+import { errorMessage, isAbortError } from './apiTypes.js';
+
+const log = createLogger('ndl', { timestamp: true });
 
 /**
  * 資料種別（mediaType）で「録音資料（CD等）」に絞り込む。
@@ -86,17 +90,17 @@ export async function searchNDL(query: {
     }
 
     if (!res.ok) {
-      console.warn(`NDL API returned status ${res.status}`);
+      log.warn(`NDL API returned status ${res.status}`);
       return [];
     }
 
     const xmlText = await res.text();
     return parseNDLXmlResponse(xmlText);
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      console.warn('NDL API fetch timed out (12s limit)');
+  } catch (err: unknown) {
+    if (isAbortError(err)) {
+      log.warn('NDL API fetch timed out (12s limit)');
     } else {
-      console.error('Error fetching NDL API:', err?.message || err);
+      log.error('Error fetching NDL API:', errorMessage(err));
     }
     return [];
   }

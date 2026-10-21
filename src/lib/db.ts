@@ -3,6 +3,12 @@ import { CDMetadata, APICredentials, CustomSetlist } from '../types/cd';
 import { normalizeCatalogNumber, normalizeReleaseDate } from './dateUtils';
 import { ensureCDCoverBase64 } from '../utils/imageEnhancer';
 import { normalizeCDTagsAndGenre } from './tagNormalizer';
+import { settingsStore, STORAGE_KEYS } from './settingsStore';
+import { createLogger } from './logger';
+import { decryptJSON, encryptJSON, generateCredentialsKey, isEncryptedPayload } from './secureCredentials';
+import { setCachedApiCredentials } from './credentialsCache';
+
+const log = createLogger('db');
 
 export interface SettingRecord {
   key: string;
@@ -26,6 +32,21 @@ export class CDCatalogDexieDB extends Dexie {
       cds: 'id, catalogNumber, title, artist, label, releaseDate, vinylRecordReleaseDate, barcode, updatedAt, createdAt, syncedToSheets, *tags',
       settings: 'key, updatedAt',
     });
+
+    // v2: Googleスプレッドシート連携の廃止に伴い、不要になった syncedToSheets の索引を削除し、各レコードの値も消す
+    this.version(2)
+      .stores({
+        cds: 'id, catalogNumber, title, artist, label, releaseDate, vinylRecordReleaseDate, barcode, updatedAt, createdAt, *tags',
+        settings: 'key, updatedAt',
+      })
+      .upgrade((tx) =>
+        tx
+          .table('cds')
+          .toCollection()
+          .modify((cd: Record<string, unknown>) => {
+            delete cd.syncedToSheets;
+          })
+      );
   }
 }
 
@@ -48,7 +69,7 @@ export function normalizeCDRecord(
 
 const LEGACY_DB_NAME = 'CDCatalogDB';
 const LEGACY_STORE_NAME = 'cds';
-const MIGRATION_FLAG_KEY = 'cd_dexie_migrated_v1';
+const MIGRATION_FLAG_KEY = STORAGE_KEYS.dexieMigrated;
 
 /**
  * Automatically migrate any existing records from legacy IndexedDB ('CDCatalogDB') or localStorage ('cds')
@@ -56,7 +77,7 @@ const MIGRATION_FLAG_KEY = 'cd_dexie_migrated_v1';
  */
 async function ensureLegacyDataMigrated(): Promise<void> {
   try {
-    if (localStorage.getItem(MIGRATION_FLAG_KEY) === 'true') {
+    if (settingsStore.getString(MIGRATION_FLAG_KEY) === 'true') {
       return;
     }
 
@@ -99,13 +120,13 @@ async function ensureLegacyDataMigrated(): Promise<void> {
           migratedItems.push(...legacyItems);
         }
       } catch (e) {
-        console.warn('Legacy IndexedDB migration check skipped:', e);
+        log.warn('Legacy IndexedDB migration check skipped:', e);
       }
     }
 
     // 2. Check legacy localStorage fallback ('cds')
     try {
-      const rawLocal = localStorage.getItem(LEGACY_STORE_NAME);
+      const rawLocal = settingsStore.getString(LEGACY_STORE_NAME);
       if (rawLocal) {
         const parsed = JSON.parse(rawLocal);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -129,20 +150,20 @@ async function ensureLegacyDataMigrated(): Promise<void> {
 
     // 3. Migrate API credentials from localStorage into Dexie settings table
     try {
-      const savedCreds = localStorage.getItem('cd_api_credentials');
+      // （旧版の平文コピーは、loadApiCredentialsDB が暗号化保存へ移行して削除する）
+      const savedCreds = settingsStore.getJSON<Record<string, unknown> | null>(STORAGE_KEYS.legacyApiCredentials, null);
       if (savedCreds) {
-        const parsedCreds = JSON.parse(savedCreds);
         await db.settings.put({
           key: 'apiCredentials',
-          value: parsedCreds,
+          value: savedCreds,
           updatedAt: new Date().toISOString(),
         });
       }
     } catch {}
 
-    localStorage.setItem(MIGRATION_FLAG_KEY, 'true');
+    settingsStore.setString(MIGRATION_FLAG_KEY, 'true');
   } catch (err) {
-    console.warn('Migration to Dexie warning:', err);
+    log.warn('Migration to Dexie warning:', err);
   }
 }
 
@@ -185,7 +206,7 @@ export async function getAllCDs(): Promise<CDMetadata[]> {
     normalized.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
     return normalized;
   } catch (err) {
-    console.error('Dexie getAllCDs error:', err);
+    log.error('Dexie getAllCDs error:', err);
     return [];
   }
 }
@@ -271,45 +292,84 @@ export async function deleteMultipleCDs(ids: string[]): Promise<void> {
   await db.cds.bulkDelete(ids);
 }
 
+const CREDENTIALS_KEY_RECORD = 'apiCredentialsKey';
+
 /**
- * Save API Credentials into Dexie IndexedDB settings table (and localStorage backup)
+ * APIキーの暗号化に使う鍵を取得する（IndexedDB に「取り出せない鍵」として保存）。
+ * create = true のとき、無ければ新しく作る。
  */
-export async function saveApiCredentialsDB(credentials: APICredentials): Promise<void> {
-  const cleanData: APICredentials = JSON.parse(JSON.stringify(credentials || {}));
-  try {
-    await db.settings.put({
-      key: 'apiCredentials',
-      value: cleanData,
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (e) {
-    console.warn('Failed to save API credentials to Dexie:', e);
-  }
-  try {
-    localStorage.setItem('cd_api_credentials', JSON.stringify(cleanData));
-  } catch {}
+async function getCredentialsKey(create: boolean): Promise<CryptoKey | null> {
+  const record = await db.settings.get(CREDENTIALS_KEY_RECORD);
+  if (record?.value) return record.value as CryptoKey;
+  if (!create) return null;
+  const key = await generateCredentialsKey();
+  await db.settings.put({ key: CREDENTIALS_KEY_RECORD, value: key, updatedAt: new Date().toISOString() });
+  return key;
 }
 
 /**
- * Load API Credentials from Dexie IndexedDB settings table (or localStorage fallback)
+ * Save API Credentials to Dexie IndexedDB settings table.
+ * AES-GCM で暗号化して保存する。暗号化できない環境（HTTPS でない等）では、平文で保存せず false を返す。
+ */
+export async function saveApiCredentialsDB(credentials: APICredentials): Promise<boolean> {
+  const cleanData: APICredentials = JSON.parse(JSON.stringify(credentials || {}));
+  setCachedApiCredentials(cleanData);
+  try {
+    const key = await getCredentialsKey(true);
+    if (!key) return false;
+    const payload = await encryptJSON(key, cleanData);
+    await db.settings.put({
+      key: 'apiCredentials',
+      value: payload,
+      updatedAt: new Date().toISOString(),
+    });
+    // 旧版が残した平文のコピーを削除する
+    settingsStore.remove(STORAGE_KEYS.legacyApiCredentials);
+    return true;
+  } catch (e) {
+    log.error('APIキーを暗号化して保存できませんでした（平文での保存は行いません）', e);
+    return false;
+  }
+}
+
+/**
+ * Load API Credentials from Dexie IndexedDB settings table.
+ * 旧版の平文データ（IndexedDB・localStorage）が残っていれば、暗号化保存へ移行して平文を削除する。
  */
 export async function loadApiCredentialsDB(): Promise<APICredentials> {
   await ensureLegacyDataMigrated();
+  let creds: APICredentials = {};
   try {
     const record = await db.settings.get('apiCredentials');
-    if (record && record.value) {
-      return record.value as APICredentials;
+    const value = record?.value;
+    if (isEncryptedPayload(value)) {
+      const key = await getCredentialsKey(false);
+      if (key) {
+        creds = await decryptJSON<APICredentials>(key, value);
+      } else {
+        log.warn('APIキーの暗号鍵が見つかりません。APIキーを入力し直してください。');
+      }
+    } else if (value && typeof value === 'object') {
+      creds = value as APICredentials;
+      await saveApiCredentialsDB(creds); // 平文 → 暗号化へ移行
     }
   } catch (e) {
-    console.warn('Failed to load API credentials from Dexie:', e);
+    log.warn('APIキーを読み込めませんでした（復号に失敗）。APIキーを入力し直してください。', e);
   }
 
-  try {
-    const saved = localStorage.getItem('cd_api_credentials');
-    if (saved) return JSON.parse(saved);
-  } catch {}
+  const legacy = settingsStore.getJSON<APICredentials | null>(STORAGE_KEYS.legacyApiCredentials, null);
+  if (legacy && typeof legacy === 'object') {
+    if (Object.keys(creds).length === 0) {
+      creds = legacy;
+      // 暗号化して保存できたときだけ、平文のコピーを削除する（保存できない環境でキーを失わないため）
+      await saveApiCredentialsDB(creds);
+    } else {
+      settingsStore.remove(STORAGE_KEYS.legacyApiCredentials);
+    }
+  }
 
-  return {};
+  setCachedApiCredentials(creds);
+  return creds;
 }
 
 export const DEFAULT_TAG_PRESETS: string[] = [
@@ -384,16 +444,13 @@ export async function loadTagPresetsDB(): Promise<string[]> {
     }
   } catch {}
   try {
-    const saved = localStorage.getItem('cd_custom_tag_presets');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const normalizedList = normalizePresetTagsArray(parsed);
-        if (JSON.stringify(normalizedList) !== JSON.stringify(parsed)) {
-          await saveTagPresetsDB(normalizedList);
-        }
-        return normalizedList;
+    const parsed = settingsStore.getJSON<unknown>(STORAGE_KEYS.customTagPresets, null);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const normalizedList = normalizePresetTagsArray(parsed);
+      if (JSON.stringify(normalizedList) !== JSON.stringify(parsed)) {
+        await saveTagPresetsDB(normalizedList);
       }
+      return normalizedList;
     }
   } catch {}
   return DEFAULT_TAG_PRESETS;
@@ -411,9 +468,7 @@ export async function saveTagPresetsDB(presets: string[]): Promise<void> {
       updatedAt: new Date().toISOString(),
     });
   } catch {}
-  try {
-    localStorage.setItem('cd_custom_tag_presets', JSON.stringify(cleaned));
-  } catch {}
+  settingsStore.setJSON(STORAGE_KEYS.customTagPresets, cleaned);
 }
 
 /**
@@ -426,13 +481,8 @@ export async function loadCustomSetlistsDB(): Promise<CustomSetlist[]> {
       return record.value as CustomSetlist[];
     }
   } catch {}
-  try {
-    const saved = localStorage.getItem('cd_custom_setlists');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {}
+  const savedSetlists = settingsStore.getJSON<unknown>(STORAGE_KEYS.customSetlists, null);
+  if (Array.isArray(savedSetlists)) return savedSetlists as CustomSetlist[];
   return [];
 }
 
@@ -448,9 +498,7 @@ export async function saveCustomSetlistsDB(setlists: CustomSetlist[]): Promise<v
       updatedAt: new Date().toISOString(),
     });
   } catch {}
-  try {
-    localStorage.setItem('cd_custom_setlists', JSON.stringify(cleanData));
-  } catch {}
+  settingsStore.setJSON(STORAGE_KEYS.customSetlists, cleanData);
 }
 
 /**
@@ -463,13 +511,8 @@ export async function loadFavoriteTrackKeysDB(): Promise<string[]> {
       return record.value as string[];
     }
   } catch {}
-  try {
-    const saved = localStorage.getItem('cd_favorite_track_keys');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {}
+  const savedKeys = settingsStore.getJSON<unknown>(STORAGE_KEYS.favoriteTrackKeys, null);
+  if (Array.isArray(savedKeys)) return savedKeys as string[];
   return [];
 }
 
@@ -485,9 +528,7 @@ export async function saveFavoriteTrackKeysDB(keys: string[]): Promise<void> {
       updatedAt: new Date().toISOString(),
     });
   } catch {}
-  try {
-    localStorage.setItem('cd_favorite_track_keys', JSON.stringify(cleaned));
-  } catch {}
+  settingsStore.setJSON(STORAGE_KEYS.favoriteTrackKeys, cleaned);
 }
 
 declare const __APP_VERSION__: string | undefined;
@@ -540,20 +581,15 @@ export async function loadAppInfoConfigDB(): Promise<AppInfoConfig> {
       });
     }
   } catch {}
-  try {
-    const saved = localStorage.getItem('cd_app_info_config');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed.version === 'string' && parsed.buildSignature === CURRENT_BUILD_SIGNATURE) {
-        return {
-          version: parsed.version || DEFAULT_APP_INFO_CONFIG.version,
-          lastUpdated: parsed.lastUpdated || DEFAULT_APP_INFO_CONFIG.lastUpdated,
-          buildSignature: CURRENT_BUILD_SIGNATURE,
-        };
-      }
-    }
-    localStorage.setItem('cd_app_info_config', JSON.stringify(DEFAULT_APP_INFO_CONFIG));
-  } catch {}
+  const savedInfo = settingsStore.getJSON<Partial<AppInfoConfig> | null>(STORAGE_KEYS.appInfoConfig, null);
+  if (savedInfo && typeof savedInfo.version === 'string' && savedInfo.buildSignature === CURRENT_BUILD_SIGNATURE) {
+    return {
+      version: savedInfo.version || DEFAULT_APP_INFO_CONFIG.version,
+      lastUpdated: savedInfo.lastUpdated || DEFAULT_APP_INFO_CONFIG.lastUpdated,
+      buildSignature: CURRENT_BUILD_SIGNATURE,
+    };
+  }
+  settingsStore.setJSON(STORAGE_KEYS.appInfoConfig, DEFAULT_APP_INFO_CONFIG);
   return DEFAULT_APP_INFO_CONFIG;
 }
 
@@ -573,9 +609,7 @@ export async function saveAppInfoConfigDB(config: AppInfoConfig): Promise<AppInf
       updatedAt: new Date().toISOString(),
     });
   } catch {}
-  try {
-    localStorage.setItem('cd_app_info_config', JSON.stringify(cleaned));
-  } catch {}
+  settingsStore.setJSON(STORAGE_KEYS.appInfoConfig, cleaned);
   return cleaned;
 }
 

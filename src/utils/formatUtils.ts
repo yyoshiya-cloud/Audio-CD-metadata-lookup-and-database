@@ -1,3 +1,4 @@
+import { getCachedApiCredentials } from '../lib/credentialsCache';
 /**
  * Format, validation & shared helper utilities for CD Metadata fields
  */
@@ -113,14 +114,8 @@ export async function lookupVinylReleasesBatch(
 ): Promise<VinylLookupServerResult[]> {
   if (!items || items.length === 0) return [];
 
-  let discogsToken = '';
-  try {
-    const credsRaw = localStorage.getItem('cd_api_credentials');
-    if (credsRaw) {
-      const creds = JSON.parse(credsRaw);
-      discogsToken = creds.discogsToken || '';
-    }
-  } catch {}
+  // APIキーは暗号化して保存しており、起動時に復号したものをメモリ上のキャッシュから使う
+  const discogsToken = getCachedApiCredentials().discogsToken || '';
 
   const allResults: VinylLookupServerResult[] = [];
   const CHUNK_SIZE = 5;

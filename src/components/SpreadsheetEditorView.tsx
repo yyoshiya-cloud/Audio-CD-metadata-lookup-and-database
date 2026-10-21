@@ -35,6 +35,9 @@ import {
   ShieldAlert,
   Link2,
 } from 'lucide-react';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('SpreadsheetEditorView');
 
 interface SpreadsheetEditorViewProps {
   cds: CDMetadata[];
@@ -663,7 +666,7 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
       setSaveSuccessMessage(`${modifiedCDs.length} 件のCDデータを正常にローカルDB (IndexedDB) へ一括保存しました`);
       setTimeout(() => setSaveSuccessMessage(null), 4000);
     } catch (err: any) {
-      console.error('Batch update error:', err);
+      log.error('Batch update error:', err);
       setErrorMessage(err.message || 'データの一括保存に失敗しました');
     } finally {
       setIsSaving(false);

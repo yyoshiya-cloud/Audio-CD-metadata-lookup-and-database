@@ -37,7 +37,7 @@ import {
   DEFAULT_COLUMN_CONFIG,
   formatCDToRowValues,
   parseSpreadsheetRowsToCDs,
-} from '../src/lib/googleSheets.ts';
+} from '../src/lib/tabularFormat.ts';
 import { parseJSONToCDs, extractSubImagesFromRawItem } from '../src/lib/jsonExportImport.ts';
 import { isPrivateOrReservedIP, validateSafeExternalUrl } from '../server/security.ts';
 import type { CDMetadata } from '../src/types/cd.ts';
@@ -395,7 +395,7 @@ async function main() {
 
       // 2) Google シート / Excel 行データの書き出しと、parseSpreadsheetRowsToCDs によるインポート復元検証
       const headers = DEFAULT_COLUMN_CONFIG.filter((c) => c.enabled).map((c) => c.label);
-      const rowValues = formatCDToRowValues(cdWithSubImages, DEFAULT_COLUMN_CONFIG, { forGoogleSheetsFormula: false });
+      const rowValues = formatCDToRowValues(cdWithSubImages, DEFAULT_COLUMN_CONFIG);
       const parsedFromSheet = parseSpreadsheetRowsToCDs(headers, [rowValues]);
       assert.strictEqual(parsedFromSheet.length, 1);
       const restoredSheetCD = parsedFromSheet[0];
@@ -410,8 +410,14 @@ async function main() {
       );
       assert.strictEqual(restoredSheetCD.subImages?.find((s) => s.type === 'other')?.imageUrl, 'https://example.com/sticker.jpg');
 
-      // Google Sheets の =IMAGE("...") 数式形式で書き出されたセルからもURLが正確に抽出・インポートされるか検証
-      const rowFormulaValues = formatCDToRowValues(cdWithSubImages, DEFAULT_COLUMN_CONFIG, { forGoogleSheetsFormula: true });
+      // 過去にGoogleスプレッドシートから書き出したファイルの =IMAGE("...") 数式形式のセルも、読み込み時にURLを抽出できること
+      const enabledColumns = DEFAULT_COLUMN_CONFIG.filter((c) => c.enabled);
+      const rowFormulaValues = [...rowValues];
+      const backIdx = enabledColumns.findIndex((c) => c.key === 'backCoverUrl');
+      const obiIdx = enabledColumns.findIndex((c) => c.key === 'obiUrl');
+      assert.ok(backIdx >= 0 && obiIdx >= 0, '裏ジャケット・帯の列が定義されていること');
+      rowFormulaValues[backIdx] = '=IFERROR(IMAGE("https://example.com/back.jpg"), "https://example.com/back.jpg")';
+      rowFormulaValues[obiIdx] = '=IFERROR(IMAGE("https://example.com/obi.jpg"), "https://example.com/obi.jpg")';
       const parsedFromFormulaSheet = parseSpreadsheetRowsToCDs(headers, [rowFormulaValues]);
       assert.strictEqual(parsedFromFormulaSheet[0].subImages?.find((s) => s.type === 'back')?.imageUrl, 'https://example.com/back.jpg');
       assert.strictEqual(parsedFromFormulaSheet[0].subImages?.find((s) => s.type === 'obi')?.imageUrl, 'https://example.com/obi.jpg');
