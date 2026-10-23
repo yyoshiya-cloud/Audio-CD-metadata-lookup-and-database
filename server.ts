@@ -18,9 +18,12 @@ import {
 import { ImageCache } from './server/imageCache.js';
 import { Schema, validate } from './server/validate.js';
 import { errorMessage } from './server/apiTypes.js';
+import { getConfigStatus } from './server/configStatus.js';
+import { generateReadingsWithGemini } from './server/aiReadings.js';
 import {
   aiAnalyzeTagsBodySchema,
   aiBackfillBodySchema,
+  aiReadingsBodySchema,
   imageBase64BodySchema,
   imageProxyQuerySchema,
   itunesTracksQuerySchema,
@@ -93,6 +96,11 @@ app.get('/api/health', (req, res) => {
 });
 
 // Aggregated Search API across MusicBrainz, Discogs, iTunes, and NDL
+// サーバーの環境変数で設定済みのAPIキーの有無（真偽値のみ。値は返さない）
+app.get('/api/config-status', searchRateLimiter, (_req, res) => {
+  res.json(getConfigStatus());
+});
+
 app.post('/api/search', searchRateLimiter, async (req, res) => {
   try {
     const body = readInput(searchBodySchema, req.body, res);
@@ -220,6 +228,20 @@ app.post('/api/ai-backfill-metadata', aiRateLimiter, async (req, res) => {
   } catch (err: unknown) {
     log.error('Error in /api/ai-backfill-metadata:', err);
     res.status(500).json({ error: errorMessage(err) || 'Gemini APIによる自動補完処理に失敗しました' });
+  }
+});
+
+// Gemini AI でタイトル・歌手名の読み仮名（ひらがな）を推定する（五十音順の並べ替え用）
+app.post('/api/ai-readings', aiRateLimiter, async (req, res) => {
+  try {
+    const body = readInput(aiReadingsBodySchema, req.body, res);
+    if (!body) return;
+
+    const results = await generateReadingsWithGemini(body.items);
+    res.json({ results });
+  } catch (err: unknown) {
+    log.error('Error in /api/ai-readings:', err);
+    res.status(500).json({ error: errorMessage(err) || '読み仮名の生成に失敗しました' });
   }
 });
 
