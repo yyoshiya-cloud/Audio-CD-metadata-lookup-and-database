@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { generateContentWithFallback } from './geminiFallback.js';
 import { createLogger } from '../src/lib/logger.js';
+import { discogsAuthHeader, resolveDiscogsToken } from './discogsAuth.js';
 
 const log = createLogger('vinylLookup', { timestamp: true });
 
@@ -186,16 +187,9 @@ async function searchDiscogsVinyl(
       Accept: 'application/json',
     };
 
-    const rawToken = (discogsToken || process.env.DISCOGS_TOKEN || '').trim();
-    if (rawToken) {
-      if (rawToken.includes(':') && !rawToken.startsWith('http')) {
-        const [key, secret] = rawToken.split(':');
-        headers['Authorization'] = `Discogs key=${key.trim()}, secret=${secret.trim()}`;
-      } else {
-        headers['Authorization'] = `Discogs token=${rawToken}`;
-        params.append('token', rawToken);
-      }
-    }
+    // 認証情報は Authorization ヘッダーのみ（URLに含めるとアクセスログに残る）。環境変数 DISCOGS_TOKEN にも対応
+    const authorization = discogsAuthHeader(resolveDiscogsToken(discogsToken));
+    if (authorization) headers['Authorization'] = authorization;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { initAuth, googleSignIn, logout } from './lib/firebase';
-import { getAllCDs, saveCD, saveMultipleCDs, deleteCD, deleteMultipleCDs, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage, loadAppInfoConfigDB, saveAppInfoConfigDB, DEFAULT_APP_INFO_CONFIG, AppInfoConfig } from './lib/db';
+import { getAllCDs, saveCD, saveMultipleCDs, deleteMultipleCDs, getTrashedCDs, restoreCDs, purgeCDs, purgeExpiredTrash, importCDs, loadApiCredentialsDB, saveApiCredentialsDB, initPersistentStorage, loadAppInfoConfigDB, saveAppInfoConfigDB, DEFAULT_APP_INFO_CONFIG, AppInfoConfig } from './lib/db';
 import { CDMetadata, SearchQuery, SearchResponse, APICredentials } from './types/cd';
 import { getJSTISOString } from './lib/dateUtils';
 import { Header } from './components/Header';
@@ -12,8 +12,12 @@ import { CDDetailModal } from './components/CDDetailModal';
 import { CDDatabaseTable } from './components/CDDatabaseTable';
 import { DataExchangeModal } from './components/DataExchangeModal';
 import { BackupSettingsModal } from './components/BackupSettingsModal';
+import { TrashModal } from './components/TrashModal';
+import { TRASH_RETENTION_DAYS } from './lib/trash';
+import { listMissingReadings, type ReadingTarget } from './lib/readingSort';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { useToast } from './hooks/useToast';
+import { useServerConfigStatus } from './hooks/useServerConfigStatus';
 import { useDisplaySettings } from './hooks/useDisplaySettings';
 import { useSearchPreviewMode } from './hooks/useSearchPreviewMode';
 import { getBackupSettings } from './lib/autoBackup';
@@ -76,6 +80,8 @@ export default function App() {
     candidates: searchResponse?.candidates?.map((c) => c.cd) || [],
     selectedCDForModal,
   });
+  const [trashedCDs, setTrashedCDs] = useState<CDMetadata[]>([]);
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [isBackupSettingsOpen, setIsBackupSettingsOpen] = useState(false);
   const [backupEnabled, setBackupEnabled] = useState(false);
   const [isLibraryLoaded, setIsLibraryLoaded] = useState(false);
@@ -94,7 +100,8 @@ export default function App() {
   const [appInfoConfig, setAppInfoConfig] = useState<AppInfoConfig>(DEFAULT_APP_INFO_CONFIG);
 
   // Toast Notification / 表示設定（テーマ・ヘッダー・検索パネル）
-  const { toastMessage, showToast } = useToast();
+  const { toast, showToast, dismissToast } = useToast();
+  const serverConfig = useServerConfigStatus();
   const {
     isDarkMode,
     toggleTheme,
@@ -110,6 +117,13 @@ export default function App() {
       await initPersistentStorage();
       await loadLocalLibrary();
       setIsLibraryLoaded(true);
+      // 保持期間を過ぎたゴミ箱のCDを完全に削除してから、ゴミ箱の件数を読み込む
+      try {
+        await purgeExpiredTrash();
+      } catch (err) {
+        log.warn('ゴミ箱の自動整理に失敗しました', err);
+      }
+      await loadTrash();
       try {
         setBackupEnabled(getBackupSettings().enabled);
       } catch {
@@ -126,6 +140,14 @@ export default function App() {
       );
     })();
   }, []);
+
+  const loadTrash = async () => {
+    try {
+      setTrashedCDs(await getTrashedCDs());
+    } catch (err) {
+      log.error('Failed to load trash:', err);
+    }
+  };
 
   const loadLocalLibrary = async () => {
     try {
@@ -173,6 +195,73 @@ export default function App() {
         ? 'API設定を暗号化してローカルデータベース（IndexedDB）に保存しました'
         : 'API設定を暗号化して保存できませんでした（この画面を開いている間だけ有効です）。HTTPS またはlocalhost で開いているか確認してください'
     );
+  };
+
+  // タイトル・歌手名の読み仮名（ひらがな）をAIで推定して保存する。ids を渡すとその中だけを対象にする。
+  // 漢字を含み、読みが未登録のものだけが対象。既存の読みは上書きしない（AIの推定なので、詳細画面で修正できる）
+  const [isGeneratingReadings, setIsGeneratingReadings] = useState(false);
+  const handleGenerateReadings = async (ids?: string[]) => {
+    const targets = listMissingReadings(savedCDs, ids);
+    if (targets.length === 0) {
+      showToast('読みを付ける対象（漢字を含み、読みが未登録のタイトル・歌手名）はありません');
+      return;
+    }
+    if (!window.confirm(`${targets.length}件のCDの読み仮名をAI（Gemini）で推定します。\n推定のため、誤りがあれば詳細画面で修正してください。実行しますか？`)) return;
+
+    setIsGeneratingReadings(true);
+    try {
+      const CHUNK = 25;
+      const generated = new Map<string, { titleReading?: string; artistReading?: string }>();
+      for (let i = 0; i < targets.length; i += CHUNK) {
+        const chunk: ReadingTarget[] = targets.slice(i, i + CHUNK);
+        showToast(`読み仮名を生成中… ${Math.min(i + CHUNK, targets.length)} / ${targets.length}件`, 60000);
+        const res = await fetch('/api/ai-readings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: chunk }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `読み仮名の生成に失敗しました（HTTP ${res.status}）`);
+        }
+        const data: { results?: { id: string; titleReading?: string; artistReading?: string }[] } = await res.json();
+        for (const r of data.results || []) generated.set(r.id, r);
+      }
+
+      const updatedAt = getJSTISOString();
+      const toSave = savedCDs.flatMap((cd) => {
+        const g = generated.get(cd.id);
+        if (!g) return [];
+        const next = {
+          ...cd,
+          titleReading: cd.titleReading || g.titleReading,
+          artistReading: cd.artistReading || g.artistReading,
+        };
+        const changed = next.titleReading !== cd.titleReading || next.artistReading !== cd.artistReading;
+        return changed ? [{ ...next, updatedAt }] : [];
+      });
+      if (toSave.length > 0) {
+        await saveMultipleCDs(toSave);
+        await loadLocalLibrary();
+      }
+      showToast(
+        toSave.length > 0
+          ? `${toSave.length}件の読み仮名を生成しました（AI推定。詳細画面で修正できます）`
+          : '読み仮名を生成できませんでした（確信の持てないものは空のままです）'
+      );
+    } catch (err) {
+      log.error('読み仮名の生成に失敗', err);
+      showToast(err instanceof Error ? err.message : '読み仮名の生成に失敗しました');
+    } finally {
+      setIsGeneratingReadings(false);
+    }
+  };
+
+  // ブラウザに保存したAPIキーをすべて削除する（サーバーの環境変数のキーは影響を受けない）
+  const handleClearStoredApiKeys = async () => {
+    setApiCredentials({});
+    await saveApiCredentialsDB({});
+    showToast('ブラウザに保存したAPIキーを削除しました');
   };
 
   // Perform multi-source aggregated search
@@ -253,17 +342,47 @@ export default function App() {
   };
 
   // Delete CD from DB
-  const handleDeleteCD = async (id: string) => {
-    await deleteCD(id);
+  // CDをゴミ箱に移す（完全には削除しない）。トーストの「元に戻す」で取り消せる
+  const moveToTrash = async (ids: string[], label: string) => {
+    await deleteMultipleCDs(ids);
     await loadLocalLibrary();
-    showToast('CDを削除しました');
+    await loadTrash();
+    showToast(`${label}をゴミ箱に移しました（${TRASH_RETENTION_DAYS}日間は元に戻せます）`, {
+      durationMs: 10000,
+      action: {
+        label: '元に戻す',
+        onClick: async () => {
+          await restoreCDs(ids);
+          await loadLocalLibrary();
+          await loadTrash();
+          showToast(`${label}を元に戻しました`);
+        },
+      },
+    });
+  };
+
+  const handleDeleteCD = async (id: string) => {
+    const title = savedCDs.find((c) => c.id === id)?.title;
+    await moveToTrash([id], title ? `「${title}」` : 'CD');
   };
 
   // Batch Delete
   const handleBatchDelete = async (ids: string[]) => {
-    await deleteMultipleCDs(ids);
+    await moveToTrash(ids, `${ids.length} 件のCD`);
+  };
+
+  // ゴミ箱からの操作
+  const handleRestoreFromTrash = async (ids: string[]) => {
+    await restoreCDs(ids);
     await loadLocalLibrary();
-    showToast(`${ids.length} 件のCDを削除しました`);
+    await loadTrash();
+    showToast(`${ids.length} 件のCDを元に戻しました`);
+  };
+
+  const handlePurgeFromTrash = async (ids: string[]) => {
+    await purgeCDs(ids);
+    await loadTrash();
+    showToast(`${ids.length} 件のCDを完全に削除しました`);
   };
 
   // 書き出し（JSON / Excel / CSV）モーダルを開く
@@ -302,7 +421,8 @@ export default function App() {
       await deleteMultipleCDs(duplicateIdsToDelete);
     }
     await loadLocalLibrary();
-    showToast(`「${primaryCD.title}」の重複レコードを統合・名寄せしました`);
+    await loadTrash();
+    showToast(`「${primaryCD.title}」の重複レコードを統合・名寄せしました（統合された側はゴミ箱に移動）`);
   };
 
   // Merge all duplicate CD groups
@@ -315,7 +435,8 @@ export default function App() {
       await deleteMultipleCDs(allDeleteIds);
     }
     await loadLocalLibrary();
-    showToast(`${mergeActions.length} グループの重複CDを一括統合・クリーンアップしました`);
+    await loadTrash();
+    showToast(`${mergeActions.length} グループの重複CDを一括統合・クリーンアップしました（統合された側はゴミ箱に移動）`);
   };
 
   // 読み込み（バックアップからの復元など）モーダルを開く
@@ -469,10 +590,22 @@ export default function App() {
       <main className="flex-1 max-w-[1800px] w-full mx-auto px-3 sm:px-6 py-3">
         
         {/* Toast Banner */}
-        {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 bg-indigo-600 text-white px-4 py-3 rounded-xl shadow-2xl border border-indigo-400 flex items-center gap-2 animate-in slide-in-from-bottom-5 duration-200">
-            <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-            <span className="text-xs font-bold">{toastMessage}</span>
+        {toast && (
+          <div className="fixed bottom-6 right-6 z-50 bg-indigo-600 text-white px-4 py-3 rounded-xl shadow-2xl border border-indigo-400 flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-200">
+            <CheckCircle2 className="w-5 h-5 text-emerald-300 flex-shrink-0" />
+            <span className="text-xs font-bold">{toast.message}</span>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.action?.onClick();
+                  dismissToast();
+                }}
+                className="ml-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-white/20 hover:bg-white/30 border border-white/30 cursor-pointer flex-shrink-0"
+              >
+                {toast.action.label}
+              </button>
+            )}
           </div>
         )}
 
@@ -590,6 +723,10 @@ export default function App() {
             onOpenExportModal={handleOpenExportModalForItems}
             onOpenImportModal={handleOpenImportModal}
             onOpenBackupSettings={() => setIsBackupSettingsOpen(true)}
+            onOpenTrash={() => setIsTrashOpen(true)}
+            onGenerateReadings={handleGenerateReadings}
+            isGeneratingReadings={isGeneratingReadings}
+            trashCount={trashedCDs.length}
             backupEnabled={backupEnabled}
             onOpenManualAdd={handleOpenManualAdd}
             onOpenAITagging={handleOpenAITagging}
@@ -701,6 +838,16 @@ export default function App() {
         />
       )}
 
+      {/* ゴミ箱（削除の取り消し） */}
+      {isTrashOpen && (
+        <TrashModal
+          trashedCDs={trashedCDs}
+          onClose={() => setIsTrashOpen(false)}
+          onRestore={handleRestoreFromTrash}
+          onPurge={handlePurgeFromTrash}
+        />
+      )}
+
       {/* JSON自動バックアップの設定・復元 */}
       {isBackupSettingsOpen && (
         <BackupSettingsModal
@@ -745,6 +892,8 @@ export default function App() {
           credentials={apiCredentials}
           onSaveCredentials={handleSaveApiCredentials}
           onClose={() => setIsAPISettingsOpen(false)}
+          serverConfig={serverConfig}
+          onClearStoredKeys={handleClearStoredApiKeys}
         />
       )}
 

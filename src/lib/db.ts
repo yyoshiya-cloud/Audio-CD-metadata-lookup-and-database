@@ -7,6 +7,7 @@ import { settingsStore, STORAGE_KEYS } from './settingsStore';
 import { createLogger } from './logger';
 import { decryptJSON, encryptJSON, generateCredentialsKey, isEncryptedPayload } from './secureCredentials';
 import { setCachedApiCredentials } from './credentialsCache';
+import { TRASH_RETENTION_DAYS, selectExpiredTrashIds, sortTrashNewestFirst, splitTrash } from './trash';
 
 const log = createLogger('db');
 
@@ -204,7 +205,8 @@ export async function getAllCDs(): Promise<CDMetadata[]> {
       await db.cds.bulkPut(toUpdateInDB).catch(() => {});
     }
     normalized.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
-    return normalized;
+    // ゴミ箱に入っているCDは一覧に含めない（getTrashedCDs で取得する）
+    return splitTrash<CDMetadata>(normalized).active;
   } catch (err) {
     log.error('Dexie getAllCDs error:', err);
     return [];
@@ -281,7 +283,7 @@ export async function importCDs(cds: CDMetadata[]): Promise<void> {
  * Delete single CD from Dexie IndexedDB
  */
 export async function deleteCD(id: string): Promise<void> {
-  await db.cds.delete(id);
+  await deleteMultipleCDs([id]);
 }
 
 /**
@@ -289,7 +291,50 @@ export async function deleteCD(id: string): Promise<void> {
  */
 export async function deleteMultipleCDs(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
+  // 完全には削除せず、ゴミ箱に移す（deletedAt を付ける）。restoreCDs で元に戻せる
+  const deletedAt = new Date().toISOString();
+  await db.cds.where('id').anyOf(ids).modify({ deletedAt });
+}
+
+/**
+ * ゴミ箱の中のCD（削除日時の新しい順）
+ */
+export async function getTrashedCDs(): Promise<CDMetadata[]> {
+  try {
+    const all = await db.cds.toArray();
+    return sortTrashNewestFirst<CDMetadata>(splitTrash<CDMetadata>(all).trashed);
+  } catch (err) {
+    log.error('Dexie getTrashedCDs error:', err);
+    return [];
+  }
+}
+
+/** ゴミ箱から元に戻す */
+export async function restoreCDs(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db.cds.where('id').anyOf(ids).modify((cd: CDMetadata) => {
+    delete cd.deletedAt;
+  });
+}
+
+/** 完全に削除する（元に戻せない） */
+export async function purgeCDs(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
   await db.cds.bulkDelete(ids);
+}
+
+/** ゴミ箱を空にする（元に戻せない）。削除した件数を返す */
+export async function emptyTrash(): Promise<number> {
+  const ids = (await getTrashedCDs()).map((cd) => cd.id);
+  await purgeCDs(ids);
+  return ids.length;
+}
+
+/** 保持期間（既定30日）を過ぎたゴミ箱のCDを完全に削除する。起動時に呼ぶ */
+export async function purgeExpiredTrash(retentionDays: number = TRASH_RETENTION_DAYS): Promise<number> {
+  const ids = selectExpiredTrashIds(await getTrashedCDs(), Date.now(), retentionDays);
+  await purgeCDs(ids);
+  return ids.length;
 }
 
 const CREDENTIALS_KEY_RECORD = 'apiCredentialsKey';

@@ -242,6 +242,15 @@ function consolidateGroup(
   }
   const coverUrl = coverCandidates[0] || '';
 
+  // 読み仮名（五十音順の並べ替え用）。採用したタイトル・アーティストと同じものを指すソースの読みだけを使う
+  const titleReading =
+    sortedByPriority(groupItems, TEXT_PRIORITY).find((i) => i.titleReading && titleSimilarity(i.title, title) >= 0.9)
+      ?.titleReading || undefined;
+  const artistReading =
+    sortedByPriority(groupItems, TEXT_PRIORITY).find(
+      (i) => i.artistReading && artistSimilarity(i.artist, artist) >= 0.8
+    )?.artistReading || undefined;
+
   const reportedCat =
     pickValue(groupItems, CATNO_PRIORITY, (i) => i.catalogNumber, nonEmpty, false) ||
     pickValue(groupItems, CATNO_PRIORITY, (i) => i.catalogNumber, nonEmpty) ||
@@ -349,6 +358,8 @@ function consolidateGroup(
     barcode,
     coverUrl,
     coverCandidates,
+    titleReading,
+    artistReading,
     country: 'JP',
     format,
     genre,

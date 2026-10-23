@@ -63,6 +63,18 @@ export const aiAnalyzeTagsBodySchema = v.object({
 /** POST /api/ai-backfill-metadata */
 export const aiBackfillBodySchema = v.object({ cds: cdList });
 
+/** POST /api/ai-readings */
+export const aiReadingsBodySchema = v.object({
+  items: v.array(
+    v.object({
+      id: v.string({ max: 200 }),
+      title: text(500),
+      artist: text(500),
+    }),
+    { min: 1, max: MAX_BATCH_ITEMS }
+  ),
+});
+
 /** GET /api/image-proxy （クエリ文字列） */
 export const imageProxyQuerySchema = v.object({
   url: v.string({ min: 1, max: 2048 }),

@@ -264,6 +264,44 @@ test('NDL: 録音資料(mediatype = audio)に絞り込む / 索引は anywhere /
   assert.ok(both.includes('isbn = "4988009012345"') && both.endsWith(' AND mediatype = audio'));
   assert.equal(buildNDLQuery({}), '');
 });
+test('NDL: 読み（titleTranscription / transcription）を、ひらがなで取り出す', () => {
+  const xml = `<recordData>
+    <dc:title>坂道の少女</dc:title>
+    <dcndl:titleTranscription>サカミチ ノ ショウジョ</dcndl:titleTranscription>
+    <dc:creator>沢田聖子</dc:creator>
+    <dcndl:transcription>サワダ, セイコ</dcndl:transcription>
+  </recordData>`;
+  const [r] = parseNDLXmlResponse(xml);
+  assert.equal(r.titleReading, 'さかみち の しょうじょ');
+  assert.equal(r.artistReading, 'さわだせいこ');
+  // 読みが無い・漢字が混じる場合は付けない
+  const [noReading] = parseNDLXmlResponse('<recordData><dc:title>坂道の少女</dc:title><dcndl:titleTranscription>坂道</dcndl:titleTranscription></recordData>');
+  assert.equal(noReading.titleReading, undefined);
+  assert.equal(noReading.artistReading, undefined);
+});
+test('検索結果の統合: 読みは、採用したタイトルと同じものを指すソースから付く', () => {
+  const r = mergeCDCandidates(
+    [
+      cd({ source: 'ndl', catalogNumber: 'OPL-1008', title: '坂道の少女', artist: '沢田聖子', titleReading: 'さかみちのしょうじょ', artistReading: 'さわだせいこ' }),
+      cd({ source: 'itunes', title: '坂道の少女', artist: '沢田聖子' }),
+      cd({ source: 'discogs', catalogNumber: 'OPL-1008', title: 'Another Name', artist: 'Someone Else', titleReading: 'ふめい', artistReading: 'ふめい' }),
+    ],
+    { catalogNumber: 'OPL-1008' }
+  );
+  assert.equal(r[0].cd.titleReading, 'さかみちのしょうじょ');
+  assert.equal(r[0].cd.artistReading, 'さわだせいこ');
+  // 採用したタイトルと別物の読みは使わない
+  const other = mergeCDCandidates(
+    [
+      cd({ source: 'rakuten', catalogNumber: 'X-1', title: '坂道の少女', artist: '沢田聖子' }),
+      cd({ source: 'ndl', catalogNumber: 'X-1', title: '全然違う題名', artist: '別の人', titleReading: 'ぜんぜんちがう', artistReading: 'べつのひと' }),
+    ],
+    { catalogNumber: 'X-1' }
+  );
+  assert.equal(other[0].cd.title, '坂道の少女');
+  assert.equal(other[0].cd.titleReading, undefined);
+  assert.equal(other[0].cd.artistReading, undefined);
+});
 test('NDL: 型番が無いレコードに検索型番を付けない', () => {
   const xml = `<recordData><dc:title>本のタイトル</dc:title><dc:identifier>JP20000001</dc:identifier></recordData>`;
   const [r] = parseNDLXmlResponse(xml);

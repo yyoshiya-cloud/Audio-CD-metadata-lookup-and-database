@@ -8,6 +8,20 @@ import { STORAGE_KEYS, __setStorageForTests, settingsStore } from '../src/lib/se
 import { decryptJSON, encryptJSON, generateCredentialsKey, isEncryptedPayload } from '../src/lib/secureCredentials.ts';
 import { v, validate } from '../server/validate.ts';
 import { measureImageFootprint } from '../src/lib/imageFootprint.ts';
+import { sanitizeReadingResults } from '../server/readingSanitizer.ts';
+import { listMissingReadings, needsReading } from '../src/lib/readingSort.ts';
+import {
+  compareSortKeys,
+  groupHeading,
+  isValidReading,
+  normalizeReading,
+  normalizeSortKey,
+  sortKeyForArtist,
+  sortKeyForTitle,
+} from '../src/lib/readingSort.ts';
+import { TRASH_RETENTION_DAYS, daysUntilPurge, isTrashed, selectExpiredTrashIds, sortTrashNewestFirst, splitTrash } from '../src/lib/trash.ts';
+import { discogsAuthHeader, isConfiguredValue, resolveDiscogsToken } from '../server/discogsAuth.ts';
+import { getConfigStatus } from '../server/configStatus.ts';
 import {
   MAX_BATCH_ITEMS,
   aiAnalyzeTagsBodySchema,
@@ -157,6 +171,149 @@ await test('JSONサイズの上限', () => {
   const schema = v.object({ apiKeys: v.optional(v.limitedJSON(50)) });
   assert.ok(validate(schema, { apiKeys: { a: 'b' } }).ok);
   assert.ok(!validate(schema, { apiKeys: { a: 'x'.repeat(100) } }).ok);
+});
+
+console.log('読み仮名と五十音ソート');
+await test('読みの整形と妥当性（漢字・カタカナ以外の混入を弾く）', () => {
+  assert.equal(normalizeReading('  サザン　オールスターズ '), 'さざん おーるすたーず');
+  assert.equal(normalizeReading('ＡＢＣ'), 'ABC');
+  assert.equal(normalizeReading(null), '');
+  assert.ok(isValidReading('さかみちのしょうじょ'));
+  assert.ok(isValidReading('エイ・ビー・シー') && isValidReading('Mr.Children') && isValidReading('ゆず'));
+  assert.ok(!isValidReading('坂道の少女')); // 漢字
+  assert.ok(!isValidReading(''));
+  assert.ok(!isValidReading('・・・'));
+});
+await test('並べ替えキー: 読みを優先し、かなを揃え、冠詞と記号を除く', () => {
+  assert.equal(normalizeSortKey('アイウ'), 'あいう');
+  assert.equal(normalizeSortKey('The Beatles'), 'beatles');
+  assert.equal(normalizeSortKey('A-ha'), 'aha');
+  assert.equal(normalizeSortKey('♪'), '♪');
+  assert.equal(sortKeyForTitle({ title: '坂道の少女', titleReading: 'さかみちのしょうじょ' }), 'さかみちのしょうじょ');
+  assert.equal(sortKeyForTitle({ title: 'ありがとう' }), 'ありがとう');
+  assert.equal(sortKeyForArtist({ artist: 'サザンオールスターズ', artistReading: '' }), 'さざんおーるすたーず');
+});
+await test('五十音順に並ぶ（漢字は読みで、英字は先、冠詞は無視）', () => {
+  const cds = [
+    { title: '青春の光と影', titleReading: 'せいしゅんのひかりとかげ' },
+    { title: 'アーリーデイズ', titleReading: '' },
+    { title: '坂道の少女', titleReading: 'さかみちのしょうじょ' },
+    { title: 'The Best' },
+    { title: 'ありがとう' },
+    { title: '卒業', titleReading: 'そつぎょう' },
+    { title: 'Zebra' },
+    { title: '1999' },
+  ];
+  const sorted = [...cds].sort((a, b) => compareSortKeys(sortKeyForTitle(a), sortKeyForTitle(b))).map((c) => c.title);
+  // 数字・英字 → あ行 → さ行 → せ → そ の順
+  assert.deepEqual(sorted, ['1999', 'The Best', 'Zebra', 'アーリーデイズ', 'ありがとう', '坂道の少女', '青春の光と影', '卒業']);
+  // 濁点の違いは同順位（か と が）、小さい「っ」を含んでも崩れない
+  assert.ok(compareSortKeys('かさ', 'がさ') === 0);
+  assert.ok(compareSortKeys('あ', 'い') < 0 && compareSortKeys('わ', 'ん') < 0);
+});
+await test('見出し（あ行〜わ行 / A〜Z / 0-9 / その他）', () => {
+  assert.equal(groupHeading('あいう'), 'あ');
+  assert.equal(groupHeading('がっこう'), 'か');
+  assert.equal(groupHeading('ぱ'), 'は');
+  assert.equal(groupHeading('っ'), 'た');
+  assert.equal(groupHeading('んー'), 'わ');
+  assert.equal(groupHeading('zebra'), 'Z');
+  assert.equal(groupHeading('1999'), '0-9');
+  assert.equal(groupHeading('♪'), 'その他');
+  assert.equal(groupHeading(''), 'その他');
+});
+
+console.log('AIによる読み仮名の生成');
+await test('読みを付ける対象: 漢字を含み、読みが未登録のものだけ（選択があればその中だけ）', () => {
+  assert.ok(needsReading('坂道の少女') && needsReading('Mr.沢田') && !needsReading('ありがとう') && !needsReading('Zebra') && !needsReading(''));
+  const cds = [
+    { id: '1', title: '坂道の少女', artist: '沢田聖子' },
+    { id: '2', title: 'ありがとう', artist: 'ゆず' }, // かなだけ → 不要
+    { id: '3', title: '卒業', artist: '沢田聖子', titleReading: 'そつぎょう' }, // タイトルは登録済み → 歌手のみ
+    { id: '4', title: 'Zebra', artist: 'Band', titleReading: '', artistReading: '' }, // 英字だけ → 不要
+    { id: '5', title: '青春', artist: '誰か', titleReading: 'せいしゅん', artistReading: 'だれか' }, // 両方登録済み
+  ];
+  assert.deepEqual(listMissingReadings(cds), [
+    { id: '1', title: '坂道の少女', artist: '沢田聖子' },
+    { id: '3', title: undefined, artist: '沢田聖子' },
+  ]);
+  assert.deepEqual(listMissingReadings(cds, ['3', '5']), [{ id: '3', title: undefined, artist: '沢田聖子' }]);
+  assert.deepEqual(listMissingReadings(cds, []).length, 2); // 空の配列は「指定なし」
+});
+await test('AIの応答の検証: 依頼外のID・漢字混じり・依頼外の項目・重複を捨て、読みを整える', () => {
+  const requested = [
+    { id: 'a', title: '坂道の少女', artist: '沢田聖子' },
+    { id: 'b', title: '卒業' },
+    { id: 'c', artist: '誰か' },
+  ];
+  const raw = {
+    results: [
+      { id: 'a', titleReading: 'サカミチノショウジョ', artistReading: '沢田聖子' }, // 歌手の読みに漢字 → 捨てる
+      { id: 'b', titleReading: 'そつぎょう', artistReading: 'ひつよう' }, // 依頼していない歌手の読み → 捨てる
+      { id: 'c', titleReading: 'いらない', artistReading: 'だれか' }, // 依頼していないタイトルの読み → 捨てる
+      { id: 'zzz', titleReading: 'ふめい' }, // 依頼していないID
+      { id: 'a', titleReading: 'べつ' }, // 重複
+      { id: 'b', titleReading: '' }, // 空
+      'broken',
+    ],
+  };
+  assert.deepEqual(sanitizeReadingResults(raw, requested), [
+    { id: 'a', titleReading: 'さかみちのしょうじょ', artistReading: undefined },
+    { id: 'b', titleReading: 'そつぎょう', artistReading: undefined },
+    { id: 'c', titleReading: undefined, artistReading: 'だれか' },
+  ]);
+  assert.deepEqual(sanitizeReadingResults(null, requested), []);
+  assert.deepEqual(sanitizeReadingResults({ results: 'x' }, requested), []);
+});
+
+console.log('ゴミ箱（削除の取り消し）');
+await test('ゴミ箱の振り分け・並び・期限切れの判定・残り日数', () => {
+  const DAY = 24 * 3600 * 1000;
+  const now = Date.parse('2026-10-20T12:00:00Z');
+  const iso = (daysAgo: number) => new Date(now - daysAgo * DAY).toISOString();
+  const cds = [
+    { id: 'a' },
+    { id: 'b', deletedAt: iso(1) },
+    { id: 'c', deletedAt: iso(31) },
+    { id: 'd', deletedAt: iso(29.5) },
+    { id: 'e', deletedAt: 'broken-date' },
+  ];
+  assert.ok(!isTrashed(cds[0]) && isTrashed(cds[1]));
+  const { active, trashed } = splitTrash(cds);
+  assert.deepEqual(active.map((c) => c.id), ['a']);
+  assert.deepEqual(trashed.map((c) => c.id), ['b', 'c', 'd', 'e']);
+  assert.deepEqual(sortTrashNewestFirst(trashed.slice(0, 3)).map((c) => c.id), ['b', 'd', 'c']);
+  // 30日以上前だけが期限切れ（壊れた日付は消さない）
+  assert.deepEqual(selectExpiredTrashIds(cds, now), ['c']);
+  assert.deepEqual(selectExpiredTrashIds(cds, now, 1), ['b', 'c', 'd']);
+  assert.equal(TRASH_RETENTION_DAYS, 30);
+  assert.equal(daysUntilPurge({ deletedAt: iso(1) }, now), 29);
+  assert.equal(daysUntilPurge({ deletedAt: iso(29.5) }, now), 1);
+  assert.equal(daysUntilPurge({ deletedAt: iso(40) }, now), 0);
+  assert.equal(daysUntilPurge({}, now), 30);
+});
+
+console.log('環境変数のAPIキー');
+await test('Discogs: 画面の値 > 環境変数 の優先順位。プレースホルダーは未設定扱い', () => {
+  assert.equal(resolveDiscogsToken(' from-ui ', { DISCOGS_TOKEN: 'from-env' }), 'from-ui');
+  assert.equal(resolveDiscogsToken('', { DISCOGS_TOKEN: ' from-env ' }), 'from-env');
+  assert.equal(resolveDiscogsToken(undefined, {}), '');
+  assert.equal(resolveDiscogsToken('', { DISCOGS_TOKEN: 'MY_DISCOGS_TOKEN' }), '');
+  assert.ok(!isConfiguredValue('') && !isConfiguredValue('  ') && !isConfiguredValue('MY_GEMINI_API_KEY') && isConfiguredValue('abc'));
+});
+await test('Discogs: 認証ヘッダーの書式（token / key:secret / key=…）', () => {
+  assert.equal(discogsAuthHeader(''), undefined);
+  assert.equal(discogsAuthHeader('abc123'), 'Discogs token=abc123');
+  assert.equal(discogsAuthHeader('KEY:SECRET'), 'Discogs key=KEY, secret=SECRET');
+  assert.equal(discogsAuthHeader('key=K, secret=S'), 'Discogs key=K, secret=S');
+});
+await test('設定状況の応答は真偽値のみ（キーの値を含まない）', () => {
+  const env = { DISCOGS_TOKEN: 'SECRET-VALUE', GEMINI_API_KEY: 'MY_GEMINI_API_KEY', SPOTIFY_CLIENT_ID: 'id', MB_CONTACT: 'a@example.com' };
+  const status = getConfigStatus(env);
+  assert.deepEqual(status, { discogs: true, spotify: false, rakuten: false, gemini: false, musicbrainzContact: true });
+  const json = JSON.stringify(status);
+  assert.ok(!json.includes('SECRET-VALUE') && !json.includes('a@example.com'));
+  assert.ok(Object.values(status).every((v) => typeof v === 'boolean'));
 });
 
 console.log('画像の容量');

@@ -1,6 +1,7 @@
 import { CDMetadata } from '../src/types/cd.js';
 import { catnoVariants, digitsOnly, isValidBarcodeLength } from './searchUtils.js';
 import { DiscogsSearchResult, errorMessage, isAbortError } from './apiTypes.js';
+import { discogsAuthHeader, resolveDiscogsToken } from './discogsAuth.js';
 
 /** Discogs はアーティスト名の同名区別に "(2)" のような接尾辞を付ける */
 export function cleanDiscogsArtist(name: string): string {
@@ -48,18 +49,10 @@ export async function searchDiscogs(query: {
     Accept: 'application/json',
   };
 
-  // 認証情報は Authorization ヘッダーのみで送る（URLに含めるとアクセスログに残るため）
-  const rawToken = query.apiKeys?.discogsToken?.trim();
-  if (rawToken) {
-    if (rawToken.includes(':') && !rawToken.startsWith('http')) {
-      const [key, secret] = rawToken.split(':');
-      headers['Authorization'] = `Discogs key=${key.trim()}, secret=${secret.trim()}`;
-    } else if (rawToken.includes('key=') || rawToken.includes('secret=')) {
-      headers['Authorization'] = `Discogs ${rawToken}`;
-    } else {
-      headers['Authorization'] = `Discogs token=${rawToken}`;
-    }
-  }
+  // 認証情報は Authorization ヘッダーのみで送る（URLに含めるとアクセスログに残るため）。
+  // 画面から送られたトークンが無ければ、サーバーの環境変数 DISCOGS_TOKEN を使う。
+  const authorization = discogsAuthHeader(resolveDiscogsToken(query.apiKeys?.discogsToken));
+  if (authorization) headers['Authorization'] = authorization;
 
   const cleanBarcode = digitsOnly(query.barcode);
 

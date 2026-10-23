@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CDMetadata } from '../types/cd';
-import { Search, FileSpreadsheet, ShieldCheck, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, Sparkles, Table, BookOpen, Loader2, Tag, Edit3, Database, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, LayoutGrid, X, Star, Layers, Eye, EyeOff } from 'lucide-react';
+import { Search, FileSpreadsheet, ShieldCheck, Download, Trash2, CheckCircle2, Music, Disc, Filter, Plus, Sparkles, Table, BookOpen, Loader2, Tag, Edit3, Database, Languages, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, LayoutGrid, X, Star, Layers, Eye, EyeOff } from 'lucide-react';
 import { matchesCDSearchQuery, getMatchedTracksForQuery } from '../utils/japaneseSearchNormalizer';
 import { lookupVinylReleasesBatch } from '../utils/formatUtils';
 import { settingsStore, STORAGE_KEYS } from '../lib/settingsStore';
 import { Modal } from './Modal';
+import { compareSortKeys, sortKeyForArtist, sortKeyForTitle } from '../lib/readingSort';
 import { normalizeTagList, normalizeSingleTag, normalizeCDTagsAndGenre } from '../lib/tagNormalizer';
 import { loadTagPresetsDB, saveTagPresetsDB, DEFAULT_TAG_PRESETS } from '../lib/db';
 import { SpreadsheetEditorView } from './SpreadsheetEditorView';
@@ -68,6 +69,13 @@ interface CDDatabaseTableProps {
   onOpenImportModal?: () => void;
   /** JSON自動バックアップの設定画面を開く */
   onOpenBackupSettings?: () => void;
+  /** 読み仮名をAIで生成する（選択中があれば選択分、なければ未登録のすべて） */
+  onGenerateReadings?: (ids?: string[]) => void;
+  isGeneratingReadings?: boolean;
+  /** ゴミ箱を開く */
+  onOpenTrash?: () => void;
+  /** ゴミ箱に入っているCDの数（ボタンの表示用） */
+  trashCount?: number;
   /** 自動バックアップが有効か（ボタンの表示用） */
   backupEnabled?: boolean;
   onOpenManualAdd?: () => void;
@@ -98,6 +106,10 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   onOpenExportModal,
   onOpenImportModal,
   onOpenBackupSettings,
+  onOpenTrash,
+  onGenerateReadings,
+  isGeneratingReadings = false,
+  trashCount = 0,
   backupEnabled = false,
   onOpenManualAdd,
   onOpenAITagging,
@@ -363,12 +375,18 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
 
   const sortedCDs = [...filteredCDs].sort((a, b) => {
     if (!sortField) return 0;
-    const valA = (a[sortField] || '').toString().toLowerCase();
-    const valB = (b[sortField] || '').toString().toLowerCase();
-
-    if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-    if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-    return 0;
+    let result: number;
+    if (sortField === 'title') {
+      // 読み仮名があれば読みで、なければタイトルで五十音順に並べる
+      result = compareSortKeys(sortKeyForTitle(a), sortKeyForTitle(b));
+    } else if (sortField === 'artist') {
+      result = compareSortKeys(sortKeyForArtist(a), sortKeyForArtist(b));
+    } else {
+      const valA = (a[sortField] || '').toString().toLowerCase();
+      const valB = (b[sortField] || '').toString().toLowerCase();
+      result = valA < valB ? -1 : valA > valB ? 1 : 0;
+    }
+    return sortDirection === 'asc' ? result : -result;
   });
 
   const toggleSelectAll = () => {
@@ -721,6 +739,42 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
               {selectedIds.length > 0 ? selectedIds.length : cds.length}
             </span>
           </button>
+
+          {onGenerateReadings && (
+            <button
+              type="button"
+              disabled={isGeneratingReadings}
+              onClick={() => onGenerateReadings(selectedIds.length > 0 ? selectedIds : undefined)}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-slate-800 hover:bg-slate-700 text-slate-100 shadow transition-all cursor-pointer border border-slate-600/60 flex-shrink-0 disabled:opacity-60 disabled:cursor-wait"
+              title="漢字を含むタイトル・歌手名の読み仮名（ひらがな）をAIで推定します。五十音順の並べ替えに使います。選択中のCDがあれば選択分のみ"
+            >
+              {isGeneratingReadings ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+              ) : (
+                <Languages className="w-3.5 h-3.5 text-sky-300 flex-shrink-0" />
+              )}
+              <span className="hidden min-[1800px]:inline">
+                {selectedIds.length > 0 ? `読み仮名生成 (${selectedIds.length})` : '読み仮名生成'}
+              </span>
+            </button>
+          )}
+
+          {onOpenTrash && (
+            <button
+              type="button"
+              onClick={onOpenTrash}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-slate-800 hover:bg-slate-700 text-slate-100 shadow transition-all cursor-pointer border border-slate-600/60 flex-shrink-0"
+              title={`ゴミ箱（削除したCDを元に戻せます。${trashCount}件）`}
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-300 flex-shrink-0" />
+              <span className="hidden min-[1800px]:inline">ゴミ箱</span>
+              {trashCount > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full border font-mono font-bold bg-rose-950/80 text-rose-200 border-rose-400/40">
+                  {trashCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {onOpenBackupSettings && (
             <button

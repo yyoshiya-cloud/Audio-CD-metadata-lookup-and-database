@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SOURCE_FULL_LABELS } from '../config/sources';
+import { normalizeReading } from '../lib/readingSort';
 import { SourceComparisonTab } from './detail/SourceComparisonTab';
 import { TrackListTab } from './detail/TrackListTab';
 import { CDMetadata, TrackInfo, APISource, AITagAnalysisMetadata, CDSubImage, SubImageType } from '../types/cd';
@@ -51,6 +52,9 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
 
   const [title, setTitle] = useState(cd.title);
   const [artist, setArtist] = useState(cd.artist);
+  // 読み仮名（ひらがな）。五十音順の並べ替えに使う
+  const [titleReading, setTitleReading] = useState(cd.titleReading || '');
+  const [artistReading, setArtistReading] = useState(cd.artistReading || '');
   const [catalogNumber, setCatalogNumber] = useState(cd.catalogNumber);
   const [label, setLabel] = useState(cd.label || '');
   const [releaseDate, setReleaseDate] = useState(cd.releaseDate || '');
@@ -106,6 +110,8 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       loadedCdIdRef.current = cd.id;
       setTitle(cd.title || '');
       setArtist(cd.artist || '');
+      setTitleReading(cd.titleReading || '');
+      setArtistReading(cd.artistReading || '');
       setCatalogNumber(cd.catalogNumber || '');
       setLabel(cd.label || '');
       setReleaseDate(cd.releaseDate || '');
@@ -173,7 +179,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onNavigatePrev, onNavigateNext, onClose, isImageLightboxOpen, isDirty, isSaved, tagsInput, genre, aiTagAnalysis, title, artist, catalogNumber, label, releaseDate, vinylRecordReleaseDate, vinylRecordFormat, vinylRecordCatalogNumber, barcode, notes, tracks, coverUrl]);
+  }, [onNavigatePrev, onNavigateNext, onClose, isImageLightboxOpen, isDirty, isSaved, tagsInput, genre, aiTagAnalysis, title, artist, titleReading, artistReading, catalogNumber, label, releaseDate, vinylRecordReleaseDate, vinylRecordFormat, vinylRecordCatalogNumber, barcode, notes, tracks, coverUrl]);
 
   const normalizeToYYYYMMDD = (raw?: string | null): string => {
     if (!raw) return '';
@@ -392,6 +398,8 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
         {
           id: cd.id,
           title: title.trim(),
+          titleReading: normalizeReading(titleReading) || undefined,
+          artistReading: normalizeReading(artistReading) || undefined,
           artist: artist.trim(),
           catalogNumber: catalogNumber.trim(),
           releaseDate: releaseDate.trim(),
@@ -1407,6 +1415,15 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
                   />
+                  <input
+                    type="text"
+                    value={titleReading}
+                    onChange={(e) => setTitleReading(e.target.value)}
+                    onBlur={() => setTitleReading(normalizeReading(titleReading))}
+                    placeholder="タイトルの読み（ひらがな）例: さかみちのしょうじょ"
+                    aria-label="タイトルの読み（ひらがな）"
+                    className="mt-1.5 w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none"
+                  />
                 </div>
 
                 <div>
@@ -1418,6 +1435,15 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     value={artist}
                     onChange={(e) => setArtist(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={artistReading}
+                    onChange={(e) => setArtistReading(e.target.value)}
+                    onBlur={() => setArtistReading(normalizeReading(artistReading))}
+                    placeholder="歌手名の読み（ひらがな）例: さわだせいこ"
+                    aria-label="歌手名の読み（ひらがな）"
+                    className="mt-1.5 w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
 

@@ -2,6 +2,7 @@ import { CDMetadata, TrackInfo } from '../src/types/cd.js';
 import { catnoVariants, cqlQuote, decodeXmlEntities, digitsOnly, isValidBarcodeLength } from './searchUtils.js';
 import { createLogger } from '../src/lib/logger.js';
 import { errorMessage, isAbortError } from './apiTypes.js';
+import { isValidReading, normalizeReading } from '../src/lib/readingSort.js';
 
 const log = createLogger('ndl', { timestamp: true });
 
@@ -129,6 +130,9 @@ export function parseNDLXmlResponse(rawXml: string): CDMetadata[] {
     };
 
     const rawTitle = extract('dc:title') || extract('title') || extract('dcterms:title');
+    // 読み（NDLはカタカナ。"サワダ, セイコ" のように姓名をカンマで区切ることがある）
+    const rawTitleReading = extract('dcndl:titleTranscription');
+    const rawArtistReading = extract('dcndl:transcription').replace(/\s*,\s*/g, '');
     const rawCreators = extractAll('dc:creator').concat(extractAll('creator'));
     const rawPublisher = extract('dcndl:publicationName') || extract('dc:publisher') || extract('publisher');
     const rawIssued = extract('dcterms:issued') || extract('dc:date') || extract('date');
@@ -185,6 +189,8 @@ export function parseNDLXmlResponse(rawXml: string): CDMetadata[] {
       catalogNumber,
       title,
       artist,
+      titleReading: isValidReading(rawTitleReading) ? normalizeReading(rawTitleReading) : undefined,
+      artistReading: isValidReading(rawArtistReading) ? normalizeReading(rawArtistReading) : undefined,
       label: rawPublisher || '',
       releaseDate,
       barcode,

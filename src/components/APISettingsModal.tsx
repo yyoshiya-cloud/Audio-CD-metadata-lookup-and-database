@@ -1,19 +1,38 @@
 import React, { useState } from 'react';
 import { isSourceEnabled } from '../config/sources';
 import { APICredentials } from '../types/cd';
+import type { ConfigStatus } from '../types/config';
 import { X, Key, ExternalLink, Check, ShieldCheck, Info, Eye, EyeOff } from 'lucide-react';
 
 interface APISettingsModalProps {
   credentials: APICredentials;
   onSaveCredentials: (updated: APICredentials) => void;
   onClose: () => void;
+  /** サーバーの環境変数で設定済みのAPIキーの有無（取得できなければ null） */
+  serverConfig?: ConfigStatus | null;
+  /** ブラウザに保存したAPIキーをすべて削除する */
+  onClearStoredKeys?: () => void;
 }
+
+/** 「サーバーの環境変数で設定済み」バッジ */
+const ServerConfiguredBadge: React.FC<{ show?: boolean }> = ({ show }) =>
+  show ? (
+    <span
+      className="text-[10px] font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap"
+      title="サーバーの環境変数に設定済みです。ブラウザへの入力は不要です（入力した場合は、入力した値が優先されます）"
+    >
+      <Check className="w-3 h-3" /> サーバーで設定済み
+    </span>
+  ) : null;
 
 export const APISettingsModal: React.FC<APISettingsModalProps> = ({
   credentials,
   onSaveCredentials,
   onClose,
+  serverConfig,
+  onClearStoredKeys,
 }) => {
+  const storedKeyCount = Object.values(credentials).filter(Boolean).length;
   const [spotifyClientId, setSpotifyClientId] = useState(credentials.spotifyClientId || '');
   const [showSpotifyClientId, setShowSpotifyClientId] = useState(false);
   const [spotifyClientSecret, setSpotifyClientSecret] = useState(credentials.spotifyClientSecret || '');
@@ -62,14 +81,17 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
         if (spotifyResult?.error) throw new Error(spotifyResult.error);
         setTestStatus((prev) => ({ ...prev, spotify: { loading: false, success: true, msg: '認証成功！' } }));
       } else if (apiName === 'discogs') {
-        if (!discogsToken.trim()) throw new Error('Personal Access Token (または Key:Secret) を入力してください。');
+        if (!discogsToken.trim() && !serverConfig?.discogs) {
+          throw new Error('Personal Access Token (または Key:Secret) を入力してください。');
+        }
         const res = await fetch('/api/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             catalogNumber: 'VICL-60001',
             sources: ['discogs'],
-            apiKeys: { discogsToken: discogsToken.trim() },
+            // 未入力でもサーバーの環境変数が設定済みなら、そのキーでテストされる
+            apiKeys: discogsToken.trim() ? { discogsToken: discogsToken.trim() } : undefined,
           }),
         });
 
@@ -148,7 +170,56 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-y-6 overflow-y-auto max-h-[75vh]">
-          
+
+          {/* サーバーの環境変数（推奨の保管方法）とブラウザ保存キーの管理 */}
+          <div className="bg-slate-800/60 border border-slate-700/80 p-4 rounded-xl space-y-2.5 text-xs text-slate-300">
+            <h4 className="font-bold text-white flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              サーバーの環境変数で設定済みのAPIキー（推奨）
+            </h4>
+            {serverConfig ? (
+              <ul className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                {([
+                  ['Discogs（DISCOGS_TOKEN）', serverConfig.discogs],
+                  ['Gemini AI（GEMINI_API_KEY）', serverConfig.gemini],
+                  ['MusicBrainz連絡先（MB_CONTACT）', serverConfig.musicbrainzContact],
+                  ...(isSourceEnabled('spotify') ? ([['Spotify', serverConfig.spotify]] as [string, boolean][]) : []),
+                  ...(isSourceEnabled('rakuten') ? ([['楽天ブックス', serverConfig.rakuten]] as [string, boolean][]) : []),
+                ] as [string, boolean][]).map(([label, ok]) => (
+                  <li key={label} className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${ok ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+                    <span className={ok ? 'text-slate-200' : 'text-slate-500'}>{label}</span>
+                    <span className={ok ? 'text-emerald-300' : 'text-slate-500'}>{ok ? '設定済み' : '未設定'}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] text-slate-500">サーバーの設定状況を取得できませんでした。</p>
+            )}
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              サーバーの環境変数（<code className="font-mono">.env</code> またはホスティング先の環境変数）に設定したキーは、ブラウザへの入力なしで使われます。
+              下の欄に入力した場合は、入力した値が優先されます。ブラウザに保存したキーは、悪意あるスクリプトが動いた場合に使われる恐れがあるため、公開して運用する場合は環境変数の利用を勧めます。
+            </p>
+            {onClearStoredKeys && (
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <span className="text-[11px] text-slate-400">ブラウザに保存されているAPIキー: {storedKeyCount}件</span>
+                <button
+                  type="button"
+                  disabled={storedKeyCount === 0}
+                  onClick={() => {
+                    if (window.confirm('ブラウザに保存したAPIキーをすべて削除します。サーバーの環境変数のキーは影響を受けません。よろしいですか？')) {
+                      onClearStoredKeys();
+                      onClose();
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-rose-900/60 hover:bg-rose-800/70 text-rose-100 border border-rose-700/50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  ブラウザ保存のキーをすべて削除
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="bg-indigo-950/60 border border-indigo-500/30 p-3.5 rounded-xl flex items-start gap-3 text-xs text-indigo-200">
             <Info className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
             <div className="leading-relaxed space-y-1">
@@ -157,7 +228,7 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
               </p>
               <p className="text-emerald-300 font-bold flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>登録したAPIキーはブラウザ内のIndexedDB（Dexie.js）に安全に永続保存され、次回起動時も自動で読み込まれます。</span>
+                <span>登録したAPIキーは暗号化してブラウザ内のIndexedDBに保存され、次回起動時も自動で読み込まれます。</span>
               </p>
             </div>
           </div>
@@ -169,6 +240,7 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
                   <h3 className="text-xs font-bold text-white">Spotify Web API (ストリーミング・高画質ジャケット)</h3>
+                <ServerConfiguredBadge show={serverConfig?.spotify} />
                 </div>
                 <a
                   href="https://developer.spotify.com/dashboard"
@@ -258,6 +330,7 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                 <h3 className="text-xs font-bold text-white">Discogs API (型番・マトリクス・盤面仕様)</h3>
+                <ServerConfiguredBadge show={serverConfig?.discogs} />
               </div>
               <a
                 href="https://www.discogs.com/settings/developers"
@@ -327,6 +400,7 @@ export const APISettingsModal: React.FC<APISettingsModalProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
                   <h3 className="text-xs font-bold text-white">楽天ブックス CD検索 API (JANコード・国内発売元)</h3>
+                <ServerConfiguredBadge show={serverConfig?.rakuten} />
                 </div>
                 <a
                   href="https://webservice.rakuten.co.jp/"
