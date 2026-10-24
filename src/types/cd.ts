@@ -71,13 +71,15 @@ export interface CDMetadata {
   vinylRecordCatalogNumber?: string; // Original LP/EP catalog number if available
   barcode?: string; // JAN/EAN code (e.g. 4988001...)
   coverUrl?: string; // High-res artwork URL
-  coverCandidates?: string[];
+  coverCandidates?: string[]; // 検索で見つかった各ソースのジャケットURL（優先順）。読み込み失敗時の代替に使う
   /** タイトルの読み（ひらがな）。五十音順の並べ替えに使う。lib/readingSort.ts 参照 */
   titleReading?: string;
   /** 歌手・アーティスト名の読み（ひらがな） */
   artistReading?: string;
   /** ゴミ箱に入れた日時（ISO）。付いているCDは一覧・書き出し・バックアップに出ない。lib/trash.ts 参照 */
-  deletedAt?: string; // 検索で見つかった各ソースのジャケットURL（優先順）。読み込み失敗時の代替に使う
+  deletedAt?: string;
+  /** Googleスプレッドシートへの同期ステータス */
+  syncedToSheets?: boolean;
   subImages?: CDSubImage[]; // Additional images: Back cover (裏ジャケ), Obi (帯), Disc (盤面), Booklet (歌詞カード)
   country?: string; // Release country (e.g. JP)
   format?: string; // e.g. CD, 2xCD, SACD, Limited Edition
@@ -170,3 +172,22 @@ export interface ExportColumnConfig {
   label: string;
   enabled: boolean;
 }
+
+export interface SheetMetadata {
+  sheetId?: number;
+  title: string;
+}
+
+export interface SpreadsheetInfo {
+  spreadsheetId: string;
+  title: string;
+  spreadsheetUrl: string;
+  sheets?: SheetMetadata[];
+  modifiedTime?: string;
+  createdTime?: string;
+  isPrimary?: boolean;
+  id?: string;
+  name?: string;
+  url?: string;
+}
+

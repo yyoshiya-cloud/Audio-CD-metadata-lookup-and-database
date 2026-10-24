@@ -601,7 +601,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         const titleToUse = newSheetTitle.trim() || `CDカタログ_${new Date().toISOString().slice(0, 10)}`;
         const newSheet = await createNewSpreadsheet(activeToken, titleToUse);
         targetSpreadsheetId = newSheet.spreadsheetId;
-        targetSheetName = newSheet.sheets[0].title;
+        targetSheetName = newSheet.sheets?.[0]?.title || ALBUM_SHEET_NAME;
         targetTitle = newSheet.title;
       } else {
         const targetIdOrUrl = customExportSheetUrl.trim() || selectedExportSheetId;

@@ -1441,7 +1441,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                     value={artistReading}
                     onChange={(e) => setArtistReading(e.target.value)}
                     onBlur={() => setArtistReading(normalizeReading(artistReading))}
-                    placeholder="歌手名の読み（ひらがな）例: さわだせいこ"
+                    placeholder="歌手名の読み（ひらがな）例: さわだしょうこ"
                     aria-label="歌手名の読み（ひらがな）"
                     className="mt-1.5 w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none"
                   />

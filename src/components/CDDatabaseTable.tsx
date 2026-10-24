@@ -130,17 +130,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   const [sortField, setSortField] = useState<'catalogNumber' | 'title' | 'artist' | 'label' | 'releaseDate' | 'vinylRecordReleaseDate' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [isLookingUpVinylBatch, setIsLookingUpVinylBatch] = useState(false);
-  const [isBulkToolsMenuOpen, setIsBulkToolsMenuOpen] = useState(false);
-
-  // メニューを開いている間は、Esc キーで閉じる
-  useEffect(() => {
-    if (!isBulkToolsMenuOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsBulkToolsMenuOpen(false);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [isBulkToolsMenuOpen]);
   const [vinylBatchProgress, setVinylBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [vinylLookupNotice, setVinylLookupNotice] = useState<string | null>(null);
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false);
@@ -150,6 +139,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
     settingsStore.getJSON<Record<string, boolean>>(STORAGE_KEYS.tableVisibleColumns, DEFAULT_VISIBLE_COLUMNS)
   );
   const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
+  const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
 
   const toggleColumn = (colId: string) => {
     if (colId === 'title') return;
@@ -681,109 +671,108 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             </button>
           )}
 
+          {/* 統合AI・一括ユーティリティメニュー */}
           {(onBatchUpdateCDs || onOpenAITagging || onGenerateReadings) && (
-            <div className="relative flex-shrink-0">
+            <div className="relative">
               <button
                 type="button"
-                onClick={() => setIsBulkToolsMenuOpen((prev) => !prev)}
-                aria-haspopup="menu"
-                aria-expanded={isBulkToolsMenuOpen}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white shadow-md shadow-purple-900/30 border border-purple-400/30 transition-all cursor-pointer"
-                title="LP/EP発売日の取得・AIタグ付け・読み仮名の生成をまとめたメニュー（選択中のCDがあれば選択分が対象）"
+                onClick={() => setIsUtilityMenuOpen((prev) => !prev)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white shadow-md shadow-purple-900/30 border border-purple-400/40 transition-all cursor-pointer flex-shrink-0"
+                title="LP/EP発売日API一括取得・AI自動タグ付け・読み仮名生成の統合メニュー"
               >
-                {isLookingUpVinylBatch || isGeneratingReadings ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5 text-purple-200 flex-shrink-0" />
-                )}
-                <span className={isLookingUpVinylBatch || isGeneratingReadings ? '' : 'hidden min-[1800px]:inline'}>
-                  {isLookingUpVinylBatch
-                    ? `LP/EP取得中 (${vinylBatchProgress?.current || 0}/${vinylBatchProgress?.total || 0})`
-                    : isGeneratingReadings
-                    ? '読み仮名を生成中…'
-                    : selectedIds.length > 0
-                    ? `一括処理 (${selectedIds.length})`
-                    : '一括処理'}
-                </span>
-                <ChevronDown className="w-3 h-3 text-purple-200 flex-shrink-0" />
+                <Sparkles className="w-3.5 h-3.5 text-amber-200 flex-shrink-0 animate-pulse" />
+                <span>一括・AIツール {selectedIds.length > 0 ? `(${selectedIds.length}件選択)` : ''}</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${isUtilityMenuOpen ? 'rotate-180' : ''}`} />
               </button>
 
-              {isBulkToolsMenuOpen && (
+              {isUtilityMenuOpen && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setIsBulkToolsMenuOpen(false)} />
-                  <div
-                    role="menu"
-                    className="absolute left-0 top-full mt-1.5 z-50 w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-1.5 space-y-0.5"
-                  >
-                    <p className="px-3 pt-1.5 pb-1 text-[10px] text-slate-400">
-                      {selectedIds.length > 0 ? `選択中の ${selectedIds.length} 件が対象` : `表示中の ${filteredCDs.length} 件が対象（選択すると選択分のみ）`}
-                    </p>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsUtilityMenuOpen(false)} />
+                  <div className="absolute left-0 mt-1.5 w-64 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-3 py-2 border-b border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                      <span>一括・AIアシストツール</span>
+                      {selectedIds.length > 0 ? (
+                        <span className="text-indigo-300 bg-indigo-950/80 px-1.5 py-0.5 rounded border border-indigo-500/30 font-semibold">
+                          選択中: {selectedIds.length}件
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">全ライブラリ対象</span>
+                      )}
+                    </div>
 
+                    {/* 1. LP/EP発売日API一括取得 */}
                     {onBatchUpdateCDs && (
                       <button
                         type="button"
-                        role="menuitem"
                         disabled={isLookingUpVinylBatch || filteredCDs.length === 0}
                         onClick={() => {
-                          setIsBulkToolsMenuOpen(false);
+                          setIsUtilityMenuOpen(false);
                           handleBatchLookupVinylReleaseDates(selectedIds.length > 0 ? selectedCDs : filteredCDs);
                         }}
-                        className="w-full flex items-start gap-3 px-3 py-2 rounded-xl text-left hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-amber-200 hover:bg-amber-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
                       >
-                        <span className="w-8 h-8 rounded-lg bg-amber-950/90 border border-amber-500/40 flex items-center justify-center flex-shrink-0">
-                          <Disc className="w-4 h-4 text-amber-400" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-xs font-bold text-white">LP/EP発売日をAPIで一括取得</span>
-                          <span className="block text-[10px] text-slate-400 leading-snug">
-                            同タイトルのLP・EPの発売年月日を MusicBrainz・Discogs・NDL・Gemini から取得
-                          </span>
-                        </span>
+                        <div className="w-7 h-7 rounded-lg bg-amber-950/80 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                          {isLookingUpVinylBatch ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Disc className="w-3.5 h-3.5" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold">
+                            {isLookingUpVinylBatch
+                              ? `LP/EP取得中 (${vinylBatchProgress?.current || 0}/${vinylBatchProgress?.total || 0})`
+                              : 'LP/EP発売日API一括取得'}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-normal">同タイトルLP・EP発売日をAPI検索</div>
+                        </div>
                       </button>
                     )}
 
+                    {/* 2. AI自動タグ付け */}
                     {onOpenAITagging && (
                       <button
                         type="button"
-                        role="menuitem"
                         onClick={() => {
-                          setIsBulkToolsMenuOpen(false);
+                          setIsUtilityMenuOpen(false);
                           onOpenAITagging(selectedCDs);
                         }}
-                        className="w-full flex items-start gap-3 px-3 py-2 rounded-xl text-left hover:bg-slate-800 cursor-pointer"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-purple-200 hover:bg-purple-950/40 hover:text-white transition-colors cursor-pointer"
                       >
-                        <span className="w-8 h-8 rounded-lg bg-purple-950/90 border border-purple-500/40 flex items-center justify-center flex-shrink-0">
-                          <Sparkles className="w-4 h-4 text-purple-300" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-xs font-bold text-white">AIで自動タグ付け</span>
-                          <span className="block text-[10px] text-slate-400 leading-snug">
-                            Gemini AIでジャンル・雰囲気・年代を分析し、タグを付与
-                          </span>
-                        </span>
+                        <div className="w-7 h-7 rounded-lg bg-purple-950/80 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <div className="font-bold">AI自動タグ付け</div>
+                          <div className="text-[10px] text-slate-400 font-normal">Gemini AIでジャンル・雰囲気解析</div>
+                        </div>
                       </button>
                     )}
 
+                    {/* 3. 読み仮名生成 */}
                     {onGenerateReadings && (
                       <button
                         type="button"
-                        role="menuitem"
                         disabled={isGeneratingReadings}
                         onClick={() => {
-                          setIsBulkToolsMenuOpen(false);
+                          setIsUtilityMenuOpen(false);
                           onGenerateReadings(selectedIds.length > 0 ? selectedIds : undefined);
                         }}
-                        className="w-full flex items-start gap-3 px-3 py-2 rounded-xl text-left hover:bg-slate-800 disabled:opacity-50 disabled:cursor-wait cursor-pointer"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-sky-200 hover:bg-sky-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
                       >
-                        <span className="w-8 h-8 rounded-lg bg-sky-950/90 border border-sky-500/40 flex items-center justify-center flex-shrink-0">
-                          <Languages className="w-4 h-4 text-sky-300" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-xs font-bold text-white">読み仮名をAIで生成</span>
-                          <span className="block text-[10px] text-slate-400 leading-snug">
-                            漢字を含むタイトル・歌手名に、五十音順用のひらがなの読みを付ける
-                          </span>
-                        </span>
+                        <div className="w-7 h-7 rounded-lg bg-sky-950/80 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0">
+                          {isGeneratingReadings ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Languages className="w-3.5 h-3.5" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold">
+                            {isGeneratingReadings ? '読み仮名生成中...' : '読み仮名生成'}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-normal">五十音順ソート用のひらがな推定</div>
+                        </div>
                       </button>
                     )}
                   </div>
@@ -791,42 +780,6 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
               )}
             </div>
           )}
-
-          {onBatchUpdateCDs && selectedIds.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setIsBulkTagMenuOpen((prev) => !prev)}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/30 border border-indigo-400/40 transition-all cursor-pointer flex-shrink-0"
-              title="選択したCDに対してジャンルやカスタムタグをチェックボックスで一括適用"
-            >
-              <CheckSquare className="w-3.5 h-3.5 text-indigo-100 flex-shrink-0" />
-              <span><span className="hidden min-[1800px]:inline">ジャンル・タグ一括 </span>({selectedIds.length})</span>
-            </button>
-          )}
-
-          {onOpenPDFCatalog && (
-            <button
-              type="button"
-              onClick={() => onOpenPDFCatalog(selectedIds.length > 0 ? selectedCDs : cds)}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-md shadow-amber-900/30 border border-amber-400/40 transition-all cursor-pointer flex-shrink-0"
-              title="印刷用CDカタログ・LPアナログジャケット風ライナーノーツ・CDケース差し込みカードのPDF出力"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-amber-100 flex-shrink-0" />
-              <span className="hidden min-[1800px]:inline">PDFカタログ出力</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => onOpenExportModal(selectedIds.length > 0 ? selectedCDs : cds)}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/30 transition-all cursor-pointer border border-emerald-500/40 flex-shrink-0"
-            title="JSON・Excel・CSVの書き出し・読み込み（バックアップ・復元）"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100 flex-shrink-0" />
-            <span className="hidden min-[1800px]:inline">書き出し・読み込み</span>
-            <span className="hidden min-[1800px]:inline text-[10px] bg-emerald-950/80 text-emerald-200 px-1.5 py-0.2 rounded-full border border-emerald-400/40 font-mono font-bold">
-              {selectedIds.length > 0 ? selectedIds.length : cds.length}
-            </span>
-          </button>
 
           {onOpenTrash && (
             <button

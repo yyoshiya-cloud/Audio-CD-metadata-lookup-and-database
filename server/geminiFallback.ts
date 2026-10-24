@@ -57,7 +57,7 @@ export async function generateContentWithFallback(
   const cooldownModels = baseList.filter((m) => (modelCooldownUntil.get(m) || 0) > now);
   const modelsToTry = [...activeModels, ...cooldownModels];
 
-  const perModelTimeout = params.timeoutMs || 14000;
+  const perModelTimeout = params.timeoutMs || 25000;
   let lastError: unknown = null;
 
   for (const model of modelsToTry) {
@@ -75,6 +75,7 @@ export async function generateContentWithFallback(
     } catch (err: unknown) {
       lastError = err;
       const errStr = errorMessage(err).toLowerCase();
+      const isTimeout = errStr.includes('timeout');
       const isRateLimit =
         errStr.includes('429') ||
         errStr.includes('resource_exhausted') ||
@@ -82,12 +83,14 @@ export async function generateContentWithFallback(
         errStr.includes('quota') ||
         errStr.includes('overloaded') ||
         errStr.includes('503') ||
-        errStr.includes('timeout') ||
         errStr.includes('service unavailable');
 
       if (isRateLimit) {
-        // Cooldown this model for 15 minutes if quota is exhausted or timing out
+        // Cooldown this model for 15 minutes if quota is exhausted
         modelCooldownUntil.set(model, Date.now() + 15 * 60 * 1000);
+      } else if (isTimeout) {
+        // Short cooldown for timeout (30 seconds) so it can be retried soon if needed
+        modelCooldownUntil.set(model, Date.now() + 30 * 1000);
       }
       // Continue to the next model in the fallback chain
     }

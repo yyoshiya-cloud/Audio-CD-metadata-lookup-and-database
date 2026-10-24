@@ -86,6 +86,8 @@ export interface VinylLookupInputItem {
   id: string;
   title: string;
   artist: string;
+  titleReading?: string;
+  artistReading?: string;
   catalogNumber?: string;
   releaseDate?: string;
 }

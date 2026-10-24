@@ -367,6 +367,7 @@ Return ONLY valid JSON with no markdown backticks:
         responseMimeType: 'application/json',
       },
       preferredModel: 'gemini-flash-latest',
+      timeoutMs: 25000,
     });
 
     const text = (response.text || '').replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
