@@ -1,0 +1,7 @@
+dist
+dist-server
+node_modules
+public
+bun.lock
+package-lock.json
+firebase-applet-config.json
