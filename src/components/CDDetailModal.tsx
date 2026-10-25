@@ -98,6 +98,7 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
   const [isSavedState, setIsSavedState] = useState(false);
   const [isUpscaling, setIsUpscaling] = useState(false);
   const [isConvertingBase64, setIsConvertingBase64] = useState(false);
+  const [isFetchingReading, setIsFetchingReading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const subImageFileInputRef = useRef<HTMLInputElement>(null);
@@ -232,6 +233,53 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
       setTimeout(() => setSaveSuccessMessage(null), 3500);
     } finally {
       setIsConvertingBase64(false);
+    }
+  };
+
+  const handleAutoGenerateReading = async (field?: 'title' | 'artist' | 'both') => {
+    if (isFetchingReading) return;
+    setIsFetchingReading(true);
+    try {
+      const payload: { title?: string; artist?: string } = {};
+      if (field === 'title' || field === 'both' || !field) {
+        if (title.trim()) payload.title = title.trim();
+      }
+      if (field === 'artist' || field === 'both' || !field) {
+        if (artist.trim()) payload.artist = artist.trim();
+      }
+      if (!payload.title && !payload.artist) {
+        setSaveSuccessMessage('タイトルまたは歌手名を入力してください');
+        setTimeout(() => setSaveSuccessMessage(null), 3500);
+        return;
+      }
+      const res = await fetch('/api/shirabe/reading', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('読み仮名の取得に失敗しました');
+      const data = await res.json();
+      let updatedCount = 0;
+      if (data.titleReading && (field === 'title' || field === 'both' || !field)) {
+        setTitleReading(data.titleReading);
+        updatedCount++;
+      }
+      if (data.artistReading && (field === 'artist' || field === 'both' || !field)) {
+        setArtistReading(data.artistReading);
+        updatedCount++;
+      }
+      if (updatedCount > 0) {
+        setSaveSuccessMessage('Shirabe APIからよみがなを取得しました');
+      } else {
+        setSaveSuccessMessage('よみがなを取得できませんでした（直接入力も可能です）');
+      }
+      setTimeout(() => setSaveSuccessMessage(null), 3500);
+    } catch (e) {
+      log.error('Shirabe reading error:', e);
+      setSaveSuccessMessage('よみがなの取得中にエラーが発生しました');
+      setTimeout(() => setSaveSuccessMessage(null), 3500);
+    } finally {
+      setIsFetchingReading(false);
     }
   };
 
@@ -1406,9 +1454,25 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
             <form onSubmit={handleSaveSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    アルバムタイトル
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      アルバムタイトル
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleAutoGenerateReading('title')}
+                      disabled={isFetchingReading || !title.trim()}
+                      className="text-[10px] text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+                      title="Shirabe 日本語テキスト処理 API でアルバムタイトルのよみがな（ひらがな）を自動取得"
+                    >
+                      {isFetchingReading ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-sky-400" />
+                      ) : (
+                        <Sparkles className="w-3 h-3 text-sky-400" />
+                      )}
+                      <span>Shirabeでよみがな取得</span>
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={title}
@@ -1427,9 +1491,25 @@ export const CDDetailModal: React.FC<CDDetailModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    歌手・アーティスト名
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      歌手・アーティスト名
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleAutoGenerateReading('artist')}
+                      disabled={isFetchingReading || !artist.trim()}
+                      className="text-[10px] text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+                      title="Shirabe 日本語テキスト処理 API で歌手・アーティスト名のよみがな（ひらがな）を自動取得"
+                    >
+                      {isFetchingReading ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-sky-400" />
+                      ) : (
+                        <Sparkles className="w-3 h-3 text-sky-400" />
+                      )}
+                      <span>Shirabeでよみがな取得</span>
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={artist}

@@ -4,6 +4,7 @@ import { getJSTISOString } from '../lib/dateUtils';
 import { normalizeSingleTag, normalizeTagList, applyGenreRuleFilter } from '../lib/tagNormalizer';
 import { X, Sparkles, RefreshCw, CheckCircle2, Tag, Disc, AlertCircle, Check, Plus, Info, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import { createLogger } from '../lib/logger';
+import { BatchProcessingState } from './BatchProcessingModal';
 
 const log = createLogger('AITaggingModal');
 
@@ -31,6 +32,7 @@ interface AITaggingModalProps {
   selectedCDs: CDMetadata[];
   onClose: () => void;
   onApplyBatchTags: (updatedCDs: CDMetadata[]) => Promise<void>;
+  onBatchProcessingStateChange?: (state: BatchProcessingState) => void;
 }
 
 export const AITaggingModal: React.FC<AITaggingModalProps> = ({
@@ -38,6 +40,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
   selectedCDs,
   onClose,
   onApplyBatchTags,
+  onBatchProcessingStateChange,
 }) => {
   // Target choice: 'selected' | 'untagged' | 'all'
   const untaggedCDs = allCDs.filter((c) => !c.tags || c.tags.length === 0);
@@ -68,26 +71,50 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
   const [newTagInputs, setNewTagInputs] = useState<Record<string, string>>({});
 
   // Determine items to process based on targetType
+  // 既にタグが登録されているCDはスキップする
   const getTargetCDs = (): CDMetadata[] => {
+    let baseList: CDMetadata[] = [];
     if (targetType === 'selected') {
-      return selectedCDs.length > 0 ? selectedCDs : allCDs;
+      baseList = selectedCDs.length > 0 ? selectedCDs : allCDs;
+    } else if (targetType === 'untagged') {
+      baseList = untaggedCDs;
+    } else {
+      baseList = allCDs;
     }
-    if (targetType === 'untagged') {
-      return untaggedCDs.length > 0 ? untaggedCDs : allCDs;
-    }
-    return allCDs;
+    // 既にタグが登録されている場合は処理をスキップ
+    return baseList.filter((c) => !c.tags || c.tags.length === 0);
   };
 
   const handleStartAnalysis = async () => {
+    const rawTargets = targetType === 'selected'
+      ? (selectedCDs.length > 0 ? selectedCDs : allCDs)
+      : (targetType === 'untagged' ? untaggedCDs : allCDs);
     const targets = getTargetCDs();
+
     if (targets.length === 0) {
-      setErrorMessage('分析対象のCDが選択されていません。');
+      setErrorMessage(
+        rawTargets.length > 0
+          ? '対象のCDにはすべて既にタグが登録されているため、処理をスキップしました。'
+          : '分析対象のCDが選択されていません。'
+      );
       return;
     }
 
     setStatus('analyzing');
     setErrorMessage(null);
     setProgress({ current: 0, total: targets.length, currentTitle: '準備中...' });
+    if (onBatchProcessingStateChange) {
+      onBatchProcessingStateChange({
+        isOpen: true,
+        type: 'tagging',
+        title: 'Gemini AI自動タグ付け解析中',
+        subtitle: 'Gemini AIでジャンル・雰囲気・時代を解析しています...',
+        current: 0,
+        total: targets.length,
+        currentTitle: targets[0]?.title,
+        currentArtist: targets[0]?.artist,
+      });
+    }
 
     const resultMap = new Map<string, {
       tags: string[];
@@ -109,6 +136,18 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
         total: targets.length,
         currentTitle: chunk[0]?.title || '',
       });
+      if (onBatchProcessingStateChange) {
+        onBatchProcessingStateChange({
+          isOpen: true,
+          type: 'tagging',
+          title: 'Gemini AI自動タグ付け解析中',
+          subtitle: `AIでCDのジャンル・雰囲気を解析中 (${Math.min(i + 1, targets.length)}/${targets.length})`,
+          current: i,
+          total: targets.length,
+          currentTitle: chunk[0]?.title,
+          currentArtist: chunk[0]?.artist,
+        });
+      }
 
       try {
         const res = await fetch('/api/ai-analyze-tags', {
@@ -163,7 +202,6 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
             if (mergeMode === 'append' && originalCD?.tags) {
               const normalizedSuggested = normalizeTagList(item.suggestedTags || []);
               const normalizedExisting = normalizeTagList(originalCD.tags);
-              // If an era tag was generated (especially from LP/EP release date), replace any conflicting decade tag in existing tags
               const newDecadeTag = normalizedSuggested.find((t) => decadeRegex.test(t));
               const cleanedExisting = newDecadeTag
                 ? normalizedExisting.filter((t) => !decadeRegex.test(t) || t === newDecadeTag)
@@ -212,7 +250,6 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
         }
       } catch (err: any) {
         log.warn('Handled batch chunk fallback:', err?.message || err);
-        // Fallback for this chunk using multi-metadata rule filter (prioritizing vinylRecordReleaseDate over releaseDate)
         chunk.forEach((c) => {
           const hasVinyl = Boolean(c.vinylRecordReleaseDate && c.vinylRecordReleaseDate.trim());
           const hasCd = Boolean(c.releaseDate && c.releaseDate.trim());
@@ -245,15 +282,7 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
             subGenre: ruleFiltered.subGenre,
             mood: 'メロディアス',
             era: eraStr || (ruleFiltered.suggestedTags.includes('洋楽') ? '洋楽' : '邦楽'),
-            reasoning: `アーティスト「${c.artist}」・タイトル「${c.title}」${
-              c.label ? `・レーベル(${c.label})` : ''
-            }${c.catalogNumber ? `・規格品番(${c.catalogNumber})` : ''}${
-              hasVinyl
-                ? `・LP/EP発売日(${c.vinylRecordReleaseDate})`
-                : c.releaseDate
-                ? `・CD発売日(${c.releaseDate})`
-                : ''
-            }の複合メタデータ規則に基づく判定`,
+            reasoning: `アーティスト「${c.artist}」・タイトル「${c.title}」の複合メタデータ規則に基づく判定`,
             tagEvidence: [
               ...(eraStr
                 ? [
@@ -276,6 +305,16 @@ export const AITaggingModal: React.FC<AITaggingModalProps> = ({
         current: Math.min(i + chunk.length, targets.length),
         total: targets.length,
         currentTitle: chunk[chunk.length - 1]?.title || '',
+      });
+    }
+
+    if (onBatchProcessingStateChange) {
+      onBatchProcessingStateChange({
+        isOpen: false,
+        type: 'tagging',
+        title: '',
+        current: 0,
+        total: 0,
       });
     }
 

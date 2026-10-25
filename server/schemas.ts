@@ -75,6 +75,12 @@ export const aiReadingsBodySchema = v.object({
   ),
 });
 
+/** POST /api/shirabe/reading */
+export const shirabeReadingBodySchema = v.object({
+  title: v.optional(text(500)),
+  artist: v.optional(text(500)),
+});
+
 /** GET /api/image-proxy （クエリ文字列） */
 export const imageProxyQuerySchema = v.object({
   url: v.string({ min: 1, max: 2048 }),

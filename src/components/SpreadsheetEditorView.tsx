@@ -135,13 +135,24 @@ export const SpreadsheetEditorView: React.FC<SpreadsheetEditorViewProps> = ({
         : gridRows;
     if (targetRows.length === 0 || isLookingUpVinyl || isSaving) return;
 
+    // 既にLP/EP発売日が登録されている場合はスキップ
+    const unrecordedRows = targetRows.filter(
+      (r) => !r.vinylRecordReleaseDate || r.vinylRecordReleaseDate.trim() === ''
+    );
+    const skippedCount = targetRows.length - unrecordedRows.length;
+
+    if (unrecordedRows.length === 0) {
+      setSaveSuccessMessage('対象のCDには既にすべてLP/EP発売日が登録されているため、処理をスキップしました。');
+      return;
+    }
+
     setIsLookingUpVinyl(true);
-    setVinylLookupProgress({ current: 0, total: targetRows.length });
+    setVinylLookupProgress({ current: 0, total: unrecordedRows.length });
     setErrorMessage(null);
 
     try {
       const results = await lookupVinylReleasesBatch(
-        targetRows.map((c) => ({
+        unrecordedRows.map((c) => ({
           id: c.id,
           title: c.title,
           artist: c.artist,

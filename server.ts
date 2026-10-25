@@ -20,10 +20,12 @@ import { Schema, validate } from './server/validate.js';
 import { errorMessage } from './server/apiTypes.js';
 import { getConfigStatus } from './server/configStatus.js';
 import { generateReadingsWithGemini } from './server/aiReadings.js';
+import { getShirabeTitleReading, getShirabeArtistReading } from './server/shirabe.js';
 import {
   aiAnalyzeTagsBodySchema,
   aiBackfillBodySchema,
   aiReadingsBodySchema,
+  shirabeReadingBodySchema,
   imageBase64BodySchema,
   imageProxyQuerySchema,
   itunesTracksQuerySchema,
@@ -242,6 +244,29 @@ app.post('/api/ai-readings', aiRateLimiter, async (req, res) => {
   } catch (err: unknown) {
     log.error('Error in /api/ai-readings:', err);
     res.status(500).json({ error: errorMessage(err) || '読み仮名の生成に失敗しました' });
+  }
+});
+
+// Shirabe 日本語テキスト処理 API でアルバムタイトル・歌手名の読み仮名を取得する単一エンドポイント
+app.post('/api/shirabe/reading', aiRateLimiter, async (req, res) => {
+  try {
+    const body = readInput(shirabeReadingBodySchema, req.body, res);
+    if (!body) return;
+
+    let titleReading: string | undefined;
+    let artistReading: string | undefined;
+
+    if (body.title) {
+      titleReading = await getShirabeTitleReading(body.title);
+    }
+    if (body.artist) {
+      artistReading = await getShirabeArtistReading(body.artist);
+    }
+
+    res.json({ titleReading, artistReading });
+  } catch (err: unknown) {
+    log.error('Error in /api/shirabe/reading:', err);
+    res.status(500).json({ error: errorMessage(err) || 'Shirabe APIでの読み仮名取得に失敗しました' });
   }
 });
 

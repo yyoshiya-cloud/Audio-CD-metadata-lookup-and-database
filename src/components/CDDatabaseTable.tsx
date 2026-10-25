@@ -82,8 +82,10 @@ interface CDDatabaseTableProps {
   onOpenAITagging?: (selectedCDs: CDMetadata[]) => void;
   onOpenPDFCatalog?: (selectedCDs: CDMetadata[]) => void;
   onBatchUpdateCDs?: (updatedCDs: CDMetadata[]) => Promise<void>;
+  onLookupVinylReleaseDates?: (items: CDMetadata[]) => Promise<void>;
   onConvertToBase64?: (ids?: string[]) => Promise<void>;
   isConvertingBase64?: boolean;
+  isBatchProcessing?: boolean;
   initialSearchKeyword?: string;
 }
 
@@ -113,6 +115,8 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   isGeneratingReadings = false,
   onConvertToBase64,
   isConvertingBase64 = false,
+  isBatchProcessing = false,
+  onLookupVinylReleaseDates,
   trashCount = 0,
   backupEnabled = false,
   onOpenManualAdd,
@@ -328,14 +332,26 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   const handleBatchLookupVinylReleaseDates = async (targetItems: CDMetadata[]) => {
     if (!onBatchUpdateCDs || targetItems.length === 0 || isLookingUpVinylBatch) return;
 
+    // 既にLP/EP発売日が登録されているCDはスキップ
+    const unrecordedCDs = targetItems.filter(
+      (c) => !c.vinylRecordReleaseDate || c.vinylRecordReleaseDate.trim() === ''
+    );
+    const skippedCount = targetItems.length - unrecordedCDs.length;
+
+    if (unrecordedCDs.length === 0) {
+      setVinylLookupNotice('対象のCDには既にすべてLP/EP発売日が登録されているため、処理をスキップしました。');
+      setTimeout(() => setVinylLookupNotice(null), 5000);
+      return;
+    }
+
     setIsLookingUpVinylBatch(true);
-    setVinylBatchProgress({ current: 0, total: targetItems.length });
+    setVinylBatchProgress({ current: 0, total: unrecordedCDs.length });
     setVinylLookupNotice(null);
 
     try {
-      const targetMap = new Map(targetItems.map((c) => [c.id, c]));
+      const targetMap = new Map(unrecordedCDs.map((c) => [c.id, c]));
       const results = await lookupVinylReleasesBatch(
-        targetItems.map((c) => ({
+        unrecordedCDs.map((c) => ({
           id: c.id,
           title: c.title,
           artist: c.artist,
@@ -680,8 +696,9 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
             <div className="relative">
               <button
                 type="button"
+                disabled={isBatchProcessing}
                 onClick={() => setIsUtilityMenuOpen((prev) => !prev)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white shadow-md shadow-purple-900/30 border border-purple-400/40 transition-all cursor-pointer flex-shrink-0"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-gradient-to-r from-amber-600 via-purple-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white shadow-md shadow-purple-900/30 border border-purple-400/40 transition-all cursor-pointer flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="LP/EP発売日API一括取得・AI自動タグ付け・読み仮名生成の統合メニュー"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-200 flex-shrink-0 animate-pulse" />
@@ -705,15 +722,20 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                     </div>
 
                     {/* 1. LP/EP発売日API一括取得 */}
-                    {onBatchUpdateCDs && (
+                    {(onLookupVinylReleaseDates || onBatchUpdateCDs) && (
                       <button
                         type="button"
-                        disabled={isLookingUpVinylBatch || filteredCDs.length === 0}
+                        disabled={isBatchProcessing || isLookingUpVinylBatch || filteredCDs.length === 0}
                         onClick={() => {
                           setIsUtilityMenuOpen(false);
-                          handleBatchLookupVinylReleaseDates(selectedIds.length > 0 ? selectedCDs : filteredCDs);
+                          const target = selectedIds.length > 0 ? selectedCDs : filteredCDs;
+                          if (onLookupVinylReleaseDates) {
+                            onLookupVinylReleaseDates(target);
+                          } else {
+                            handleBatchLookupVinylReleaseDates(target);
+                          }
                         }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-amber-200 hover:bg-amber-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-amber-200 hover:bg-amber-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                       >
                         <div className="w-7 h-7 rounded-lg bg-amber-950/80 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                           {isLookingUpVinylBatch ? (
@@ -728,7 +750,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                               ? `LP/EP取得中 (${vinylBatchProgress?.current || 0}/${vinylBatchProgress?.total || 0})`
                               : 'LP/EP発売日API一括取得'}
                           </div>
-                          <div className="text-[10px] text-slate-400 font-normal">同タイトルLP・EP発売日をAPI検索</div>
+                          <div className="text-[10px] text-slate-400 font-normal">同タイトルLP・EP発売日をAPI検索（登録済はスキップ）</div>
                         </div>
                       </button>
                     )}
@@ -737,18 +759,26 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                     {onOpenAITagging && (
                       <button
                         type="button"
+                        disabled={isBatchProcessing}
                         onClick={() => {
                           setIsUtilityMenuOpen(false);
-                          onOpenAITagging(selectedCDs);
+                          const target = selectedIds.length > 0 ? selectedCDs : filteredCDs;
+                          const untagged = target.filter((c) => !c.tags || c.tags.length === 0);
+                          if (untagged.length === 0) {
+                            setVinylLookupNotice('対象のCDには既にすべてタグが登録されているため、AI自動タグ付けをスキップしました。');
+                            setTimeout(() => setVinylLookupNotice(null), 5000);
+                            return;
+                          }
+                          onOpenAITagging(untagged);
                         }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-purple-200 hover:bg-purple-950/40 hover:text-white transition-colors cursor-pointer"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-purple-200 hover:bg-purple-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                       >
                         <div className="w-7 h-7 rounded-lg bg-purple-950/80 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
                           <Sparkles className="w-3.5 h-3.5" />
                         </div>
                         <div>
                           <div className="font-bold">AI自動タグ付け</div>
-                          <div className="text-[10px] text-slate-400 font-normal">Gemini AIでジャンル・雰囲気解析</div>
+                          <div className="text-[10px] text-slate-400 font-normal">Gemini AIでジャンル・雰囲気解析（タグ登録済はスキップ）</div>
                         </div>
                       </button>
                     )}
@@ -757,12 +787,12 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                     {onGenerateReadings && (
                       <button
                         type="button"
-                        disabled={isGeneratingReadings}
+                        disabled={isBatchProcessing || isGeneratingReadings}
                         onClick={() => {
                           setIsUtilityMenuOpen(false);
                           onGenerateReadings(selectedIds.length > 0 ? selectedIds : undefined);
                         }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-sky-200 hover:bg-sky-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-sky-200 hover:bg-sky-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                       >
                         <div className="w-7 h-7 rounded-lg bg-sky-950/80 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0">
                           {isGeneratingReadings ? (
@@ -775,7 +805,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                           <div className="font-bold">
                             {isGeneratingReadings ? '読み仮名生成中...' : '読み仮名生成'}
                           </div>
-                          <div className="text-[10px] text-slate-400 font-normal">五十音順ソート用のひらがな推定</div>
+                          <div className="text-[10px] text-slate-400 font-normal">Shirabe APIで五十音順用の読み推定（登録済はスキップ）</div>
                         </div>
                       </button>
                     )}
@@ -784,12 +814,12 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                     {onConvertToBase64 && (
                       <button
                         type="button"
-                        disabled={isConvertingBase64}
+                        disabled={isBatchProcessing || isConvertingBase64}
                         onClick={() => {
                           setIsUtilityMenuOpen(false);
                           onConvertToBase64(selectedIds.length > 0 ? selectedIds : undefined);
                         }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-emerald-200 hover:bg-emerald-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-emerald-200 hover:bg-emerald-950/40 hover:text-white transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                       >
                         <div className="w-7 h-7 rounded-lg bg-emerald-950/80 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
                           {isConvertingBase64 ? (
@@ -802,7 +832,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
                           <div className="font-bold">
                             {isConvertingBase64 ? 'Base64変換中...' : 'ジャケット画像Base64一括変換'}
                           </div>
-                          <div className="text-[10px] text-slate-400 font-normal">URL画像をBase64化し完全オフライン保存</div>
+                          <div className="text-[10px] text-slate-400 font-normal">URL画像をBase64化し完全オフライン保存（Base64済はスキップ）</div>
                         </div>
                       </button>
                     )}

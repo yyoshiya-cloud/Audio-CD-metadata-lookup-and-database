@@ -80,7 +80,7 @@ export interface ReadingTarget {
   artist?: string;
 }
 
-/** 読みが未登録で、漢字を含むタイトル・歌手名を持つCD。ids を渡すとその中だけを対象にする */
+/** 読みが未登録のCD。アルバムタイトル・歌手名ともに読みが既に登録されている場合はスキップする。ids を渡すとその中だけを対象にする */
 export function listMissingReadings(
   cds: Pick<CDMetadata, 'id' | 'title' | 'artist' | 'titleReading' | 'artistReading'>[],
   ids?: string[]
@@ -89,8 +89,13 @@ export function listMissingReadings(
   const targets: ReadingTarget[] = [];
   for (const cd of cds) {
     if (only && !only.has(cd.id)) continue;
-    const title = !cd.titleReading && needsReading(cd.title) ? cd.title : undefined;
-    const artist = !cd.artistReading && needsReading(cd.artist) ? cd.artist : undefined;
+    const hasTitleReading = !!cd.titleReading && cd.titleReading.trim().length > 0;
+    const hasArtistReading = !!cd.artistReading && cd.artistReading.trim().length > 0;
+    // 既にアルバムタイトル・歌手名の読み仮名が両方登録されている場合は処理をスキップ
+    if (hasTitleReading && hasArtistReading) continue;
+
+    const title = !hasTitleReading && (needsReading(cd.title) || !!cd.title) ? cd.title : undefined;
+    const artist = !hasArtistReading && (needsReading(cd.artist) || !!cd.artist) ? cd.artist : undefined;
     if (title || artist) targets.push({ id: cd.id, title, artist });
   }
   return targets;

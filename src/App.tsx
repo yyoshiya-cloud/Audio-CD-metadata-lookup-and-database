@@ -36,6 +36,8 @@ import { CDInlinePreviewCard } from './components/CDInlinePreviewCard';
 import { CheckCircle2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { createLogger } from './lib/logger';
 import { convertImageUrlToBase64 } from './utils/imageEnhancer';
+import { BatchProcessingModal, BatchProcessingState } from './components/BatchProcessingModal';
+import { lookupVinylReleasesBatch } from './utils/formatUtils';
 
 const log = createLogger('App');
 
@@ -99,6 +101,14 @@ export default function App() {
   const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
   const [isAdminModeOpen, setIsAdminModeOpen] = useState(false);
   const [appInfoConfig, setAppInfoConfig] = useState<AppInfoConfig>(DEFAULT_APP_INFO_CONFIG);
+  const [batchProcessingState, setBatchProcessingState] = useState<BatchProcessingState>({
+    isOpen: false,
+    type: 'vinyl',
+    title: '',
+    subtitle: '',
+    current: 0,
+    total: 0,
+  });
 
   // Toast Notification / 表示設定（テーマ・ヘッダー・検索パネル）
   const { toast, showToast, dismissToast } = useToast();
@@ -198,24 +208,129 @@ export default function App() {
     );
   };
 
-  // タイトル・歌手名の読み仮名（ひらがな）をAIで推定して保存する。ids を渡すとその中だけを対象にする。
-  // 漢字を含み、読みが未登録のものだけが対象。既存の読みは上書きしない（AIの推定なので、詳細画面で修正できる）
+  // 1. LP/EP発売日API一括取得処理
+  // 既にLP/EP発売日が登録されている場合はスキップする
+  const handleBatchLookupVinylReleaseDates = async (targetItems: CDMetadata[]) => {
+    if (targetItems.length === 0 || batchProcessingState.isOpen) return;
+
+    const unrecordedCDs = targetItems.filter(
+      (c) => !c.vinylRecordReleaseDate || c.vinylRecordReleaseDate.trim() === ''
+    );
+    const skippedCount = targetItems.length - unrecordedCDs.length;
+
+    if (unrecordedCDs.length === 0) {
+      showToast('対象のCDには既にすべてLP/EP発売日が登録されているため、処理をスキップしました');
+      return;
+    }
+
+    setBatchProcessingState({
+      isOpen: true,
+      type: 'vinyl',
+      title: 'LP/EP発売日API一括取得中',
+      subtitle: `${unrecordedCDs.length}件のCDの同タイトルアナログ盤（LP/EP）情報をAPI検索しています...`,
+      current: 0,
+      total: unrecordedCDs.length,
+      currentTitle: unrecordedCDs[0]?.title,
+      currentArtist: unrecordedCDs[0]?.artist,
+      detail: skippedCount > 0 ? `※ 登録済の${skippedCount}件は自動スキップされました` : undefined,
+    });
+
+    try {
+      const targetMap = new Map(unrecordedCDs.map((c) => [c.id, c]));
+      const results = await lookupVinylReleasesBatch(
+        unrecordedCDs.map((c) => ({
+          id: c.id,
+          title: c.title,
+          artist: c.artist,
+          catalogNumber: c.catalogNumber,
+          releaseDate: c.releaseDate,
+        })),
+        (current, total) => {
+          const currentItem = unrecordedCDs[Math.min(current, unrecordedCDs.length - 1)];
+          setBatchProcessingState((prev) => ({
+            ...prev,
+            current,
+            total,
+            currentTitle: currentItem?.title,
+            currentArtist: currentItem?.artist,
+          }));
+        }
+      );
+
+      const updatedAt = getJSTISOString();
+      const updatedCDs: CDMetadata[] = [];
+      results.forEach((r) => {
+        if (r && r.found && r.vinylRecordReleaseDate) {
+          const orig = targetMap.get(r.id);
+          if (orig) {
+            updatedCDs.push({
+              ...orig,
+              vinylRecordReleaseDate: r.vinylRecordReleaseDate,
+              vinylRecordFormat: r.vinylRecordFormat || orig.vinylRecordFormat || 'LP',
+              vinylRecordCatalogNumber: r.vinylRecordCatalogNumber || orig.vinylRecordCatalogNumber,
+              updatedAt,
+            });
+          }
+        }
+      });
+
+      if (updatedCDs.length > 0) {
+        await saveMultipleCDs(updatedCDs);
+        await loadLocalLibrary();
+        showToast(`${updatedCDs.length} 件のLP/EP発売日をAPIから取得・登録しました！${skippedCount > 0 ? `（${skippedCount}件スキップ）` : ''}`);
+      } else {
+        showToast(`対象${unrecordedCDs.length}件について、新たに取得できる同タイトルLP/EP発売日は見つかりませんでした${skippedCount > 0 ? `（${skippedCount}件スキップ済）` : ''}`);
+      }
+    } catch (err) {
+      log.error('Batch vinyl lookup failed', err);
+      showToast(err instanceof Error ? err.message : 'LP/EP発売日の一括取得に失敗しました');
+    } finally {
+      setBatchProcessingState((prev) => ({ ...prev, isOpen: false }));
+    }
+  };
+
+  // 2. タイトル・歌手名の読み仮名生成処理
+  // 既にアルバムタイトル、歌手・アーティスト名の両方の読み仮名が登録されている場合はスキップする
   const [isGeneratingReadings, setIsGeneratingReadings] = useState(false);
   const handleGenerateReadings = async (ids?: string[]) => {
     const targets = listMissingReadings(savedCDs, ids);
+    const targetSet = ids && ids.length > 0 ? new Set(ids) : null;
+    const totalConsidered = targetSet ? savedCDs.filter((c) => targetSet.has(c.id)).length : savedCDs.length;
+    const skippedCount = totalConsidered - targets.length;
+
     if (targets.length === 0) {
-      showToast('読みを付ける対象（漢字を含み、読みが未登録のタイトル・歌手名）はありません');
+      showToast('対象のCDには既にすべて読み仮名が登録されているため、処理をスキップしました');
       return;
     }
-    if (!window.confirm(`${targets.length}件のCDの読み仮名をAI（Gemini）で推定します。\n推定のため、誤りがあれば詳細画面で修正してください。実行しますか？`)) return;
 
     setIsGeneratingReadings(true);
+    setBatchProcessingState({
+      isOpen: true,
+      type: 'reading',
+      title: '読み仮名一括生成中',
+      subtitle: 'Shirabe API（日本語テキスト処理）でタイトル・歌手名の読み仮名を推定しています...',
+      current: 0,
+      total: targets.length,
+      currentTitle: targets[0]?.title,
+      currentArtist: targets[0]?.artist,
+      detail: skippedCount > 0 ? `※ 登録済の${skippedCount}件は自動スキップされました` : undefined,
+    });
+
     try {
-      const CHUNK = 25;
+      const CHUNK = 20;
       const generated = new Map<string, { titleReading?: string; artistReading?: string }>();
       for (let i = 0; i < targets.length; i += CHUNK) {
         const chunk: ReadingTarget[] = targets.slice(i, i + CHUNK);
-        showToast(`読み仮名を生成中… ${Math.min(i + CHUNK, targets.length)} / ${targets.length}件`, 60000);
+        const processedCount = Math.min(i + CHUNK, targets.length);
+        const currentTarget = chunk[0];
+        setBatchProcessingState((prev) => ({
+          ...prev,
+          current: processedCount,
+          total: targets.length,
+          currentTitle: currentTarget?.title,
+          currentArtist: currentTarget?.artist,
+        }));
+
         const res = await fetch('/api/ai-readings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -247,38 +362,51 @@ export default function App() {
       }
       showToast(
         toSave.length > 0
-          ? `${toSave.length}件の読み仮名を生成しました（AI推定。詳細画面で修正できます）`
-          : '読み仮名を生成できませんでした（確信の持てないものは空のままです）'
+          ? `${toSave.length}件の読み仮名を生成・登録しました！${skippedCount > 0 ? `（${skippedCount}件スキップ）` : ''}`
+          : `読み仮名を推定できませんでした${skippedCount > 0 ? `（${skippedCount}件スキップ）` : ''}`
       );
     } catch (err) {
       log.error('読み仮名の生成に失敗', err);
       showToast(err instanceof Error ? err.message : '読み仮名の生成に失敗しました');
     } finally {
       setIsGeneratingReadings(false);
+      setBatchProcessingState((prev) => ({ ...prev, isOpen: false }));
     }
   };
 
-  // ジャケット写真のURLをBase64に一括変換してオフライン保存するハンドラー
+  // 3. ジャケット写真のURLをBase64に一括変換してオフライン保存するハンドラー
+  // 既にジャケット画像がBASE64形式に変換されている場合はスキップする
   const [isConvertingBase64, setIsConvertingBase64] = useState(false);
   const handleBatchConvertToBase64 = async (ids?: string[]) => {
     const only = ids && ids.length > 0 ? new Set(ids) : null;
-    const targets = savedCDs.filter((cd) => {
-      if (only && !only.has(cd.id)) return false;
+    const candidates = savedCDs.filter((cd) => (only ? only.has(cd.id) : true));
+
+    const targets = candidates.filter((cd) => {
       const hasUrlCover = cd.coverUrl && cd.coverUrl.trim().startsWith('http');
       const hasUrlSub = (cd.subImages || []).some((s) => s && s.imageUrl && s.imageUrl.trim().startsWith('http'));
       return hasUrlCover || hasUrlSub;
     });
 
-    if (targets.length === 0) {
-      showToast('変換対象（http/httpsでリンクされているジャケット画像）を持つCDはありません');
-      return;
-    }
+    const skippedCount = candidates.length - targets.length;
 
-    if (!window.confirm(`${targets.length}件のCDのジャケット画像URLをBase64形式に変換し、ローカルに完全オフライン保存します。実行しますか？`)) {
+    if (targets.length === 0) {
+      showToast('対象のCDは既にすべてBase64形式に変換済み（または画像なし）のため、処理をスキップしました');
       return;
     }
 
     setIsConvertingBase64(true);
+    setBatchProcessingState({
+      isOpen: true,
+      type: 'base64',
+      title: 'ジャケット画像Base64一括変換中',
+      subtitle: 'ジャケット画像URLをBase64データ形式に変換してIndexedDBへオフライン保存しています...',
+      current: 0,
+      total: targets.length,
+      currentTitle: targets[0]?.title,
+      currentArtist: targets[0]?.artist,
+      detail: skippedCount > 0 ? `※ 変換済みの${skippedCount}件は自動スキップされました` : undefined,
+    });
+
     try {
       let convertedCount = 0;
       const updatedAt = getJSTISOString();
@@ -286,7 +414,13 @@ export default function App() {
 
       for (let i = 0; i < targets.length; i++) {
         const cd = targets[i];
-        showToast(`画像をBase64変換中… (${i + 1}/${targets.length}) ${cd.title}`, 15000);
+        setBatchProcessingState((prev) => ({
+          ...prev,
+          current: i + 1,
+          total: targets.length,
+          currentTitle: cd.title,
+          currentArtist: cd.artist,
+        }));
 
         let newCoverUrl = cd.coverUrl;
         let coverChanged = false;
@@ -331,12 +465,13 @@ export default function App() {
         await loadLocalLibrary();
       }
 
-      showToast(`${convertedCount}件のジャケット画像をBase64形式に変換・オフライン保存しました！`);
+      showToast(`${convertedCount}件のジャケット画像をBase64形式に変換・オフライン保存しました！${skippedCount > 0 ? `（${skippedCount}件スキップ）` : ''}`);
     } catch (err) {
       log.error('Base64一括変換に失敗', err);
       showToast(err instanceof Error ? err.message : 'Base64一括変換に失敗しました');
     } finally {
       setIsConvertingBase64(false);
+      setBatchProcessingState((prev) => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -815,8 +950,10 @@ export default function App() {
             onOpenAITagging={handleOpenAITagging}
             onOpenPDFCatalog={handleOpenPDFCatalog}
             onBatchUpdateCDs={handleApplyBatchAITags}
+            onLookupVinylReleaseDates={handleBatchLookupVinylReleaseDates}
             onConvertToBase64={handleBatchConvertToBase64}
             isConvertingBase64={isConvertingBase64}
+            isBatchProcessing={batchProcessingState.isOpen}
             initialSearchKeyword={librarySearchFilter}
           />
         )}
@@ -989,6 +1126,7 @@ export default function App() {
           selectedCDs={aiTaggingSelectedCDs}
           onClose={() => setIsAITaggingOpen(false)}
           onApplyBatchTags={handleApplyBatchAITags}
+          onBatchProcessingStateChange={setBatchProcessingState}
         />
       )}
 
@@ -1028,6 +1166,9 @@ export default function App() {
           }
         }}
       />
+
+      {/* 画面全体ブロック型 一括処理・AI処理プログレスモーダル */}
+      <BatchProcessingModal state={batchProcessingState} />
 
     </div>
   );

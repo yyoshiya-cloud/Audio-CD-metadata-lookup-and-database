@@ -9,6 +9,8 @@ import { verifyAndConsolidateWithGemini } from './geminiSearchIntegrator.js';
 import { CATALOG_SOURCES, STREAMING_SOURCES, mergeCDCandidates, pickAnchorItem } from './searchMerge.js';
 import { normalizeSearchQuery } from './searchUtils.js';
 import { ENABLED_SOURCES } from '../src/config/sources.js';
+import { getShirabeTitleReading, getShirabeArtistReading } from './shirabe.js';
+import { needsReading } from '../src/lib/readingSort.js';
 
 type SourceOutcome = { source: APISource; items: CDMetadata[]; error?: string };
 
@@ -113,6 +115,25 @@ export async function performAggregatedSearch(rawQuery: SearchQuery): Promise<Se
 
   // 2. Gemini による検証（決定的な判定を上書きせず、表記の整理と要約のみ）
   const candidates = await verifyAndConsolidateWithGemini(rawCandidates, query);
+
+  // 3. 上位候補の未設定かつ漢字を含むタイトル・アーティストに Shirabe API で読み仮名を自動補完
+  if (candidates.length > 0) {
+    const topCandidates = candidates.slice(0, 3);
+    await Promise.all(
+      topCandidates.map(async (item) => {
+        try {
+          if (!item.cd.titleReading && needsReading(item.cd.title)) {
+            item.cd.titleReading = await getShirabeTitleReading(item.cd.title);
+          }
+          if (!item.cd.artistReading && needsReading(item.cd.artist)) {
+            item.cd.artistReading = await getShirabeArtistReading(item.cd.artist);
+          }
+        } catch {
+          // 読み仮名補完の失敗は検索全体をブロックしない
+        }
+      })
+    );
+  }
 
   return {
     candidates,

@@ -2,9 +2,9 @@ import { GoogleGenAI } from '@google/genai';
 import { errorMessage } from './apiTypes.js';
 
 const GEMINI_MODELS = [
-  'gemini-3.8-flash',
+  'gemini-2.5-flash',
   'gemini-flash-latest',
-  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash-lite',
 ];
 
 // Track models that hit quota/rate-limit so we skip them immediately until cooldown expires
@@ -57,7 +57,7 @@ export async function generateContentWithFallback(
   const cooldownModels = baseList.filter((m) => (modelCooldownUntil.get(m) || 0) > now);
   const modelsToTry = [...activeModels, ...cooldownModels];
 
-  const perModelTimeout = params.timeoutMs || 25000;
+  const perModelTimeout = params.timeoutMs || 45000;
   let lastError: unknown = null;
 
   for (const model of modelsToTry) {
