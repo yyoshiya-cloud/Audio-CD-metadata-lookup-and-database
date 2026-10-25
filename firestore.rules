@@ -1,9 +1,14 @@
 rules_version = '2';
 
-// このアプリはFirebase Authenticationのみを使用し、Firestoreは使用しません。
-// 万一データベースが残っていても読み書きされないよう、全アクセスを拒否します。
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 構成設定コレクション（バージョン情報など）は誰でも読み取り可能、認証済みユーザーは書き込み可能
+    match /config/appInfo {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // デフォルトで拒否
     match /{document=**} {
       allow read, write: if false;
     }
