@@ -283,6 +283,8 @@ export function parseJSONToCDs(jsonText: string): {
         coverUrl: item.coverUrl || item.cover_url || item.image || item.jacketUrl || undefined,
         subImages,
         source,
+        titleReading: item.titleReading || item.title_reading || undefined,
+        artistReading: item.artistReading || item.artist_reading || undefined,
         sourceDetails: item.sourceDetails || undefined,
         rawSources: item.rawSources || undefined,
         confidenceScore: typeof item.confidenceScore === 'number' ? item.confidenceScore : undefined,

@@ -9,7 +9,9 @@ import { formatJSTDateTime, getJSTISOString, normalizeReleaseDate, normalizeCata
 export const DEFAULT_COLUMN_CONFIG: ExportColumnConfig[] = [
   { key: 'catalogNumber', label: '型番（規格品番）', enabled: true },
   { key: 'title', label: 'アルバム/CDタイトル', enabled: true },
+  { key: 'titleReading', label: 'タイトル読み仮名', enabled: true },
   { key: 'artist', label: '歌手/アーティスト', enabled: true },
+  { key: 'artistReading', label: 'アーティスト読み仮名', enabled: true },
   { key: 'label', label: 'レーベル/発売元', enabled: true },
   { key: 'releaseDate', label: '発売年月日', enabled: true },
   { key: 'vinylRecordReleaseDate', label: '同タイトルLP/EP発売年月日', enabled: true },
@@ -141,6 +143,10 @@ export function formatCDToRowValues(
       cellValue = normalizeReleaseDate(cd.vinylRecordReleaseDate);
     } else if (col.key === 'vinylRecordCatalogNumber') {
       cellValue = normalizeCatalogNumber(cd.vinylRecordCatalogNumber);
+    } else if (col.key === 'titleReading') {
+      cellValue = cd.titleReading || '';
+    } else if (col.key === 'artistReading') {
+      cellValue = cd.artistReading || '';
     } else {
       const val = cd[col.key as keyof CDMetadata];
       if (Array.isArray(val)) {
@@ -230,6 +236,8 @@ export function parseSpreadsheetRowsToCDs(
   const vinylFormatIdx = findColIndex('アナログ盤種別(lp/ep)', 'アナログ盤種別', 'lp/ep種別', 'vinylrecordformat');
   const vinylCatIdx = findColIndex('lp/ep規格品番', 'レコード規格品番', 'vinylrecordcatalognumber');
   const barcodeIdx = findColIndex('jan/eanバーコード', 'バーコード(jan)', 'バーコード', 'jan', 'ean', 'barcode');
+  const titleReadingIdx = findColIndex('タイトル読み仮名', 'タイトルよみがな', 'titlereading', 'title_reading');
+  const artistReadingIdx = findColIndex('アーティスト読み仮名', 'アーティストよみがな', 'artistreading', 'artist_reading');
   const countryIdx = findColIndex('発売国/仕様', '発売国', '仕様', 'country');
   const formatIdx = findColIndex('フォーマット', 'format');
   const tagsIdx = findColIndex('タグ', 'ジャンル', 'tags', 'tag', 'genre');
@@ -607,6 +615,8 @@ export function parseSpreadsheetRowsToCDs(
       subImages: rowSubImages,
       tags,
       tracks,
+      titleReading: getVal(titleReadingIdx) || undefined,
+      artistReading: getVal(artistReadingIdx) || undefined,
       source: validSource,
       notes: getVal(notesIdx) || undefined,
       createdAt: getVal(createdAtIdx) || getJSTISOString(),

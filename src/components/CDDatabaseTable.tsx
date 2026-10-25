@@ -65,8 +65,7 @@ interface CDDatabaseTableProps {
   onSelectCD: (cd: CDMetadata, currentList?: CDMetadata[]) => void;
   onDeleteCD: (id: string) => void;
   onBatchDeleteCDs: (ids: string[]) => void;
-  onOpenExportModal: (selectedCDs: CDMetadata[]) => void;
-  onOpenImportModal?: () => void;
+  onOpenDataExchange: (mode: 'import' | 'export', selectedCDs?: CDMetadata[]) => void;
   /** JSON自動バックアップの設定画面を開く */
   onOpenBackupSettings?: () => void;
   /** 読み仮名をAIで生成する（選択中があれば選択分、なければ未登録のすべて） */
@@ -108,8 +107,7 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
   onSelectCD,
   onDeleteCD,
   onBatchDeleteCDs,
-  onOpenExportModal,
-  onOpenImportModal,
+  onOpenDataExchange,
   onOpenBackupSettings,
   onOpenTrash,
   onGenerateReadings,
@@ -692,6 +690,16 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
               <span className="hidden min-[1800px]:inline">CD登録</span>
             </button>
           )}
+
+          {/* データ入出力ボタン */}
+          <button
+            onClick={() => onOpenDataExchange('export', selectedIds.length > 0 ? selectedCDs : cds)}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap bg-slate-800 hover:bg-slate-700 text-slate-100 shadow transition-all cursor-pointer border border-slate-600/60 flex-shrink-0"
+            title="データの入出力（読み込み・書き出し）"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-sky-300 flex-shrink-0" />
+            <span className="hidden sm:inline">入出力</span>
+          </button>
 
           {/* 統合AI・一括ユーティリティメニュー */}
           {(onBatchUpdateCDs || onOpenAITagging || onGenerateReadings) && (

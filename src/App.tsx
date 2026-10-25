@@ -669,12 +669,13 @@ export default function App() {
     showToast(`${ids.length} 件のCDを完全に削除しました`);
   };
 
-  // 書き出し（JSON / Excel / CSV）モーダルを開く
-  const handleOpenExportModalForItems = (items: CDMetadata[]) => {
-    setDataExchangeMode('export');
-    setItemsToExport(items);
+  // 書き出し・読み込みモーダルを開く
+  const handleOpenDataExchange = (mode: 'import' | 'export', items: CDMetadata[] = []) => {
+    setDataExchangeMode(mode);
+    setItemsToExport(mode === 'export' ? items : []);
     setIsDataExchangeOpen(true);
   };
+
 
   // Open AI Tagging Modal
   const handleOpenAITagging = (selected: CDMetadata[]) => {
@@ -723,12 +724,8 @@ export default function App() {
     showToast(`${mergeActions.length} グループの重複CDを一括統合・クリーンアップしました（統合された側はゴミ箱に移動）`);
   };
 
-  // 読み込み（バックアップからの復元など）モーダルを開く
-  const handleOpenImportModal = () => {
-    setDataExchangeMode('import');
-    setItemsToExport([]);
-    setIsDataExchangeOpen(true);
-  };
+  // handleOpenImportModal removed; use handleOpenDataExchange instead
+
 
   // JSON / Excel / CSV から読み込んだCDをライブラリへ反映（既存と一致するものは統合）
   const handleImportCDs = async (importedCDs: CDMetadata[]) => {
@@ -1004,8 +1001,7 @@ export default function App() {
             }}
             onDeleteCD={handleDeleteCD}
             onBatchDeleteCDs={handleBatchDelete}
-            onOpenExportModal={handleOpenExportModalForItems}
-            onOpenImportModal={handleOpenImportModal}
+            onOpenDataExchange={handleOpenDataExchange}
             onOpenBackupSettings={() => setIsBackupSettingsOpen(true)}
             onOpenTrash={() => setIsTrashOpen(true)}
             onGenerateReadings={handleGenerateReadings}
