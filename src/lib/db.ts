@@ -605,24 +605,29 @@ export const DEFAULT_APP_INFO_CONFIG: AppInfoConfig = {
 
 /**
  * Load App Info (Version & Last Updated Date).
+ * Automatically reflects newly deployed build version & build date whenever the build signature changes,
+ * while still allowing manual overrides in Admin Mode for the current build.
  */
 export async function loadAppInfoConfigDB(): Promise<AppInfoConfig> {
   try {
-    const docRef = doc(firestore, 'config', 'appInfo');
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data() as AppInfoConfig;
-      if (data.buildSignature === CURRENT_BUILD_SIGNATURE) {
+    const record = await db.settings.get('appInfoConfig');
+    if (record && record.value && typeof record.value.version === 'string') {
+      // If a manual override was saved on the exact current build, respect it;
+      // otherwise automatically update to the latest deployed build version & build date.
+      if (record.value.buildSignature === CURRENT_BUILD_SIGNATURE) {
         return {
-          version: data.version || DEFAULT_APP_INFO_CONFIG.version,
-          lastUpdated: data.lastUpdated || DEFAULT_APP_INFO_CONFIG.lastUpdated,
+          version: record.value.version || DEFAULT_APP_INFO_CONFIG.version,
+          lastUpdated: record.value.lastUpdated || DEFAULT_APP_INFO_CONFIG.lastUpdated,
           buildSignature: CURRENT_BUILD_SIGNATURE,
         };
       }
+      await db.settings.put({
+        key: 'appInfoConfig',
+        value: DEFAULT_APP_INFO_CONFIG,
+        updatedAt: new Date().toISOString(),
+      });
     }
   } catch {}
-  
-  // Fallback to local storage if Firestore fails or outdated
   const savedInfo = settingsStore.getJSON<Partial<AppInfoConfig> | null>(STORAGE_KEYS.appInfoConfig, null);
   if (savedInfo && typeof savedInfo.version === 'string' && savedInfo.buildSignature === CURRENT_BUILD_SIGNATURE) {
     return {
@@ -631,12 +636,12 @@ export async function loadAppInfoConfigDB(): Promise<AppInfoConfig> {
       buildSignature: CURRENT_BUILD_SIGNATURE,
     };
   }
-  
+  settingsStore.setJSON(STORAGE_KEYS.appInfoConfig, DEFAULT_APP_INFO_CONFIG);
   return DEFAULT_APP_INFO_CONFIG;
 }
 
 /**
- * Save custom App Info to Firestore and local storage
+ * Save custom App Info (Version & Last Updated Date) to Dexie settings table and localStorage
  */
 export async function saveAppInfoConfigDB(config: AppInfoConfig): Promise<AppInfoConfig> {
   const cleaned: AppInfoConfig = {
@@ -644,16 +649,17 @@ export async function saveAppInfoConfigDB(config: AppInfoConfig): Promise<AppInf
     lastUpdated: (config.lastUpdated || '').trim().replace(/^最終更新日[:：]\s*/, '') || DEFAULT_APP_INFO_CONFIG.lastUpdated,
     buildSignature: CURRENT_BUILD_SIGNATURE,
   };
-  
   try {
-    await setDoc(doc(firestore, 'config', 'appInfo'), cleaned);
-  } catch (e) {
-    log.error('Failed to save app info to Firestore', e);
-  }
-  
+    await db.settings.put({
+      key: 'appInfoConfig',
+      value: cleaned,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {}
   settingsStore.setJSON(STORAGE_KEYS.appInfoConfig, cleaned);
   return cleaned;
 }
+
 
 
 

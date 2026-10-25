@@ -2,13 +2,13 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 構成設定コレクション（バージョン情報など）は誰でも読み取り可能、認証済みユーザーは書き込み可能
+    // アプリ構成情報 (バージョン・更新日など)
+    // 開発・運用の利便性のため、このドキュメントのみ読み書きを許可します。
     match /config/appInfo {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read, write: if true;
     }
 
-    // デフォルトで拒否
+    // デフォルトはすべて拒否 (セキュリティ確保のため)
     match /{document=**} {
       allow read, write: if false;
     }

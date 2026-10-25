@@ -100,6 +100,7 @@ export default function App() {
   const [pdfCatalogSelectedCDs, setPdfCatalogSelectedCDs] = useState<CDMetadata[]>([]);
   const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
   const [isAdminModeOpen, setIsAdminModeOpen] = useState(false);
+  const [appInfoConfig, setAppInfoConfig] = useState<AppInfoConfig>(DEFAULT_APP_INFO_CONFIG);
 
   const [batchProcessingState, setBatchProcessingState] = useState<BatchProcessingState>({
     isOpen: false,
@@ -142,6 +143,8 @@ export default function App() {
       }
       const creds = await loadApiCredentialsDB();
       setApiCredentials(creds);
+      const loadedAppInfo = await loadAppInfoConfigDB();
+      setAppInfoConfig(loadedAppInfo);
 
       initAuth(
         (u) => setUser(u),
@@ -687,6 +690,11 @@ export default function App() {
     setIsPDFCatalogOpen(true);
   };
 
+  const handleSaveAppInfoConfig = async (config: AppInfoConfig) => {
+    const saved = await saveAppInfoConfigDB(config);
+    setAppInfoConfig(saved);
+  };
+
   // Apply Batch CD Updates / AI Tags to Library
   const handleApplyBatchAITags = async (
     updatedCDs: CDMetadata[],
@@ -1195,6 +1203,7 @@ export default function App() {
       {isAppInfoOpen && (
         <AppInfoModal
           onClose={() => setIsAppInfoOpen(false)}
+          appInfoConfig={appInfoConfig}
         />
       )}
 
@@ -1202,6 +1211,8 @@ export default function App() {
       <AdminModeModal
         isOpen={isAdminModeOpen}
         onClose={() => setIsAdminModeOpen(false)}
+        appInfoConfig={appInfoConfig}
+        onSaveAppInfoConfig={handleSaveAppInfoConfig}
         onOpenAppInfo={() => setIsAppInfoOpen(true)}
       />
 
