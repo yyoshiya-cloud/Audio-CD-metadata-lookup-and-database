@@ -317,7 +317,14 @@ async function startServer() {
   if (isDevMode) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts: [
+          'audio-cd-metadata-lookup-and-database.onrender.com',
+          '.onrender.com',
+          '.run.app',
+        ],
+      },
       appType: 'custom',
     });
 
