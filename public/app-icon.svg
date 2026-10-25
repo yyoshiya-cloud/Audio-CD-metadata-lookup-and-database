@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="cdGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="30%" stop-color="#c084fc" />
+      <stop offset="70%" stop-color="#f472b6" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+    <linearGradient id="lensGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1d4ed8" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <circle cx="256" cy="256" r="220" fill="none" stroke="#38bdf8" stroke-width="2" opacity="0.3" />
+  
+  <!-- CD Disc -->
+  <g transform="translate(40, 20)">
+    <circle cx="216" cy="216" r="130" fill="url(#cdGrad)" filter="url(#glow)" opacity="0.9" />
+    <circle cx="216" cy="216" r="130" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.5" />
+    <circle cx="216" cy="216" r="100" fill="none" stroke="#e0e7ff" stroke-width="1.5" opacity="0.4" stroke-dasharray="12,6" />
+    <circle cx="216" cy="216" r="70" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.3" />
+    <circle cx="216" cy="216" r="35" fill="#0f172a" stroke="#64748b" stroke-width="4" />
+    <circle cx="216" cy="216" r="15" fill="#38bdf8" />
+  </g>
+
+  <!-- Database Cylinders (Left) -->
+  <g transform="translate(45, 230)">
+    <ellipse cx="60" cy="20" rx="45" ry="16" fill="#3b82f6" opacity="0.9" />
+    <path d="M 15 20 L 15 70 C 15 78, 105 78, 105 70 L 105 20" fill="#1e40af" opacity="0.8" />
+    <ellipse cx="60" cy="70" rx="45" ry="16" fill="#2563eb" />
+    
+    <ellipse cx="60" cy="95" rx="45" ry="16" fill="#3b82f6" opacity="0.9" />
+    <path d="M 15 95 L 15 145 C 15 153, 105 153, 105 145 L 105 95" fill="#1e40af" opacity="0.8" />
+    <ellipse cx="60" cy="145" rx="45" ry="16" fill="#2563eb" />
+  </g>
+
+  <!-- Spreadsheet Icon & Sync Arrows -->
+  <g transform="translate(100, 310)">
+    <rect x="0" y="0" width="110" height="130" rx="16" fill="#15803d" stroke="#86efac" stroke-width="3" />
+    <rect x="20" y="30" width="70" height="70" rx="6" fill="#ffffff" />
+    <line x1="20" y1="53" x2="90" y2="53" stroke="#15803d" stroke-width="4" />
+    <line x1="20" y1="76" x2="90" y2="76" stroke="#15803d" stroke-width="4" />
+    <line x1="55" y1="30" x2="55" y2="100" stroke="#15803d" stroke-width="4" />
+    <!-- Sync Arrows -->
+    <path d="M -25 35 C -25 10, 0 10, 20 25" fill="none" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" />
+    <polygon points="22,18 32,28 18,32" fill="#38bdf8" />
+    <path d="M 30 75 C 30 100, 5 100, -15 85" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" />
+    <polygon points="-17,92 -27,82 -13,78" fill="#22c55e" />
+  </g>
+
+  <!-- Magnifying Glass with Music Note (Foreground Right) -->
+  <g transform="translate(210, 230)">
+    <circle cx="120" cy="120" r="85" fill="url(#lensGrad)" stroke="#93c5fd" stroke-width="8" filter="url(#glow)" opacity="0.95" />
+    <circle cx="120" cy="120" r="70" fill="#0f172a" opacity="0.85" />
+    <!-- Music Note -->
+    <path d="M 105 135 L 105 90 L 145 75 L 145 120 Z" fill="#ffffff" />
+    <circle cx="95" cy="135" r="14" fill="#ffffff" />
+    <circle cx="135" cy="120" r="14" fill="#ffffff" />
+    <!-- Magnifier Handle -->
+    <rect x="165" y="165" width="25" height="110" rx="12.5" fill="#334155" stroke="#64748b" stroke-width="6" transform="rotate(45 165 165)" />
+    <rect x="175" y="175" width="8" height="90" rx="4" fill="#1e293b" transform="rotate(45 175 175)" />
+  </g>
+
+  <!-- Floating API Badges Top -->
+  <!-- MusicBrainz -->
+  <g transform="translate(60, 50)">
+    <rect x="0" y="0" width="130" height="75" rx="14" fill="#ffffff" stroke="#e2e8f0" stroke-width="3" />
+    <polygon points="45,25 65,15 85,25 85,45 65,55 45,45" fill="#7c3aed" />
+    <text x="65" y="38" font-family="sans-serif" font-weight="bold" font-size="18" fill="#ffffff" text-anchor="middle">MB</text>
+    <text x="65" y="66" font-family="sans-serif" font-weight="bold" font-size="11" fill="#1e293b" text-anchor="middle">MusicBrainz</text>
+  </g>
+
+  <!-- Discogs -->
+  <g transform="translate(205, 40)">
+    <rect x="0" y="0" width="115" height="70" rx="14" fill="#1e293b" stroke="#475569" stroke-width="3" />
+    <text x="57" y="42" font-family="sans-serif" font-weight="bold" font-size="18" fill="#ffffff" text-anchor="middle">Discogs</text>
+  </g>
+
+  <!-- iTunes -->
+  <g transform="translate(335, 45)">
+    <rect x="0" y="0" width="125" height="75" rx="14" fill="#ffffff" stroke="#e2e8f0" stroke-width="3" />
+    <circle cx="62" cy="35" r="18" fill="#ec4899" />
+    <text x="62" y="41" font-family="sans-serif" font-weight="bold" font-size="16" fill="#ffffff" text-anchor="middle">♪</text>
+    <text x="62" y="67" font-family="sans-serif" font-weight="bold" font-size="11" fill="#1e293b" text-anchor="middle">iTunes</text>
+  </g>
+</svg>
