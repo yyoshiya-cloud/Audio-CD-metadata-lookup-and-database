@@ -1,11 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  User 
-} from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { settingsStore } from './settingsStore';
 import { createLogger } from './logger';
@@ -13,9 +8,9 @@ import { createLogger } from './logger';
 const log = createLogger('firebase');
 
 // Firebase Authentication（Googleアカウントでのログイン）のみに使用する。
-// Googleスプレッドシート連携の廃止に伴い、Sheets / Drive のスコープ要求とアクセストークンの保持は行わない。
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
+export const firestore = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 const provider = new GoogleAuthProvider();
 

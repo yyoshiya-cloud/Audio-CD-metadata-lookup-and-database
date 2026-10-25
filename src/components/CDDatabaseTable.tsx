@@ -1424,11 +1424,11 @@ export const CDDatabaseTable: React.FC<CDDatabaseTableProps> = ({
               「Web検索・メタデータ取得」からCDを追加するか、バックアップファイル（JSON / Excel / CSV）からインポートしてください。
             </p>
           </div>
-          {onOpenImportModal && (
+          {onOpenDataExchange && (
             <div className="pt-2 flex items-center justify-center gap-3">
               <button
                 type="button"
-                onClick={onOpenImportModal}
+                onClick={() => onOpenDataExchange('import')}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
               >
                 <Download className="w-4 h-4" />

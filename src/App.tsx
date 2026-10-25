@@ -100,7 +100,7 @@ export default function App() {
   const [pdfCatalogSelectedCDs, setPdfCatalogSelectedCDs] = useState<CDMetadata[]>([]);
   const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
   const [isAdminModeOpen, setIsAdminModeOpen] = useState(false);
-  const [appInfoConfig, setAppInfoConfig] = useState<AppInfoConfig>(DEFAULT_APP_INFO_CONFIG);
+
   const [batchProcessingState, setBatchProcessingState] = useState<BatchProcessingState>({
     isOpen: false,
     type: 'vinyl',
@@ -142,8 +142,6 @@ export default function App() {
       }
       const creds = await loadApiCredentialsDB();
       setApiCredentials(creds);
-      const loadedAppInfo = await loadAppInfoConfigDB();
-      setAppInfoConfig(loadedAppInfo);
 
       initAuth(
         (u) => setUser(u),
@@ -1196,7 +1194,6 @@ export default function App() {
       {/* App Info Modal */}
       {isAppInfoOpen && (
         <AppInfoModal
-          appInfoConfig={appInfoConfig}
           onClose={() => setIsAppInfoOpen(false)}
         />
       )}
@@ -1204,12 +1201,6 @@ export default function App() {
       {/* Admin Mode Modal (Triggered by 3 left-clicks on "CD メタデータ DB") */}
       <AdminModeModal
         isOpen={isAdminModeOpen}
-        config={appInfoConfig}
-        onSaveConfig={async (newCfg) => {
-          const saved = await saveAppInfoConfigDB(newCfg);
-          setAppInfoConfig(saved);
-          showToast(`アプリ情報を更新しました (Version ${saved.version} / 最終更新日: ${saved.lastUpdated})`);
-        }}
         onClose={() => setIsAdminModeOpen(false)}
         onOpenAppInfo={() => setIsAppInfoOpen(true)}
       />
