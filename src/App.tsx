@@ -374,6 +374,72 @@ export default function App() {
     }
   };
 
+  // アルバムタイトル・アーティスト名をそのままよみがなに一括コピー（補完）するハンドラー
+  const handleBatchCopyReadingsFromTitles = async (ids?: string[]) => {
+    const targetSet = ids && ids.length > 0 ? new Set(ids) : null;
+    const targets = savedCDs.filter((cd) => {
+      if (targetSet && !targetSet.has(cd.id)) return false;
+      return !cd.titleReading || !cd.artistReading;
+    });
+
+    if (targets.length === 0) {
+      showToast('対象のCDには既にすべて読み仮名が登録されているため、処理をスキップしました');
+      return;
+    }
+
+    setBatchProcessingState({
+      isOpen: true,
+      type: 'reading',
+      title: 'タイトルからよみがなを一括コピー中',
+      subtitle: '未登録のタイトル・アーティスト名をよみがなに一括コピーしています...',
+      current: 0,
+      total: targets.length,
+      currentTitle: targets[0]?.title,
+      currentArtist: targets[0]?.artist,
+    });
+
+    try {
+      const updatedAt = getJSTISOString();
+      const updatedCDs: CDMetadata[] = [];
+
+      for (let i = 0; i < targets.length; i++) {
+        const cd = targets[i];
+        setBatchProcessingState((prev) => ({
+          ...prev,
+          current: i + 1,
+          total: targets.length,
+          currentTitle: cd.title,
+          currentArtist: cd.artist,
+        }));
+
+        const newTitleReading = cd.titleReading || cd.title || '';
+        const newArtistReading = cd.artistReading || cd.artist || '';
+
+        if (newTitleReading !== cd.titleReading || newArtistReading !== cd.artistReading) {
+          updatedCDs.push({
+            ...cd,
+            titleReading: newTitleReading,
+            artistReading: newArtistReading,
+            updatedAt,
+          });
+        }
+      }
+
+      if (updatedCDs.length > 0) {
+        await saveMultipleCDs(updatedCDs);
+        await loadLocalLibrary();
+        showToast(`${updatedCDs.length}件のタイトル・アーティスト名をよみがなに一括コピー・登録しました！`);
+      } else {
+        showToast('新しくコピーする対象はありませんでした');
+      }
+    } catch (err) {
+      log.error('読み仮名の一括コピーに失敗', err);
+      showToast(err instanceof Error ? err.message : '読み仮名の一括コピーに失敗しました');
+    } finally {
+      setBatchProcessingState((prev) => ({ ...prev, isOpen: false }));
+    }
+  };
+
   // 3. ジャケット写真のURLをBase64に一括変換してオフライン保存するハンドラー
   // 既にジャケット画像がBASE64形式に変換されている場合はスキップする
   const [isConvertingBase64, setIsConvertingBase64] = useState(false);
@@ -951,6 +1017,7 @@ export default function App() {
             onOpenPDFCatalog={handleOpenPDFCatalog}
             onBatchUpdateCDs={handleApplyBatchAITags}
             onLookupVinylReleaseDates={handleBatchLookupVinylReleaseDates}
+            onCopyReadingsFromTitles={handleBatchCopyReadingsFromTitles}
             onConvertToBase64={handleBatchConvertToBase64}
             isConvertingBase64={isConvertingBase64}
             isBatchProcessing={batchProcessingState.isOpen}
